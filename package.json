@@ -1,0 +1,25 @@
+{
+  "name": "masovian-drift",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "@zxing/library": "^0.21.3",
+    "pako": "^2.1.0",
+    "qrcode": "^1.5.4",
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "@types/pako": "^2.0.3",
+    "@types/qrcode": "^1.5.5",
+    "@types/three": "^0.174.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0"
+  }
+}
