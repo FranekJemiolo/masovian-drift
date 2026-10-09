@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { VehicleState } from '../game/Types';
 import { Waypoint } from '../physics/TrackWaypoints';
 
@@ -32,6 +33,8 @@ export class HUD {
   private driftScoreEl!: HTMLElement;
   private driftCardEl!: HTMLElement;
   private driftBannerEl!: HTMLElement;
+  private deltaEl!: HTMLElement;
+  private wrongWayEl!: HTMLElement;
   private damageEl!: HTMLElement;
   private biasTagEl!: HTMLElement;
 
@@ -94,6 +97,7 @@ export class HUD {
         <div class="hud-card hud-glass">
           <div class="hud-label">LAP TIME</div>
           <div id="hud-time" class="hud-value time-mono">00:00.00</div>
+          <div id="hud-delta" class="delta-tag" style="display: none;">+0.00s</div>
         </div>
         <div id="hud-drift-card" class="hud-card hud-glass drift-card">
           <div class="hud-label">DRIFT SCORE</div>
@@ -111,6 +115,9 @@ export class HUD {
 
       <!-- DYNAMIC DRIFT CELEBRATION BANNER -->
       <div id="hud-drift-banner" class="hud-drift-banner">🔥 MASOVIAN DRIFT!</div>
+
+      <!-- WRONG-WAY WARNING BANNER (U10) -->
+      <div id="hud-wrong-way" class="hud-wrong-way-banner" style="display: none;">↩ WRONG WAY! ↩</div>
 
       <!-- COUNTDOWN OVERLAY -->
       <div id="hud-countdown" class="hud-countdown-overlay" style="display: none;">
@@ -336,6 +343,8 @@ export class HUD {
     this.driftScoreEl = this.container.querySelector('#hud-drift')!;
     this.driftCardEl = this.container.querySelector('#hud-drift-card')!;
     this.driftBannerEl = this.container.querySelector('#hud-drift-banner')!;
+    this.deltaEl = this.container.querySelector('#hud-delta')!;
+    this.wrongWayEl = this.container.querySelector('#hud-wrong-way')!;
     this.damageEl = this.container.querySelector('#hud-damage-status')!;
     this.biasTagEl = this.container.querySelector('#hud-bias-tag')!;
 
@@ -624,6 +633,25 @@ export class HUD {
       .toString()
       .padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
 
+    // Delta-time comparison against best lap (U10)
+    if (playerState.deltaBestLap !== undefined) {
+      this.deltaEl.style.display = 'inline-block';
+      const isAhead = playerState.deltaBestLap < 0;
+      const sign = isAhead ? '-' : '+';
+      const absSec = Math.abs(playerState.deltaBestLap).toFixed(2);
+      this.deltaEl.textContent = `${sign}${absSec}s`;
+      this.deltaEl.className = `delta-tag ${isAhead ? 'delta-ahead' : 'delta-behind'}`;
+    } else {
+      this.deltaEl.style.display = 'none';
+    }
+
+    // Wrong-way flashing warning (U10)
+    if (playerState.isWrongWay) {
+      this.wrongWayEl.style.display = 'block';
+    } else {
+      this.wrongWayEl.style.display = 'none';
+    }
+
     // Drift score, card flame & dynamic center banner
     this.driftScoreEl.textContent = `${playerState.driftScore} PTS`;
     if (playerState.isDrifting && playerState.speedKmh > 22) {
@@ -723,29 +751,48 @@ export class HUD {
       return [mx, my];
     };
 
-    // Draw track path glow & stroke
-    ctx.lineWidth = 9;
+    const n = waypoints.length;
+    const s1End = Math.floor(n / 3);
+    const s2End = Math.floor((2 * n) / 3);
+
+    // Track backdrop glow
+    ctx.lineWidth = 8;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)';
     ctx.beginPath();
     const [startX, startY] = toMap(waypoints[0].point.x, waypoints[0].point.z);
     ctx.moveTo(startX, startY);
-    for (let i = 1; i < waypoints.length; i++) {
+    for (let i = 1; i < n; i++) {
       const [mx, my] = toMap(waypoints[i].point.x, waypoints[i].point.z);
       ctx.lineTo(mx, my);
     }
     ctx.closePath();
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)'; // Cyan ambient glow
     ctx.stroke();
 
-    ctx.lineWidth = 4.5;
-    ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)'; // Crisp white road ribbon
-    ctx.stroke();
+    // Draw 3 Colored Track Sectors (U9: S1 Cyan, S2 Magenta, S3 Amber)
+    const drawSector = (startIdx: number, endIdx: number, color: string) => {
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      const [sx, sy] = toMap(waypoints[startIdx].point.x, waypoints[startIdx].point.z);
+      ctx.moveTo(sx, sy);
+      for (let i = startIdx + 1; i <= endIdx; i++) {
+        const idx = i % n;
+        const [mx, my] = toMap(waypoints[idx].point.x, waypoints[idx].point.z);
+        ctx.lineTo(mx, my);
+      }
+      ctx.stroke();
+    };
+
+    drawSector(0, s1End, '#38bdf8');       // Sector 1: Cyan
+    drawSector(s1End, s2End, '#c084fc');   // Sector 2: Purple
+    drawSector(s2End, n, '#facc15');       // Sector 3: Amber
 
     // Start/Finish line marker (gold)
     ctx.fillStyle = '#fbbf24';
     ctx.beginPath();
-    ctx.arc(startX, startY, 5, 0, Math.PI * 2);
+    ctx.arc(startX, startY, 4.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Draw opponent AI vehicles
@@ -764,21 +811,30 @@ export class HUD {
       ctx.stroke();
     }
 
-    // Draw player vehicle (prominent cyan dot with white halo)
+    // Draw player vehicle (directional chevron arrow pointing forward, U9)
     const player = allVehicles.find((v) => v.isPlayer);
     if (player) {
       const [px, py] = toMap(player.position.x, player.position.z);
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
-      ctx.fill();
+      const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
+      const heading = Math.atan2(fwd.x, fwd.z);
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(-heading);
+
+      // Sleek delta racing arrow
       ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
-      ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+      ctx.moveTo(0, -8);
+      ctx.lineTo(5.5, 6);
+      ctx.lineTo(0, 3);
+      ctx.lineTo(-5.5, 6);
+      ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
+      ctx.restore();
     }
   }
 }

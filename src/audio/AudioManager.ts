@@ -1,13 +1,17 @@
 import { EngineSynth } from './EngineSynth';
+import { MusicSynth } from './MusicSynth';
 
 export class AudioManager {
   private static instance: AudioManager | null = null;
   public ctx: AudioContext | null = null;
   public playerSynth: EngineSynth | null = null;
   public p2Synth: EngineSynth | null = null;
+  public musicSynth: MusicSynth | null = null;
   public isUnlocked = false;
   public isMuted = false;
   public masterVolume = 0.8;
+  public musicVolume = 0.7;
+  public isMusicEnabled = true;
   public isPaused = false;
 
   // Master bus & sub-buses
@@ -16,6 +20,7 @@ export class AudioManager {
   public engineBus: GainNode | null = null;
   public sfxBus: GainNode | null = null;
   public uiBus: GainNode | null = null;
+  public musicBus: GainNode | null = null;
 
   private constructor() {
     this.loadSettings();
@@ -32,6 +37,14 @@ export class AudioManager {
       if (savedMute !== null) {
         this.isMuted = savedMute === 'true';
       }
+      const savedMusicVol = localStorage.getItem('masovian_music_volume');
+      if (savedMusicVol !== null) {
+        this.musicVolume = Math.max(0, Math.min(1, parseFloat(savedMusicVol)));
+      }
+      const savedMusicEnabled = localStorage.getItem('masovian_music_enabled');
+      if (savedMusicEnabled !== null) {
+        this.isMusicEnabled = savedMusicEnabled === 'true';
+      }
     } catch (_) {}
   }
 
@@ -39,6 +52,8 @@ export class AudioManager {
     try {
       localStorage.setItem('masovian_master_volume', this.masterVolume.toString());
       localStorage.setItem('masovian_is_muted', this.isMuted.toString());
+      localStorage.setItem('masovian_music_volume', this.musicVolume.toString());
+      localStorage.setItem('masovian_music_enabled', this.isMusicEnabled.toString());
     } catch (_) {}
   }
 
@@ -109,8 +124,14 @@ export class AudioManager {
       this.uiBus.gain.setValueAtTime(0.7, this.ctx.currentTime);
       this.uiBus.connect(this.masterGain);
 
+      this.musicBus = this.ctx.createGain();
+      const effMusic = this.isMusicEnabled ? this.musicVolume : 0;
+      this.musicBus.gain.setValueAtTime(effMusic, this.ctx.currentTime);
+      this.musicBus.connect(this.masterGain);
+
       this.playerSynth = new EngineSynth(this.ctx, this.engineBus);
       this.p2Synth = new EngineSynth(this.ctx, this.engineBus);
+      this.musicSynth = new MusicSynth(this.ctx, this.musicBus);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
@@ -178,6 +199,44 @@ export class AudioManager {
     this.ensureContext();
     this.playerSynth?.start();
     this.p2Synth?.start();
+  }
+
+  public startMusic(): void {
+    if (!this.isMusicEnabled) return;
+    this.ensureContext();
+    this.musicSynth?.start();
+  }
+
+  public stopMusic(): void {
+    this.musicSynth?.stop();
+  }
+
+  public setMusicVolume(vol: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, vol));
+    this.saveSettings();
+    if (this.musicBus && this.ctx && this.isMusicEnabled) {
+      this.musicBus.gain.setValueAtTime(this.musicVolume, this.ctx.currentTime);
+    }
+  }
+
+  public toggleMusic(): boolean {
+    this.isMusicEnabled = !this.isMusicEnabled;
+    this.saveSettings();
+    if (this.musicBus && this.ctx) {
+      const target = this.isMusicEnabled ? this.musicVolume : 0;
+      this.musicBus.gain.setValueAtTime(target, this.ctx.currentTime);
+    }
+    if (this.isMusicEnabled) {
+      this.startMusic();
+    } else {
+      this.stopMusic();
+    }
+    return this.isMusicEnabled;
+  }
+
+  public updateMusicAdaptive(speedKmh: number, isDrifting: boolean, driftCombo: number): void {
+    if (this.isMuted || this.isPaused || !this.isMusicEnabled) return;
+    this.musicSynth?.updateAdaptiveIntensity(speedKmh, isDrifting, driftCombo);
   }
 
   public updatePlayerEngine(

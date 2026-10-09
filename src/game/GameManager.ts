@@ -122,8 +122,8 @@ export class GameManager {
     this.sunLight.shadow.normalBias = 0.02; // Eliminates shadow acne on voxel steps
     this.scene.add(this.sunLight);
 
-    // Procedural atmospheric skydome, golden haze, and dual-tone voxel clouds
-    this.atmosphere = new Atmosphere(this.scene);
+    // Procedural atmospheric skydome, golden haze, and dual-tone voxel clouds (IBL enabled)
+    this.atmosphere = new Atmosphere(this.scene, this.renderer);
     this.particleFX = new ParticleFX(this.scene);
 
     this.updateLoadingProgress(50, 'COMPILING RAPIER3D PHYSICS WASM...');
@@ -190,6 +190,7 @@ export class GameManager {
         this.isPaused = false;
         this.hud.hide();
         this.audioManager.stopEngines();
+        this.audioManager.stopMusic();
         this.menuUI.renderMainMenu();
         this.isRacing = false;
       },
@@ -225,7 +226,16 @@ export class GameManager {
       onSetQualityPreset: (preset) => {
         this.postProcessor.setQualityPreset(preset);
       },
+      onSetAtmosphere: (preset) => {
+        this.atmosphere.setPreset(preset);
+      },
     });
+
+    // Apply saved atmosphere on boot (G7)
+    const savedAtmo = localStorage.getItem('masovian_atmo_preset') as any;
+    if (savedAtmo) {
+      this.atmosphere.setPreset(savedAtmo);
+    }
 
     // 10. Spawn Initial Showcase Car at Start Line
     this.spawnShowcaseCar();
@@ -397,6 +407,7 @@ export class GameManager {
         this.allVehicles.push(aiVehicle);
       }
       this.audioManager.startEngines();
+      this.audioManager.startMusic();
 
     } else if (mode === 'split-screen') {
       // Spawn Player 2 vehicle in P2 slot (left lane)
@@ -422,6 +433,7 @@ export class GameManager {
       this.allVehicles.push(this.p2Vehicle);
       this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
       this.audioManager.startSplitScreenEngines();
+      this.audioManager.startMusic();
 
     } else if (mode === 'multiplayer-host' || mode === 'multiplayer-join') {
       // Spawn Remote Peer Vehicle
@@ -446,6 +458,7 @@ export class GameManager {
       );
       this.allVehicles.push(this.p2Vehicle);
       this.audioManager.startEngines();
+      this.audioManager.startMusic();
     }
   }
 
@@ -676,6 +689,13 @@ export class GameManager {
         this.inputManager.playRumble(0.35, 75);
       }
 
+      // Procedural adaptive synthwave soundtrack update (A7)
+      this.audioManager.updateMusicAdaptive(
+        this.playerVehicle.speedKmh,
+        this.playerVehicle.isDrifting,
+        this.playerVehicle.driftScore
+      );
+
       // 5. Update HUD (with real-time circuit Minimap & Drift Combo Banner)
       const p1State = this.playerVehicle.getVehicleState();
       const p2State = this.p2Vehicle?.getVehicleState();
@@ -859,6 +879,7 @@ export class GameManager {
       onGarage: () => {
         this.hud.hide();
         this.audioManager.stopEngines();
+        this.audioManager.stopMusic();
         this.isRacing = false;
         this.menuUI.renderMainMenu();
         this.menuUI.renderGarageModal();
@@ -866,6 +887,7 @@ export class GameManager {
       onMenu: () => {
         this.hud.hide();
         this.audioManager.stopEngines();
+        this.audioManager.stopMusic();
         this.isRacing = false;
         this.menuUI.renderMainMenu();
       },
@@ -925,6 +947,7 @@ export class GameManager {
     }
 
     this.audioManager.startEngines();
+    this.audioManager.startMusic();
   }
 
   private onWindowResize(): void {

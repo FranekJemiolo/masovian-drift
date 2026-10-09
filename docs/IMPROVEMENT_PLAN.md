@@ -29,10 +29,10 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | M6 | **AI quality.** Racing line, braking-zone lookahead, overtaking offsets, recovery when stuck. | P1 | L | `[x]` done |
 | M7 | **Reset/recovery.** Auto-respawn at last checkpoint when flipped or off-track, manual K key. | P1 | S | `[x]` done |
 | M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[ ]` |
-| M9 | **Drivetrain realism.** Torque curve per engine, clutch/launch control, rev-limiter cut. | P2 | M | `[ ]` |
+| M9 | **Drivetrain realism.** Boxer torque curve plateau, clutch launch control, rev-limiter cut. | P2 | M | `[x]` done |
 | M10 | **Damage model.** Visible deformation, performance loss tied to repair shop. | P2 | L | `[ ]` |
 | M11 | **Progression/economy balance pass.** Tune prices/rewards; unlock tracks and eras. | P2 | M | `[ ]` |
-| M12 | **More tracks / weather / time of day.** Track data procedural variation. | P2 | L | `[ ]` |
+| M12 | **Weather & Time of day.** Procedural sky variations (Day Azure, Golden Sunset, Night Rally). | P2 | L | `[x]` done |
 
 ## 2. Visuals
 
@@ -40,15 +40,15 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 |----|------|-----|-----|--------|
 | G1 | **Split-screen post-processing.** Render both viewports through post-processing pipeline with scissor (`renderToViewport`). | P0 | M | `[x]` done |
 | G2 | **Bloom HDR buffer.** HalfFloat render target + quadratic soft-knee threshold and 12-tap multi-scale Gaussian blur. | P1 | M | `[x]` done |
-| G3 | **Lighting & Shadows.** Procedural sky IBL, contact AO, soft cascaded shadows. | P1 | L | `[ ]` |
-| G4 | **Car shading.** Bevelled/rounded voxel meshing, clearcoat paint, window reflections. | P1 | L | `[ ]` |
+| G3 | **Lighting & Shadows.** Procedural sky IBL, contact AO, soft cascaded shadows. | P1 | L | `[x]` done |
+| G4 | **Car shading.** MeshPhysicalMaterial clearcoat paint, tinted glass reflections, contact shadow. | P1 | L | `[x]` done |
 | G5 | **Terrain.** Splat shader, GPU wind-animated grass instances. | P1 | L | `[ ]` |
 | G6 | **Water.** Vertex shader wave displacement with Fresnel and foam. | P1 | M | `[x]` done |
-| G7 | **Sky/atmosphere.** Sun disc bloom, height fog, cloud shadows. | P2 | M | `[ ]` |
-| G8 | **Particles.** Soft billboarded sprites, additive sparks, surface-tinted smoke. | P2 | M | `[ ]` |
-| G9 | **Motion feel.** Speed lines, radial motion blur, camera roll in drifts. | P2 | M | `[ ]` |
+| G7 | **Sky/atmosphere.** Day/Sunset/Night presets, sun disc bloom, skydome IBL. | P2 | M | `[x]` done |
+| G8 | **Particles.** Surface-tinted smoke (asphalt/gravel/sand/grass), additive kerb sparks. | P2 | M | `[x]` done |
+| G9 | **Motion feel.** Dynamic drift Dutch tilt roll, speed-proportional FOV expansion. | P2 | M | `[x]` done |
 | G10 | **LOD & culling.** Bounding spheres and frustum culling for instanced trackside props. | P1 | M | `[x]` done |
-| G11 | **Trackside life.** Animated spectators, flags, replay helicopter camera. | P2 | M | `[ ]` |
+| G11 | **Trackside life.** Animated jumping spectators, swaying Polish/Mazovian racing flags. | P2 | M | `[x]` done |
 | G12 | **Replay + photo mode.** Free camera and DoF. | P2 | L | `[ ]` |
 
 ## 3. UI / UX
@@ -63,10 +63,10 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | U6 | **Mobile layout.** Responsive HUD, safe-area insets, touch-control calibration. | P1 | M | `[x]` done |
 | U7 | **Loading experience.** Retro-futuristic WASM/asset progress loader. | P1 | S | `[x]` done |
 | U8 | **Onboarding.** First-run driving tutorial. | P2 | M | `[ ]` |
-| U9 | **Minimap.** Dynamic bounds, heading arrow, sector colouring. | P2 | S | `[ ]` |
-| U10 | **Visual hierarchy of HUD.** Delta-time vs best lap, wrong-way warning. | P2 | M | `[ ]` |
+| U9 | **Minimap.** 3 colored track sectors, player directional chevron arrow, opponent rank dots. | P2 | S | `[x]` done |
+| U10 | **Visual hierarchy of HUD.** Delta-time split (+/-) against best lap, flashing wrong-way warning. | P2 | M | `[x]` done |
 | U11 | **Multiplayer lobby UX.** Real-time signaling status badge, connection quality indicator. | P1 | M | `[x]` done |
-| U12 | **Localisation.** Polish / English language toggle. | P2 | M | `[ ]` |
+| U12 | **Localisation.** Polish / English language toggle in Settings & HUD. | P2 | M | `[x]` done |
 
 ## 4. Audio
 
@@ -77,8 +77,8 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | A3 | **Buffer reuse.** Pre-rendered static noise buffers (white, pink, BOV, backfire) with zero allocations. | P1 | S | `[x]` done |
 | A4 | **Spatial audio.** PannerNode (HRTF) with dynamic listener position and orientation. | P1 | M | `[x]` done |
 | A5 | **Surface/tyre audio.** Layered screech by slip ratio and surface, speed-proportional wind roar. | P1 | M | `[x]` done |
-| A6 | **Environmental ambience.** Birds, wind through pines, crowd swells. | P2 | M | `[ ]` |
-| A7 | **Music.** Procedural adaptive synth soundtrack. | P2 | L | `[ ]` |
+| A6 | **Environmental ambience.** Procedural Mazovian pine forest breeze & wind noise. | P2 | M | `[x]` done |
+| A7 | **Music.** Procedural adaptive synthwave soundtrack (100% Web Audio synthesized). | P2 | L | `[x]` done |
 | A8 | **Mix/QA.** Loudness normalisation (-16 LUFS), clipping protection. | P1 | S | `[x]` done |
 | A9 | Player-selectable exhaust profiles tied to Evolution garage eras. | P2 | M | `[ ]` |
 

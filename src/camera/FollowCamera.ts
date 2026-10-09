@@ -10,6 +10,7 @@ export class FollowCamera {
   private currentLookTarget = new THREE.Vector3();
   private shakeOffset = new THREE.Vector3();
   private shakeIntensity = 0;
+  private currentRoll = 0;
 
   constructor(fov: number = 62, aspect: number = 16 / 9) {
     this.camera = new THREE.PerspectiveCamera(fov, aspect, 0.2, 1200);
@@ -32,6 +33,7 @@ export class FollowCamera {
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(targetQuat);
     this.currentPosition.copy(targetPos).addScaledVector(forward, -6.0).addScaledVector(up, 2.2);
     this.currentLookTarget.copy(targetPos).addScaledVector(forward, 12.0).addScaledVector(up, 0.9);
+    this.currentRoll = 0;
     this.camera.position.copy(this.currentPosition);
     this.camera.lookAt(this.currentLookTarget);
   }
@@ -64,6 +66,7 @@ export class FollowCamera {
     // Compute camera target position and look target based on mode
     const desiredPos = new THREE.Vector3();
     const desiredLook = new THREE.Vector3();
+    const lateralVel = velocity.dot(right);
 
     if (this.mode === 'chase') {
       // Stable horizontal chase framing inspired by Need for Speed & classic racers
@@ -79,7 +82,6 @@ export class FollowCamera {
         .add(new THREE.Vector3(0, heightAbove, 0));
 
       // Dynamic apex lookahead: lead camera gaze into corners based on lateral movement
-      const lateralVel = velocity.dot(right);
       const steerLead = THREE.MathUtils.clamp(lateralVel * 0.14, -2.6, 2.6);
       const lookLead = 14.0 + (speedKmh / 120.0) * 7.0;
 
@@ -140,5 +142,12 @@ export class FollowCamera {
 
     this.camera.position.copy(this.currentPosition).add(this.shakeOffset);
     this.camera.lookAt(this.currentLookTarget);
+
+    // Dynamic Drift Dutch Roll (G9: Leans into slide angle for exhilarating sense of speed)
+    if (this.mode === 'chase') {
+      const targetRoll = -THREE.MathUtils.clamp(lateralVel * 0.007, -0.075, 0.075);
+      this.currentRoll = THREE.MathUtils.lerp(this.currentRoll, targetRoll, delta * 7.0);
+      this.camera.rotateZ(this.currentRoll);
+    }
   }
 }

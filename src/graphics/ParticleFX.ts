@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VehiclePhysics } from '../physics/VehiclePhysics';
+import { PRNG } from '../utils/PRNG';
 
 interface SmokeParticle {
   active: boolean;
@@ -12,6 +13,15 @@ interface SmokeParticle {
   color: THREE.Color;
 }
 
+interface SparkParticle {
+  active: boolean;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  scale: number;
+  life: number;
+  maxLife: number;
+}
+
 interface SkidSegment {
   active: boolean;
   position: THREE.Vector3;
@@ -22,22 +32,30 @@ interface SkidSegment {
 
 export class ParticleFX {
   private scene: THREE.Scene;
+  private rng = new PRNG(9876);
 
-  // 1. Tire Smoke & Dust (Instanced Mesh)
+  // 1. Tire Smoke & Dust (Instanced Mesh with surface tint)
   private maxSmoke = 160;
   private smokeParticles: SmokeParticle[] = [];
   private smokeMesh: THREE.InstancedMesh;
   private smokeDummy = new THREE.Object3D();
   private smokeMat: THREE.MeshStandardMaterial;
 
-  // 2. Exhaust Backfire Flames & Sparks
+  // 2. Additive Collision & Kerb Sparks (Instanced Mesh)
+  private maxSparks = 64;
+  private sparkParticles: SparkParticle[] = [];
+  private sparkMesh: THREE.InstancedMesh;
+  private sparkDummy = new THREE.Object3D();
+  private sparkMat: THREE.MeshBasicMaterial;
+
+  // 3. Exhaust Backfire Flames & Sparks
   private flameGroup = new THREE.Group();
   private flameMeshL: THREE.Mesh;
   private flameMeshR: THREE.Mesh;
   private flameLight: THREE.PointLight;
   private flameTimer = 0;
 
-  // 3. Dynamic Skid Mark Decals (Instanced Ribbons)
+  // 4. Dynamic Skid Mark Decals (Instanced Ribbons)
   private maxSkids = 240;
   private skidSegments: SkidSegment[] = [];
   private skidMesh: THREE.InstancedMesh;
@@ -82,6 +100,35 @@ export class ParticleFX {
       this.smokeMesh.setMatrixAt(i, this.smokeDummy.matrix);
     }
     this.smokeMesh.instanceMatrix.needsUpdate = true;
+
+    // --- Additive Sparks ---
+    const sparkGeo = new THREE.BoxGeometry(0.12, 0.12, 0.25);
+    this.sparkMat = new THREE.MeshBasicMaterial({
+      color: 0xffedd5,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.sparkMesh = new THREE.InstancedMesh(sparkGeo, this.sparkMat, this.maxSparks);
+    this.sparkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(this.sparkMesh);
+
+    for (let i = 0; i < this.maxSparks; i++) {
+      this.sparkParticles.push({
+        active: false,
+        position: new THREE.Vector3(),
+        velocity: new THREE.Vector3(),
+        scale: 0.1,
+        life: 0,
+        maxLife: 0.4,
+      });
+      this.sparkDummy.position.set(0, -999, 0);
+      this.sparkDummy.scale.set(0, 0, 0);
+      this.sparkDummy.updateMatrix();
+      this.sparkMesh.setMatrixAt(i, this.sparkDummy.matrix);
+    }
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
 
     // --- Exhaust Flames & Light ---
     const flameGeo = new THREE.ConeGeometry(0.14, 0.5, 6);
@@ -133,32 +180,68 @@ export class ParticleFX {
   }
 
   /**
-   * Spawns tire smoke puff when drifting or spinning wheels
+   * Spawns tire smoke puff with surface-aware coloring (G8)
    */
-  public emitTireSmoke(pos: THREE.Vector3, vel: THREE.Vector3, isSand: boolean = false): void {
-    // Find inactive particle
+  public emitTireSmoke(pos: THREE.Vector3, vel: THREE.Vector3, surface: string = 'asphalt'): void {
     let p = this.smokeParticles.find((part) => !part.active);
     if (!p) {
-      p = this.smokeParticles[Math.floor(Math.random() * this.smokeParticles.length)];
+      p = this.smokeParticles[Math.floor(this.rng.next() * this.smokeParticles.length)];
     }
 
     p.active = true;
     p.position.copy(pos).add(new THREE.Vector3(
-      (Math.random() - 0.5) * 0.3,
+      (this.rng.next() - 0.5) * 0.3,
       0.15,
-      (Math.random() - 0.5) * 0.3
+      (this.rng.next() - 0.5) * 0.3
     ));
-    // Drift puff rises and floats with momentum
     p.velocity.copy(vel).multiplyScalar(0.2).add(new THREE.Vector3(
-      (Math.random() - 0.5) * 1.4,
-      1.2 + Math.random() * 1.8,
-      (Math.random() - 0.5) * 1.4
+      (this.rng.next() - 0.5) * 1.4,
+      1.2 + this.rng.next() * 1.8,
+      (this.rng.next() - 0.5) * 1.4
     ));
     p.scale = 0.25;
-    p.maxScale = isSand ? 1.6 : 1.3 + Math.random() * 0.8;
+
+    if (surface === 'gravel') {
+      p.color.setHex(0xc28e5c);
+      p.maxScale = 1.6 + this.rng.next() * 0.8;
+    } else if (surface === 'sand') {
+      p.color.setHex(0xd4a373);
+      p.maxScale = 1.8 + this.rng.next() * 0.8;
+    } else if (surface === 'grass') {
+      p.color.setHex(0x65a30d);
+      p.maxScale = 1.4 + this.rng.next() * 0.6;
+    } else {
+      p.color.setHex(0xf1f5f9);
+      p.maxScale = 1.3 + this.rng.next() * 0.8;
+    }
+
     p.life = 0;
-    p.maxLife = 0.65 + Math.random() * 0.45;
-    p.color.setHex(isSand ? 0xd4a373 : 0xf1f5f9);
+    p.maxLife = 0.65 + this.rng.next() * 0.45;
+  }
+
+  /**
+   * Spawns additive sparks when colliding with barriers or scraping kerbs
+   */
+  public emitSparks(pos: THREE.Vector3, dir: THREE.Vector3, count: number = 4): void {
+    for (let c = 0; c < count; c++) {
+      const sp = this.sparkParticles.find((s) => !s.active);
+      if (!sp) break;
+
+      sp.active = true;
+      sp.position.copy(pos).add(new THREE.Vector3(
+        (this.rng.next() - 0.5) * 0.2,
+        0.1 + this.rng.next() * 0.1,
+        (this.rng.next() - 0.5) * 0.2
+      ));
+      sp.velocity.set(
+        dir.x * 2.5 + (this.rng.next() - 0.5) * 4.0,
+        2.0 + this.rng.next() * 3.5,
+        dir.z * 2.5 + (this.rng.next() - 0.5) * 4.0
+      );
+      sp.scale = 0.8 + this.rng.next() * 0.6;
+      sp.life = 0;
+      sp.maxLife = 0.25 + this.rng.next() * 0.2;
+    }
   }
 
   /**
@@ -217,9 +300,14 @@ export class ParticleFX {
         const leftRear = ParticleFX._scratchTireL.set(-0.8, 0.15, -1.05).applyQuaternion(v.quaternion).add(v.position);
         const rightRear = ParticleFX._scratchTireR.set(0.8, 0.15, -1.05).applyQuaternion(v.quaternion).add(v.position);
 
-        if (Math.random() < 0.65) {
-          this.emitTireSmoke(leftRear, v.velocity);
-          this.emitTireSmoke(rightRear, v.velocity);
+        if (this.rng.next() < 0.65) {
+          const surf = v.currentSurface || 'asphalt';
+          this.emitTireSmoke(leftRear, v.velocity, surf);
+          this.emitTireSmoke(rightRear, v.velocity, surf);
+
+          if (surf === 'kerb') {
+            this.emitSparks(leftRear, v.velocity, 2);
+          }
         }
 
         if (isDrifting && v.speedKmh > 24) {
@@ -260,10 +348,37 @@ export class ParticleFX {
     }
     this.smokeMesh.instanceMatrix.needsUpdate = true;
 
-    // 3. Animate exhaust backfire
+    // 3. Animate additive sparks (G8)
+    for (let i = 0; i < this.maxSparks; i++) {
+      const sp = this.sparkParticles[i];
+      if (!sp.active) continue;
+
+      sp.life += delta;
+      if (sp.life >= sp.maxLife) {
+        sp.active = false;
+        this.sparkDummy.position.set(0, -999, 0);
+        this.sparkDummy.scale.set(0, 0, 0);
+        this.sparkDummy.updateMatrix();
+        this.sparkMesh.setMatrixAt(i, this.sparkDummy.matrix);
+        continue;
+      }
+
+      sp.position.addScaledVector(sp.velocity, delta);
+      sp.velocity.y -= 12.0 * delta; // Gravity pull
+
+      const progress = sp.life / sp.maxLife;
+      const curScale = sp.scale * (1.0 - progress);
+      this.sparkDummy.position.copy(sp.position);
+      this.sparkDummy.scale.set(curScale, curScale, curScale);
+      this.sparkDummy.updateMatrix();
+      this.sparkMesh.setMatrixAt(i, this.sparkDummy.matrix);
+    }
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
+
+    // 4. Animate exhaust backfire
     if (this.flameTimer > 0) {
       this.flameTimer -= delta;
-      const flicker = 0.8 + Math.random() * 0.5;
+      const flicker = 0.8 + this.rng.next() * 0.5;
       this.flameMeshL.scale.set(flicker, flicker, flicker * 1.4);
       this.flameMeshR.scale.set(flicker, flicker, flicker * 1.4);
       this.flameLight.intensity = this.flameTimer > 0 ? 5.0 * flicker : 0;
@@ -275,7 +390,7 @@ export class ParticleFX {
   }
 
   /**
-   * M3: Comprehensive FX restart - removes leftover skidmarks, smoke, and flames
+   * M3: Comprehensive FX restart - removes leftover skidmarks, smoke, sparks, and flames
    */
   public reset(): void {
     // Clear smoke
@@ -287,6 +402,16 @@ export class ParticleFX {
       this.smokeMesh.setMatrixAt(i, this.smokeDummy.matrix);
     }
     this.smokeMesh.instanceMatrix.needsUpdate = true;
+
+    // Clear sparks
+    for (let i = 0; i < this.maxSparks; i++) {
+      this.sparkParticles[i].active = false;
+      this.sparkDummy.position.set(0, -999, 0);
+      this.sparkDummy.scale.set(0, 0, 0);
+      this.sparkDummy.updateMatrix();
+      this.sparkMesh.setMatrixAt(i, this.sparkDummy.matrix);
+    }
+    this.sparkMesh.instanceMatrix.needsUpdate = true;
 
     // Clear skidmarks
     for (let i = 0; i < this.maxSkids; i++) {

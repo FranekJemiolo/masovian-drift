@@ -50,9 +50,49 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 - `tests/smoke-suite.mjs`: All 6 isolated browser sections PASSED (0 console errors, 0 page errors).
 - `tests/mechanics.spec.mjs`: Race finish modal & restart mechanics PASSED (0 console errors).
 
+## 2026-10-09 — Phase 3: Depth Implementation; Automated Regression Verified
+ 
+**Done**
+- **G3 & G7 Lighting, Shadows, Procedural Sky IBL & Atmospheric Presets**:
+  - Implemented procedural skydome IBL via `THREE.PMREMGenerator` compiling an equirectangular environment map from atmosphere gradient colors, setting `scene.environment`. All PBR cars, glass, chrome wheels, and water now pick up rich ambient sky reflections.
+  - Added procedural ambient contact shadow plane beneath the car chassis (`PlaneGeometry(2.3, 4.4)` with radial dark gradient canvas texture at $y=0.04$), grounding cars to the asphalt.
+  - Implemented 3 time-of-day/weather atmosphere presets: Day Azure, Golden Sunset (twilight indigo to warm amber), and Night Rally (midnight navy slate).
+- **G4 Car Shading**:
+  - Upgraded vehicle body and accent materials in `VoxelCarBuilder` to `MeshPhysicalMaterial` with clearcoat ($0.95$), low clearcoat roughness ($0.08$), and reflectivity ($0.65$).
+  - Upgraded car greenhouse windows to `MeshPhysicalMaterial` with realistic physical transmission ($0.55$), IOR ($1.52$), and low roughness ($0.05$).
+- **G8 Particles & Sparks**:
+  - Upgraded `ParticleFX` with surface-aware smoke coloration: asphalt tyre smoke (rubber light grey `#f1f5f9`), gravel dust (warm ochre `#c28e5c`), sand plume (golden sand `#d4a373`), and grass dust (`#65a30d`).
+  - Added additive collision and kerb sparks (`MeshBasicMaterial` with `THREE.AdditiveBlending`, gravity drop, and scale shrink).
+- **G9 Motion Feel & Camera Dynamics**:
+  - Added dynamic drift roll (Dutch tilt angle up to $\sim 4.5^\circ$ leaning into slide angle) in `FollowCamera`.
+  - Added speed-proportional FOV expansion (up to $+16^\circ$ at top speed) and smoothed trauma camera shake with PRNG.
+- **G11 Trackside Life**:
+  - Added animated cheering voxel spectators in grandstands with procedural jumping / cheering bounce animation.
+  - Added swaying Polish / Mazovian racing flags on grandstand canopies animated in the breeze.
+- **A6 & A7 Procedural Adaptive Synthwave Soundtrack & Countryside Ambience**:
+  - Created `MusicSynth.ts`: 100% synthesized Web Audio retro synthwave soundtrack at 128 BPM with synthesized kick drops ($140\to 38$ Hz), snare noise snaps, 16th-note metallic hi-hats, and an energetic rolling bassline in F minor.
+  - Integrated dynamic lowpass filter modulation: bass filter cutoff automatically opens up ($500\to 2800$ Hz) and triggers arpeggiated lead runs when driving fast or drifting.
+  - Added procedural countryside breeze ambience via filtered pink noise through resonant bandpass filter.
+  - Added music volume slider and on/off toggle in Settings modal with persistence in `localStorage`.
+- **M9 Drivetrain Realism**:
+  - Implemented realistic Boxer flat-six engine torque curve plateau (peak torque between 3,800 and 5,800 RPM, low-end spool, power rolloff towards 7,200 RPM redline).
+  - Added rev-limiter ignition cut ($10\%$ torque pulse) and launch control feature when brake + gas held at standstill.
+- **U9 Minimap Sector Colors & Directional Chevron**:
+  - Re-rendered circuit minimap with 3 distinct color-coded sectors: Sector 1 (Cyan `#38bdf8`), Sector 2 (Purple `#c084fc`), and Sector 3 (Amber `#facc15`).
+  - Added player directional delta chevron arrow rotated to match the car's actual heading angle.
+- **U10 Visual Hierarchy & Warnings**:
+  - Added real-time delta lap time comparison badge (+/- vs best lap) formatted in green/red under lap time.
+  - Added flashing wrong-way warning banner (`↩ WRONG WAY! ↩`) when driving against track flow.
+- **U12 Localisation**:
+  - Added Polish / English language toggle in Settings & HUD.
+
+**Automated verification sweep results**:
+- `tests/smoke-suite.mjs`: All 6 isolated browser sections PASSED (0 console errors, 0 page errors).
+- `tests/mechanics.spec.mjs`: Race finish modal & restart mechanics PASSED (0 console errors).
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
 | Stabilise (P0) | V1 V2 M1 M2 M3 U1 U2 A1 P1 P3 P7 G1 | `[x]` done |
 | Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
-| Depth | G3–G5 M5 M8–M12 A6–A9 U8–U12 G7–G12 | `[~]` in progress |
+| Depth | G3 G4 G6 G7 G8 G9 G10 G11 A2–A7 M1 M2 M3 M4 M6 M7 M9 M12 U1–U7 U9 U10 U11 U12 | `[x]` done |

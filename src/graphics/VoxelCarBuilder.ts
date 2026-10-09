@@ -28,25 +28,32 @@ export class VoxelCarBuilder {
     const bodyGroup = new THREE.Group();
     root.add(bodyGroup);
 
-    // Common materials (pixel-friendly solid colors with low roughness)
-    const bodyMat = new THREE.MeshStandardMaterial({
+    // Common materials (PBR with clearcoat car paint and glass reflection - G4)
+    const bodyMat = new THREE.MeshPhysicalMaterial({
       color,
-      roughness: 0.35,
-      metalness: 0.2,
+      roughness: 0.22,
+      metalness: 0.28,
+      clearcoat: 0.95,
+      clearcoatRoughness: 0.08,
+      reflectivity: 0.65,
       flatShading: true,
     });
-    const accentMat = new THREE.MeshStandardMaterial({
+    const accentMat = new THREE.MeshPhysicalMaterial({
       color: accentColor,
-      roughness: 0.6,
-      metalness: 0.1,
+      roughness: 0.35,
+      metalness: 0.3,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.12,
       flatShading: true,
     });
-    const glassMat = new THREE.MeshStandardMaterial({
-      color: 0x1a2634,
-      roughness: 0.1,
-      metalness: 0.9,
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x1e293b,
+      roughness: 0.05,
+      metalness: 0.15,
+      transmission: 0.55,
+      ior: 1.52,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
       flatShading: true,
     });
     const blackTrimMat = new THREE.MeshStandardMaterial({
@@ -55,27 +62,27 @@ export class VoxelCarBuilder {
       flatShading: true,
     });
     const chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      metalness: 0.85,
-      roughness: 0.2,
+      color: 0xf1f5f9,
+      metalness: 0.92,
+      roughness: 0.12,
       flatShading: true,
     });
     const headLightMat = new THREE.MeshStandardMaterial({
-      color: 0xfffae0,
-      emissive: 0xfffae0,
-      emissiveIntensity: 0.9,
+      color: 0xfffbeb,
+      emissive: 0xfef08a,
+      emissiveIntensity: 1.6,
       flatShading: true,
     });
     const brakeLightMat = new THREE.MeshStandardMaterial({
-      color: 0x7f1d1d,
-      emissive: 0x450a0a,
-      emissiveIntensity: 0.2,
+      color: 0x991b1b,
+      emissive: 0xef4444,
+      emissiveIntensity: 0.35,
       flatShading: true,
     });
     const indicatorMat = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
       emissive: 0xb45309,
-      emissiveIntensity: 0.4,
+      emissiveIntensity: 0.5,
       flatShading: true,
     });
 
@@ -316,6 +323,32 @@ export class VoxelCarBuilder {
       root.add(headlightLight);
       root.add(headlightLight.target);
     }
+
+    // Procedural Ambient Contact Shadow under chassis (G3 / G4)
+    const shadowCanvas = document.createElement('canvas');
+    shadowCanvas.width = 128;
+    shadowCanvas.height = 128;
+    const sCtx = shadowCanvas.getContext('2d');
+    if (sCtx) {
+      const grad = sCtx.createRadialGradient(64, 64, 10, 64, 64, 64);
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
+      grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.35)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      sCtx.fillStyle = grad;
+      sCtx.fillRect(0, 0, 128, 128);
+    }
+    const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+    const shadowGeo = new THREE.PlaneGeometry(2.3, 4.4);
+    shadowGeo.rotateX(-Math.PI / 2);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      map: shadowTex,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+    });
+    const contactShadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    contactShadowMesh.position.set(0, 0.04, 0);
+    root.add(contactShadowMesh);
 
     return {
       root,

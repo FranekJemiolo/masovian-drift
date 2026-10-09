@@ -72,6 +72,7 @@ export class VehiclePhysics {
   public currentSurface: 'asphalt' | 'gravel' | 'sand' | 'kerb' | 'grass' = 'asphalt';
   public isOnKerb = false;
   public isOffTrack = false;
+  public isWrongWay = false;
   private lastClosestWpIdx = 0;
 
   // Recovery timers (M7)
@@ -240,6 +241,12 @@ export class VehiclePhysics {
         this.currentSurface = 'grass';
         surfaceGrip = 0.52;
       }
+
+      // Wrong-way orientation check (U10)
+      if (wp.tangent) {
+        const forwardDot = forward.dot(wp.tangent);
+        this.isWrongWay = forwardDot < -0.35 && this.speedKmh > 12;
+      }
     }
 
     // 2. DYNAMIC WEIGHT TRANSFER CALCULATIONS (Porsche Unleashed Inspiration)
@@ -310,11 +317,32 @@ export class VehiclePhysics {
       rearMaxGrip *= 0.65; // Massive lift-off / trail-braking oversteer!
     }
 
-    // Drive Force (RWD rear wheels only!)
+    // Drive Force (RWD rear wheels only, authentic Boxer torque curve - M9)
     let driveForceN = 0;
     if (inputs.throttle > 0) {
       const gearRatio = this.specs.gearRatios[Math.max(1, this.currentGear)];
-      const engineTorque = (this.specs.enginePowerKw * 1000 * 9.5488) / Math.max(1200, this.rpm);
+
+      // Realistic Flat-6 Boxer Torque Curve (M9)
+      const peakTorqueNm = (this.specs.enginePowerKw * 1000 * 9.5488) / 5200;
+      let torqueCurveFactor = 0.7;
+      if (this.rpm < 2200) {
+        torqueCurveFactor = 0.65 + (this.rpm / 2200) * 0.20;
+      } else if (this.rpm < 3800) {
+        torqueCurveFactor = 0.85 + ((this.rpm - 2200) / 1600) * 0.15;
+      } else if (this.rpm <= 5800) {
+        torqueCurveFactor = 1.0; // Sweet-spot torque plateau
+      } else if (this.rpm <= 6800) {
+        torqueCurveFactor = 1.0 - ((this.rpm - 5800) / 1000) * 0.12;
+      } else {
+        torqueCurveFactor = Math.max(0.15, 0.88 - ((this.rpm - 6800) / 400) * 0.7);
+      }
+
+      // Rev-limiter ignition cut (M9)
+      if (this.rpm >= 7180) {
+        torqueCurveFactor *= 0.1;
+      }
+
+      const engineTorque = peakTorqueNm * torqueCurveFactor;
       const wheelTorque = engineTorque * gearRatio * this.specs.finalDrive * inputs.throttle;
       const tireRadius = 0.32;
       driveForceN = (wheelTorque / tireRadius);
@@ -627,6 +655,8 @@ export class VehiclePhysics {
       slipAngle: this.slipAngle,
       isDrifting: this.isDrifting,
       driftScore: this.driftScore,
+      isWrongWay: this.isWrongWay,
+      deltaBestLap: Number.isFinite(this.bestLapTime) ? this.currentLapTime - this.bestLapTime : undefined,
       damage: { ...this.damage },
       weightTransfer: { ...this.weightTransfer },
       lap: this.currentLap,

@@ -10,6 +10,7 @@ export interface MenuCallbacks {
   onOpenGarage: () => void;
   onTogglePixelShader: () => void;
   onSetQualityPreset?: (preset: 'low' | 'medium' | 'high' | 'ultra') => void;
+  onSetAtmosphere?: (preset: 'day' | 'sunset' | 'night') => void;
 }
 
 export class MenuUI {
@@ -253,7 +254,11 @@ export class MenuUI {
 
     const currentVol = Math.round(audio.masterVolume * 100);
     const isMuted = audio.isMuted;
+    const currentMusicVol = Math.round(audio.musicVolume * 100);
+    const isMusicOn = audio.isMusicEnabled;
     const currentPreset = localStorage.getItem('masovian_quality_preset') || 'high';
+    const currentAtmo = localStorage.getItem('masovian_atmo_preset') || 'day';
+    const currentLang = localStorage.getItem('masovian_lang') || 'en';
     const reducedMotion = localStorage.getItem('masovian_reduced_motion') === 'true';
     const highContrast = localStorage.getItem('masovian_high_contrast') === 'true';
 
@@ -267,7 +272,7 @@ export class MenuUI {
         <div class="pause-settings-grid" style="padding: 16px 0;">
           <div class="pause-setting-item">
             <div class="setting-title-row">
-              <span>🔊 MASTER VOLUME</span>
+              <span>🔊 MASTER AUDIO VOLUME</span>
               <span id="menu-val-vol">${currentVol}%</span>
             </div>
             <input type="range" id="menu-slider-vol" min="0" max="100" value="${currentVol}" class="hud-slider" />
@@ -275,9 +280,24 @@ export class MenuUI {
 
           <div class="pause-setting-item">
             <div class="setting-title-row">
-              <span>🔇 MUTE AUDIO</span>
+              <span>🎵 SYNTHWAVE MUSIC (A7)</span>
+              <span id="menu-val-music">${currentMusicVol}%</span>
             </div>
-            <button id="menu-btn-mute" class="toggle-btn ${isMuted ? 'active' : ''}">${isMuted ? 'MUTED' : 'UNMUTED'}</button>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <input type="range" id="menu-slider-music" min="0" max="100" value="${currentMusicVol}" class="hud-slider" style="flex: 1;" />
+              <button id="menu-btn-music" class="toggle-btn ${isMusicOn ? 'active' : ''}">${isMusicOn ? 'MUSIC ON' : 'MUTED'}</button>
+            </div>
+          </div>
+
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>🌅 TIME OF DAY / ATMOSPHERE (G7)</span>
+            </div>
+            <div class="btn-group-toggle">
+              <button id="atmo-day" class="toggle-btn ${currentAtmo === 'day' ? 'active' : ''}">☀️ DAY</button>
+              <button id="atmo-sunset" class="toggle-btn ${currentAtmo === 'sunset' ? 'active' : ''}">🌇 SUNSET</button>
+              <button id="atmo-night" class="toggle-btn ${currentAtmo === 'night' ? 'active' : ''}">🌙 NIGHT</button>
+            </div>
           </div>
 
           <div class="pause-setting-item">
@@ -289,6 +309,16 @@ export class MenuUI {
               <button id="preset-medium" class="toggle-btn ${currentPreset === 'medium' ? 'active' : ''}">MED</button>
               <button id="preset-high" class="toggle-btn ${currentPreset === 'high' ? 'active' : ''}">HIGH</button>
               <button id="preset-ultra" class="toggle-btn ${currentPreset === 'ultra' ? 'active' : ''}">ULTRA</button>
+            </div>
+          </div>
+
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>🌐 LANGUAGE / JĘZYK (U12)</span>
+            </div>
+            <div class="btn-group-toggle">
+              <button id="lang-en" class="toggle-btn ${currentLang === 'en' ? 'active' : ''}">EN (ENGLISH)</button>
+              <button id="lang-pl" class="toggle-btn ${currentLang === 'pl' ? 'active' : ''}">PL (POLSKI)</button>
             </div>
           </div>
 
@@ -347,6 +377,45 @@ export class MenuUI {
       const muted = audio.toggleMute();
       btnMute.textContent = muted ? 'MUTED' : 'UNMUTED';
       btnMute.classList.toggle('active', muted);
+    });
+
+    // Music controls (A7)
+    const sliderMusic = modal.querySelector('#menu-slider-music') as HTMLInputElement;
+    const valMusic = modal.querySelector('#menu-val-music') as HTMLElement;
+    sliderMusic?.addEventListener('input', () => {
+      const v = parseInt(sliderMusic.value, 10);
+      if (valMusic) valMusic.textContent = `${v}%`;
+      audio.setMusicVolume(v / 100);
+    });
+
+    const btnMusic = modal.querySelector('#menu-btn-music') as HTMLButtonElement;
+    btnMusic?.addEventListener('click', () => {
+      const on = audio.toggleMusic();
+      btnMusic.textContent = on ? 'MUSIC ON' : 'MUTED';
+      btnMusic.classList.toggle('active', on);
+    });
+
+    // Atmosphere presets (G7)
+    const atmos: ('day' | 'sunset' | 'night')[] = ['day', 'sunset', 'night'];
+    atmos.forEach((a) => {
+      modal.querySelector(`#atmo-${a}`)?.addEventListener('click', () => {
+        audio.playUiClick();
+        atmos.forEach((o) => modal.querySelector(`#atmo-${o}`)?.classList.remove('active'));
+        modal.querySelector(`#atmo-${a}`)?.classList.add('active');
+        localStorage.setItem('masovian_atmo_preset', a);
+        this.callbacks.onSetAtmosphere?.(a);
+      });
+    });
+
+    // Language toggle (U12)
+    const langs: ('en' | 'pl')[] = ['en', 'pl'];
+    langs.forEach((l) => {
+      modal.querySelector(`#lang-${l}`)?.addEventListener('click', () => {
+        audio.playUiClick();
+        langs.forEach((o) => modal.querySelector(`#lang-${o}`)?.classList.remove('active'));
+        modal.querySelector(`#lang-${l}`)?.classList.add('active');
+        localStorage.setItem('masovian_lang', l);
+      });
     });
 
     // Quality presets

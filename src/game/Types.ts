@@ -19,6 +19,8 @@ export interface VehicleState {
   slipAngle: number;
   isDrifting: boolean;
   driftScore: number;
+  isWrongWay?: boolean;
+  deltaBestLap?: number;
   damage: VehicleDamage;
   weightTransfer: WeightTransferState;
   lap: number;

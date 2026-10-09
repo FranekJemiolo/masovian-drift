@@ -522,6 +522,7 @@ export class EnvironmentGenerator {
       standGroup.add(canopy);
 
       // Canopy support poles
+      // Canopy support poles
       const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 4.2, 6);
       for (const px of [-4.8, 4.8]) {
         for (const pz of [-1.8, 1.8]) {
@@ -531,16 +532,44 @@ export class EnvironmentGenerator {
         }
       }
 
-      // Voxel Spectators Cheering!
+      // Swaying Polish / Mazovian racing flags atop canopy (G11)
+      for (const fx of [-4.5, 4.5]) {
+        const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.0, 5), standMat);
+        flagPole.position.set(fx, 5.2, 0);
+        standGroup.add(flagPole);
+
+        const flagClothGeo = new THREE.PlaneGeometry(1.2, 0.7);
+        flagClothGeo.translate(0.6, 0, 0);
+        const flagClothMat = new THREE.MeshStandardMaterial({
+          color: fx < 0 ? 0xd92b2b : 0xf8fafc,
+          roughness: 0.7,
+          side: THREE.DoubleSide,
+        });
+        const flagMesh = new THREE.Mesh(flagClothGeo, flagClothMat);
+        flagMesh.position.set(fx, 5.8, 0);
+        flagMesh.userData.phase = fx;
+        standGroup.add(flagMesh);
+        EnvironmentGenerator.flags.push(flagMesh);
+      }
+
+      // Voxel Spectators Cheering with procedural jumping animation (G11)
       for (let fx = -4.0; fx <= 4.0; fx += 1.3) {
+        const fanGroup = new THREE.Group();
+        fanGroup.position.set(fx, 1.8, -0.4);
+        fanGroup.userData.baseY = 1.8;
+
         // Body
         const fan = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.55, 0.28), fanShirtMat);
-        fan.position.set(fx, 2.0, -0.4);
-        standGroup.add(fan);
+        fan.position.set(0, 0.275, 0);
+        fanGroup.add(fan);
+
         // Head / Cap
         const fanHead = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.24), fanCapMat);
-        fanHead.position.set(fx, 2.45, -0.4);
-        standGroup.add(fanHead);
+        fanHead.position.set(0, 0.65, 0);
+        fanGroup.add(fanHead);
+
+        standGroup.add(fanGroup);
+        EnvironmentGenerator.spectators.push(fanGroup);
       }
 
       envGroup.add(standGroup);
@@ -657,14 +686,32 @@ export class EnvironmentGenerator {
   }
 
   public static turbineRotors: THREE.Group[] = [];
+  public static spectators: THREE.Group[] = [];
+  public static flags: THREE.Mesh[] = [];
+  public static animTime = 0;
 
   /**
-   * Gently spins distant wind turbines and breathes life into the world
+   * Gently spins distant wind turbines, animates cheering voxel spectators, and sways racing flags (G11)
    */
   public static update(delta: number): void {
-    const rotSpeed = 0.35; // Majestic gentle rotation
+    EnvironmentGenerator.animTime += delta;
+    const t = EnvironmentGenerator.animTime;
+
+    // 1. Wind turbines
+    const rotSpeed = 0.35;
     for (const rotor of EnvironmentGenerator.turbineRotors) {
       rotor.rotation.z += rotSpeed * delta;
+    }
+
+    // 2. Cheering voxel spectators (procedural jumping animation)
+    for (let i = 0; i < EnvironmentGenerator.spectators.length; i++) {
+      const sp = EnvironmentGenerator.spectators[i];
+      sp.position.y = (sp.userData.baseY || 1.8) + Math.abs(Math.sin(t * 6.5 + i * 0.8)) * 0.16;
+    }
+
+    // 3. Swaying racing flags in the breeze
+    for (const fl of EnvironmentGenerator.flags) {
+      fl.rotation.y = Math.sin(t * 4.5 + (fl.userData.phase || 0)) * 0.22;
     }
   }
 

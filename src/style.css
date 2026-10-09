@@ -181,6 +181,56 @@ canvas {
   transform: translateX(-50%) scale(1.06);
 }
 
+/* DELTA SPLIT & WRONG-WAY WARNING (U10) */
+.delta-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+}
+
+.delta-ahead {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.delta-behind {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.hud-wrong-way-banner {
+  position: absolute;
+  top: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 28px;
+  border-radius: 12px;
+  background: rgba(220, 38, 38, 0.88);
+  border: 2px solid #fecaca;
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  box-shadow: 0 0 35px rgba(239, 68, 68, 0.85);
+  animation: wrongWayFlash 0.5s infinite alternate ease-in-out;
+  pointer-events: none;
+  z-index: 100;
+}
+
+@keyframes wrongWayFlash {
+  0% { transform: translateX(-50%) scale(0.95); opacity: 0.85; }
+  100% { transform: translateX(-50%) scale(1.08); opacity: 1; box-shadow: 0 0 50px rgba(239, 68, 68, 1); }
+}
+
 /* BOTTOM BAR (Strictly Pinned to Bottom Edge, U6 safe area insets) */
 .hud-bottom-bar {
   position: absolute;
