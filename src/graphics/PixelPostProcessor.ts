@@ -68,15 +68,69 @@ export class PixelPostProcessor {
       uniform float uCameraNear;
       uniform float uCameraFar;
       uniform float uEdgeStrength;
+      uniform float uSpeedFactor;
+      uniform float uTime;
+      uniform float uBloomIntensity;
       varying vec2 vUv;
 
       float linearizeDepth(float depth) {
         return (2.0 * uCameraNear) / (uCameraFar + uCameraNear - depth * (uCameraFar - uCameraNear));
       }
 
+      // ACES Filmic Tone Mapping Curve (Industry standard for AAA cinematic games)
+      vec3 ACESFilm(vec3 x) {
+        float a = 2.51;
+        float b = 0.03;
+        float c = 2.43;
+        float d = 0.59;
+        float e = 0.14;
+        return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+      }
+
       void main() {
         vec2 texel = 1.0 / uResolution;
-        vec4 color = texture2D(tDiffuse, vUv);
+
+        // Dynamic High-Speed Radial Lens Aberration
+        vec2 uvCenter = vUv - 0.5;
+        float distSq = dot(uvCenter, uvCenter);
+        float speedAb = 0.008 + uSpeedFactor * 0.016;
+        vec2 caOffset = uvCenter * (distSq * speedAb);
+
+        // Chromatic aberration color sampling
+        float colR = texture2D(tDiffuse, vUv + caOffset).r;
+        float colG = texture2D(tDiffuse, vUv).g;
+        float colB = texture2D(tDiffuse, vUv - caOffset).b;
+        vec3 color = vec3(colR, colG, colB);
+
+        // High-Quality Multi-Tap Photographic Bloom (Glowing brake lights, sun specular, exhaust fire)
+        vec3 bloom = vec3(0.0);
+        float bloomThresh = 0.72;
+        
+        // 8-Tap Radial Bloom Kernel
+        vec2 bOffsets[8];
+        bOffsets[0] = vec2(-2.2, -2.2);
+        bOffsets[1] = vec2( 2.2, -2.2);
+        bOffsets[2] = vec2(-2.2,  2.2);
+        bOffsets[3] = vec2( 2.2,  2.2);
+        bOffsets[4] = vec2(-4.5,  0.0);
+        bOffsets[5] = vec2( 4.5,  0.0);
+        bOffsets[6] = vec2( 0.0, -4.5);
+        bOffsets[7] = vec2( 0.0,  4.5);
+
+        for (int i = 0; i < 8; i++) {
+          vec3 bSample = texture2D(tDiffuse, vUv + bOffsets[i] * texel * 1.5).rgb;
+          float bLum = dot(bSample, vec3(0.2126, 0.7152, 0.0722));
+          if (bLum > bloomThresh) {
+            bloom += (bSample - bloomThresh) * 0.14;
+          }
+          // Wide halo tap
+          vec3 bWide = texture2D(tDiffuse, vUv + bOffsets[i] * texel * 3.8).rgb;
+          float bLumW = dot(bWide, vec3(0.2126, 0.7152, 0.0722));
+          if (bLumW > bloomThresh) {
+            bloom += (bWide - bloomThresh) * 0.08;
+          }
+        }
+        color += bloom * uBloomIntensity;
 
         // Crisp Geometric Voxel Edge Detection
         float d00 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, -texel.y)).r);
@@ -84,31 +138,36 @@ export class PixelPostProcessor {
         float d02 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, texel.y)).r);
         float d22 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, texel.y)).r);
 
-        float edge = length(vec2(d20 - d02, d22 - d00)) * 8.0;
+        float edge = length(vec2(d20 - d02, d22 - d00)) * 7.5;
 
-        // Color difference for crisp outline
+        // Color difference for crisp silhouette outlines
         vec3 cLeft = texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb;
         vec3 cRight = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb;
         vec3 cUp = texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb;
         vec3 cDown = texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
         float colorEdge = length(cRight - cLeft) + length(cUp - cDown);
 
-        float edgeFactor = clamp((edge * 0.6 + colorEdge * 0.25) * uEdgeStrength, 0.0, 1.0);
+        float edgeFactor = clamp((edge * 0.45 + colorEdge * 0.20) * uEdgeStrength, 0.0, 1.0);
 
-        // Filmic tone curve & vibrant arcade richness
-        vec3 rgb = color.rgb;
-        // Mild tone curve preserving highlights and opening shadow details
-        vec3 lifted = pow(rgb, vec3(0.92)); 
-        float lum = dot(lifted, vec3(0.299, 0.587, 0.114));
-        vec3 satColor = mix(vec3(lum), lifted, 1.20); // +20% rich saturation
+        // Warm Golden-Hour Color Grading (Mazovian sunset palette)
+        vec3 graded = color * vec3(1.05, 1.02, 0.97); // Warm sunlight spectrum
+        graded = ACESFilm(graded * 1.14);
 
-        // Clean subtle silhouette enhancement
-        vec3 finalColor = mix(satColor, satColor * 0.55, edgeFactor * 0.4);
+        // Saturation boost for punchy arcade look
+        float lum = dot(graded, vec3(0.299, 0.587, 0.114));
+        vec3 satColor = mix(vec3(lum), graded, 1.25);
 
-        // Soft arcade lens vignette
-        vec2 uvCenter = vUv - 0.5;
-        float vignette = clamp(1.0 - dot(uvCenter, uvCenter) * 0.35, 0.0, 1.0);
+        // Silhouette edge shading
+        vec3 finalColor = mix(satColor, satColor * 0.54, edgeFactor * 0.35);
+
+        // High-Speed Speed Lines & Vignette
+        float speedVignette = 0.35 + uSpeedFactor * 0.25;
+        float vignette = clamp(1.0 - distSq * speedVignette, 0.0, 1.0);
         finalColor *= vignette;
+
+        // Subtle film grain
+        float noise = fract(sin(dot(vUv * uResolution, vec2(12.9898, 78.233)) + uTime) * 43758.5453);
+        finalColor += (noise - 0.5) * 0.012;
 
         gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
       }
@@ -123,7 +182,10 @@ export class PixelPostProcessor {
         uResolution: { value: new THREE.Vector2(this.width, this.height) },
         uCameraNear: { value: 0.1 },
         uCameraFar: { value: 1200.0 },
-        uEdgeStrength: { value: options.edgeStrength ?? 0.5 },
+        uEdgeStrength: { value: options.edgeStrength ?? 0.45 },
+        uSpeedFactor: { value: 0.0 },
+        uTime: { value: 0.0 },
+        uBloomIntensity: { value: 1.25 },
       },
       depthWrite: false,
       depthTest: false,
@@ -131,6 +193,12 @@ export class PixelPostProcessor {
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMaterial);
     this.postScene.add(this.quad);
+  }
+
+  public update(time: number, speedKmh: number = 0): void {
+    this.postMaterial.uniforms.uTime.value = time;
+    const speedFactor = THREE.MathUtils.clamp((speedKmh - 40.0) / 140.0, 0.0, 1.0);
+    this.postMaterial.uniforms.uSpeedFactor.value = speedFactor;
   }
 
   public setPixelScale(scale: number): void {

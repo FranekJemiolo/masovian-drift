@@ -9,6 +9,8 @@ export interface CarVisualElements {
   wheelRR: THREE.Group;
   wheelSpins: [THREE.Group, THREE.Group, THREE.Group, THREE.Group]; // FL, FR, RL, RR spin hubs
   brakeLightMaterial: THREE.MeshStandardMaterial;
+  brakeRotorMaterials: THREE.MeshStandardMaterial[];
+  driverHead: THREE.Group;
   headlightLight: THREE.SpotLight | null;
   exhaustPipes: THREE.Vector3[];
 }
@@ -135,17 +137,78 @@ export class VoxelCarBuilder {
     addBox(0.08, 0.4, 0.12, -0.59, 0.76, -0.65, bodyMat);
     addBox(0.08, 0.4, 0.12, 0.59, 0.76, -0.65, bodyMat);
 
-    // 4. Iconic Rear Engine Deck Vents (Boxer cooling slats)
+    // 4. Iconic Rear Engine Deck Vents & Air-Cooled Boxer Fan
     for (let i = 0; i < 4; i++) {
       addBox(0.8, 0.03, 0.06, 0, 0.71, -1.2 - i * 0.12, blackTrimMat);
     }
+    // Iconic Air-Cooled Boxer Turbine Fan (visible under decklid)
+    const fanGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.08, 12);
+    fanGeo.rotateX(Math.PI / 2);
+    const fanMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.25 });
+    const fan = new THREE.Mesh(fanGeo, fanMat);
+    fan.position.set(0, 0.62, -1.38);
+    bodyGroup.add(fan);
 
     // 5. Classic Ducktail / Whale-Tail Rear Spoiler
     addBox(1.3, 0.08, 0.35, 0, 0.78, -1.82, accentMat);
     addBox(0.2, 0.12, 0.2, -0.4, 0.72, -1.8, blackTrimMat);
     addBox(0.2, 0.12, 0.2, 0.4, 0.72, -1.8, blackTrimMat);
 
-    // 6. Flared Wheel Arches (Wide rear boxer stance!)
+    // 6. Motorsport Aero (Front Splitter, Side Skirts, Rear Diffuser Fins)
+    // Low front chin splitter
+    addBox(1.44, 0.05, 0.45, 0, 0.16, 1.88, blackTrimMat);
+    // Left & Right Ground-effect side skirts
+    addBox(0.08, 0.06, 2.0, -0.74, 0.17, 0.0, blackTrimMat);
+    addBox(0.08, 0.06, 2.0, 0.74, 0.17, 0.0, blackTrimMat);
+    // Rear diffuser vertical aerodynamic fins
+    addBox(0.04, 0.14, 0.5, -0.32, 0.18, -1.98, blackTrimMat);
+    addBox(0.04, 0.14, 0.5, 0, 0.18, -1.98, blackTrimMat);
+    addBox(0.04, 0.14, 0.5, 0.32, 0.18, -1.98, blackTrimMat);
+
+    // 7. Interior Cockpit (Steering Wheel, Dashboard, Roll Cage, Voxel Driver with Helmet)
+    // Dashboard
+    addBox(1.15, 0.18, 0.35, 0, 0.65, 0.25, blackTrimMat);
+    // Sports Steering Wheel
+    const steerWheel = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.022, 6, 14), blackTrimMat);
+    steerWheel.position.set(-0.32, 0.70, 0.14);
+    steerWheel.rotation.x = Math.PI * 0.28;
+    bodyGroup.add(steerWheel);
+
+    // Racing Bucket Seats (Driver & Co-driver)
+    addBox(0.44, 0.52, 0.38, -0.32, 0.56, -0.16, blackTrimMat);
+    addBox(0.48, 0.14, 0.14, -0.32, 0.86, -0.22, blackTrimMat); // Driver Headrest wings
+    addBox(0.44, 0.52, 0.38, 0.32, 0.56, -0.16, blackTrimMat); // Passenger seat
+
+    // Lightweight Motorsport Roll Cage
+    addBox(0.04, 0.46, 0.04, -0.48, 0.76, -0.48, accentMat);
+    addBox(0.04, 0.46, 0.04, 0.48, 0.76, -0.48, accentMat);
+    addBox(0.96, 0.04, 0.04, 0, 0.96, -0.48, accentMat);
+    addBox(0.04, 0.04, 0.8, -0.48, 0.96, -0.08, accentMat);
+    addBox(0.04, 0.04, 0.8, 0.48, 0.96, -0.08, accentMat);
+
+    // Voxel Driver Model (Torso, arms on steering wheel, animated helmet looking at apex)
+    const driverSuitMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.6, flatShading: true }); // Racing blue suit
+    const driverHelmetMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.3, flatShading: true }); // Gloss white helmet
+    const driverVisorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, metalness: 0.95 }); // Dark tinted visor
+
+    // Driver Torso & Arms
+    addBox(0.36, 0.34, 0.26, -0.32, 0.60, -0.12, driverSuitMat);
+    addBox(0.08, 0.08, 0.26, -0.42, 0.65, 0.01, driverSuitMat); // Left arm
+    addBox(0.08, 0.08, 0.26, -0.22, 0.65, 0.01, driverSuitMat); // Right arm
+
+    // Driver Head & Helmet (Pivot for apex lookahead)
+    const driverHead = new THREE.Group();
+    driverHead.position.set(-0.32, 0.83, -0.10);
+    const helmetMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.26), driverHelmetMat);
+    helmetMesh.castShadow = true;
+    driverHead.add(helmetMesh);
+
+    const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.06), driverVisorMat);
+    visorMesh.position.set(0, 0.01, 0.13);
+    driverHead.add(visorMesh);
+    bodyGroup.add(driverHead);
+
+    // 8. Flared Wheel Arches (Wide rear boxer stance!)
     // Front arches
     addBox(0.12, 0.26, 0.85, -0.73, 0.45, 1.05, bodyMat);
     addBox(0.12, 0.26, 0.85, 0.73, 0.45, 1.05, bodyMat);
@@ -153,7 +216,7 @@ export class VoxelCarBuilder {
     addBox(0.16, 0.32, 0.95, -0.78, 0.46, -1.05, bodyMat);
     addBox(0.16, 0.32, 0.95, 0.78, 0.46, -1.05, bodyMat);
 
-    // 7. Headlights (round voxel pods with bezels)
+    // 9. Headlights (round voxel pods with bezels)
     addBox(0.26, 0.26, 0.14, -0.5, 0.55, 1.84, headLightMat);
     addBox(0.26, 0.26, 0.14, 0.5, 0.55, 1.84, headLightMat);
     // Chrome headlight rings
@@ -164,12 +227,12 @@ export class VoxelCarBuilder {
     addBox(0.22, 0.08, 0.08, -0.52, 0.36, 1.95, indicatorMat);
     addBox(0.22, 0.08, 0.08, 0.52, 0.36, 1.95, indicatorMat);
 
-    // 8. Rear Tail lights (Continuous wide bar + brake lights)
+    // 10. Rear Tail lights (Continuous wide bar + brake lights)
     addBox(1.3, 0.12, 0.08, 0, 0.55, -2.04, brakeLightMat);
     addBox(0.25, 0.12, 0.08, -0.55, 0.55, -2.05, brakeLightMat);
     addBox(0.25, 0.12, 0.08, 0.55, 0.55, -2.05, brakeLightMat);
 
-    // 9. Dual Chrome Exhaust Tips (lowered at rear bumper)
+    // 11. Dual Chrome Exhaust Tips (lowered at rear bumper)
     addBox(0.12, 0.12, 0.3, -0.42, 0.22, -2.08, chromeMat);
     addBox(0.12, 0.12, 0.3, 0.42, 0.22, -2.08, chromeMat);
     const exhaustPipes = [
@@ -177,7 +240,9 @@ export class VoxelCarBuilder {
       new THREE.Vector3(0.42, 0.22, -2.15),
     ];
 
-    // 10. Wheels (FL, FR, RL, RR) with isolated steer pivot and axle spin hub
+    // 12. Wheels (FL, FR, RL, RR) with isolated steer pivot, brake rotors, and Fuchs/BBS hubs
+    const brakeRotorMaterials: THREE.MeshStandardMaterial[] = [];
+
     const createWheel = (x: number, z: number, isRight: boolean): { pivot: THREE.Group; spin: THREE.Group } => {
       const pivotGroup = new THREE.Group();
       pivotGroup.position.set(x, 0.32, z);
@@ -189,8 +254,8 @@ export class VoxelCarBuilder {
       // Tire (cylinder rotated 90 deg)
       const tireGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.24, 16);
       const tireMat = new THREE.MeshStandardMaterial({
-        color: 0x1c1917,
-        roughness: 0.9,
+        color: 0x18181b,
+        roughness: 0.92,
         flatShading: true,
       });
       const tireMesh = new THREE.Mesh(tireGeo, tireMat);
@@ -198,16 +263,36 @@ export class VoxelCarBuilder {
       tireMesh.castShadow = true;
       spinGroup.add(tireMesh);
 
-      // Rim (chrome / silver center)
-      const rimGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.25, 10);
-      const rimMesh = new THREE.Mesh(rimGeo, chromeMat);
-      rimMesh.rotation.z = Math.PI / 2;
-      spinGroup.add(rimMesh);
+      // Chrome Deep-Dish Outer Rim Lip
+      const rimLipGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.245, 12);
+      const rimLipMesh = new THREE.Mesh(rimLipGeo, chromeMat);
+      rimLipMesh.rotation.z = Math.PI / 2;
+      spinGroup.add(rimLipMesh);
 
-      // Brake caliper (remains attached to pivotGroup, does NOT rotate with wheel roll!)
+      // Satin Black Fuchs / BBS Spoke Inset
+      const spokeGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.25, 5);
+      const spokeMesh = new THREE.Mesh(spokeGeo, blackTrimMat);
+      spokeMesh.rotation.z = Math.PI / 2;
+      spinGroup.add(spokeMesh);
+
+      // Ventilated Steel Brake Rotor (heats up and glows orange-red under heavy braking!)
+      const rotorGeo = new THREE.CylinderGeometry(0.23, 0.23, 0.05, 12);
+      const rotorMat = new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        metalness: 0.9,
+        roughness: 0.3,
+        emissive: new THREE.Color(0x000000),
+        emissiveIntensity: 0.0,
+      });
+      brakeRotorMaterials.push(rotorMat);
+      const rotorMesh = new THREE.Mesh(rotorGeo, rotorMat);
+      rotorMesh.rotation.z = Math.PI / 2;
+      spinGroup.add(rotorMesh);
+
+      // Brembo-style Brake Caliper (stays attached to kingpin pivot, upright!)
       const caliperMat = new THREE.MeshStandardMaterial({
         color: 0xd97706,
-        roughness: 0.5,
+        roughness: 0.45,
       });
       const caliper = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.08), caliperMat);
       caliper.position.set(isRight ? -0.06 : 0.06, 0.1, 0);
@@ -222,12 +307,12 @@ export class VoxelCarBuilder {
     const wheelRLData = createWheel(-0.80, -1.05, false);
     const wheelRRData = createWheel(0.80, -1.05, true);
 
-    // Optional headlight spot for player
+    // Headlight spot for player with volumetric ground cast
     let headlightLight: THREE.SpotLight | null = null;
     if (isPlayer) {
-      headlightLight = new THREE.SpotLight(0xfffae0, 2.5, 45, Math.PI * 0.25, 0.4, 1);
+      headlightLight = new THREE.SpotLight(0xfffae0, 2.8, 55, Math.PI * 0.28, 0.45, 1);
       headlightLight.position.set(0, 0.6, 1.8);
-      headlightLight.target.position.set(0, 0.2, 10);
+      headlightLight.target.position.set(0, 0.2, 12);
       root.add(headlightLight);
       root.add(headlightLight.target);
     }
@@ -241,6 +326,8 @@ export class VoxelCarBuilder {
       wheelRR: wheelRRData.pivot,
       wheelSpins: [wheelFLData.spin, wheelFRData.spin, wheelRLData.spin, wheelRRData.spin],
       brakeLightMaterial: brakeLightMat,
+      brakeRotorMaterials,
+      driverHead,
       headlightLight,
       exhaustPipes,
     };

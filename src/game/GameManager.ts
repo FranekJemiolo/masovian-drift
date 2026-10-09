@@ -3,7 +3,9 @@ import { AudioManager } from '../audio/AudioManager';
 import { FollowCamera } from '../camera/FollowCamera';
 import { InputManager } from '../controls/InputManager';
 import { EvolutionStore } from '../economy/EvolutionStore';
+import { Atmosphere } from '../graphics/Atmosphere';
 import { EnvironmentGenerator } from '../graphics/EnvironmentGenerator';
+import { ParticleFX } from '../graphics/ParticleFX';
 import { PixelPostProcessor } from '../graphics/PixelPostProcessor';
 import { TrackMeshBuilder } from '../graphics/TrackMeshBuilder';
 import { VoxelCarBuilder } from '../graphics/VoxelCarBuilder';
@@ -21,6 +23,9 @@ export class GameManager {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private postProcessor!: PixelPostProcessor;
+  private atmosphere!: Atmosphere;
+  private particleFX!: ParticleFX;
+  private sunLight!: THREE.DirectionalLight;
 
   // Cameras
   private p1Camera!: FollowCamera;
@@ -77,26 +82,28 @@ export class GameManager {
     const ambientLight = new THREE.AmbientLight(0xfff7ed, 0.65);
     this.scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfff1cc, 2.4);
-    // Sun shines from rear-left towards the start straight and cars
-    sunLight.position.set(-100, 170, -90);
-    sunLight.target.position.set(0, 0, 20);
-    this.scene.add(sunLight.target);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 480;
-    const d = 180;
-    sunLight.shadow.camera.left = -d;
-    sunLight.shadow.camera.right = d;
-    sunLight.shadow.camera.top = d;
-    sunLight.shadow.camera.bottom = -d;
-    sunLight.shadow.bias = -0.0004;
-    this.scene.add(sunLight);
+    this.sunLight = new THREE.DirectionalLight(0xfff1cc, 2.5);
+    // Dynamic tracking sun light with focused shadow frustum
+    this.sunLight.position.set(-65, 115, -55);
+    this.sunLight.target.position.set(0, 0, 0);
+    this.scene.add(this.sunLight.target);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.camera.near = 15;
+    this.sunLight.shadow.camera.far = 260;
+    const d = 75; // Focused 75m radius around player for razor-sharp voxel shadows
+    this.sunLight.shadow.camera.left = -d;
+    this.sunLight.shadow.camera.right = d;
+    this.sunLight.shadow.camera.top = d;
+    this.sunLight.shadow.camera.bottom = -d;
+    this.sunLight.shadow.bias = -0.0006;
+    this.sunLight.shadow.normalBias = 0.02; // Eliminates shadow acne on voxel steps
+    this.scene.add(this.sunLight);
 
-    // Add floating voxel clouds
-    this.generateVoxelClouds();
+    // Procedural atmospheric skydome, golden haze, and dual-tone voxel clouds
+    this.atmosphere = new Atmosphere(this.scene);
+    this.particleFX = new ParticleFX(this.scene);
 
     // 3. Initialize Physics World (Rapier3D WASM)
     this.physicsWorld = new PhysicsWorld();
@@ -169,34 +176,6 @@ export class GameManager {
 
     // Start Main Render & Simulation Loop
     this.animate();
-  }
-
-  private generateVoxelClouds(): void {
-    const cloudCount = 28;
-    const cloudGroup = new THREE.Group();
-    const cloudGeo = new THREE.BoxGeometry(24, 6, 36);
-    const cloudMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.95,
-      flatShading: true,
-    });
-    const instancedClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudCount);
-
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < cloudCount; i++) {
-      const x = (Math.random() - 0.5) * 1200;
-      const y = 80 + Math.random() * 35;
-      const z = (Math.random() - 0.5) * 1200;
-      const s = 0.8 + Math.random() * 1.4;
-      dummy.position.set(x, y, z);
-      dummy.scale.set(s * (1 + Math.random() * 0.6), s * 0.6, s * (1 + Math.random() * 0.6));
-      dummy.rotation.y = Math.random() * Math.PI;
-      dummy.updateMatrix();
-      instancedClouds.setMatrixAt(i, dummy.matrix);
-    }
-    instancedClouds.instanceMatrix.needsUpdate = true;
-    cloudGroup.add(instancedClouds);
-    this.scene.add(cloudGroup);
   }
 
   private spawnShowcaseCar(): void {
@@ -538,12 +517,39 @@ export class GameManager {
         );
       }
 
-      // 4. Update HUD
+      // 4. Update Atmosphere, Shadows & Particle FX
+      this.atmosphere.update(delta, this.playerVehicle.position);
+      this.particleFX.update(delta, this.allVehicles);
+
+      // Dynamic Focused Directional Shadow following the player
+      const p = this.playerVehicle.position;
+      this.sunLight.target.position.set(p.x, p.y, p.z);
+      this.sunLight.position.set(p.x - 65, p.y + 115, p.z - 55);
+      this.sunLight.target.updateMatrixWorld();
+
+      // Dynamic Environment animation (rotating wind turbines)
+      EnvironmentGenerator.update(delta);
+
+      // Post-Processing uniforms (time, high-speed lens warp, photographic bloom)
+      this.postProcessor.update(
+        this.clock.getElapsedTime(),
+        this.playerVehicle.speedKmh
+      );
+
+      // Exhaust backfire pop on high RPM throttle lift-off
+      if (this.playerVehicle.rpm > 6200 && this.inputManager.getPlayerInputs().throttle < 0.1) {
+        if (Math.random() < 0.25) {
+          this.particleFX.triggerBackfire(this.playerVehicle.visual.exhaustPipes, this.playerVehicle.visual.root);
+        }
+      }
+
+      // 5. Update HUD (with real-time circuit Minimap & Drift Combo Banner)
       const p1State = this.playerVehicle.getVehicleState();
       const p2State = this.p2Vehicle?.getVehicleState();
-      this.hud.update(p1State, p2State);
+      const allStates = this.allVehicles.map((v) => v.getVehicleState());
+      this.hud.update(p1State, p2State, allStates, this.waypoints);
 
-      // 5. P2P WebRTC State Broadcast (with backpressure throttling)
+      // 6. P2P WebRTC State Broadcast (with backpressure throttling)
       if (
         (this.currentMode === 'multiplayer-host' || this.currentMode === 'multiplayer-join') &&
         this.webRTCManager.isConnected
@@ -565,6 +571,7 @@ export class GameManager {
     } else {
       // Menu showcase mode: slow cinematic orbit camera around the player's voxel car!
       if (this.playerVehicle) {
+        this.atmosphere.update(delta, this.playerVehicle.position);
         const t = this.clock.getElapsedTime() * 0.22;
         const carPos = this.playerVehicle.position;
         const camDist = 6.8;
@@ -577,7 +584,7 @@ export class GameManager {
       }
     }
 
-    // 6. RENDER FRAME (Split-Screen Scissor / Viewport or Fullscreen)
+    // 7. RENDER FRAME (Split-Screen Scissor / Viewport or Fullscreen)
     this.renderFrame();
   };
 

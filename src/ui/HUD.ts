@@ -1,4 +1,5 @@
 import { VehicleState } from '../game/Types';
+import { Waypoint } from '../physics/TrackWaypoints';
 
 export class HUD {
   private container: HTMLDivElement;
@@ -13,8 +14,13 @@ export class HUD {
   private rankEl!: HTMLElement;
   private driftScoreEl!: HTMLElement;
   private driftCardEl!: HTMLElement;
+  private driftBannerEl!: HTMLElement;
   private damageEl!: HTMLElement;
   private biasTagEl!: HTMLElement;
+
+  // Minimap
+  private minimapCanvas!: HTMLCanvasElement;
+  private minimapCtx: CanvasRenderingContext2D | null = null;
 
   // Telemetry load indicators
   private loadFLEl!: HTMLElement;
@@ -58,7 +64,15 @@ export class HUD {
           <div class="hud-label">DRIFT SCORE</div>
           <div id="hud-drift" class="hud-value drift-text">0 PTS</div>
         </div>
+
+        <!-- 2D CIRCUIT MINIMAP -->
+        <div class="minimap-card hud-glass">
+          <canvas id="hud-minimap" width="240" height="240"></canvas>
+        </div>
       </div>
+
+      <!-- DYNAMIC DRIFT CELEBRATION BANNER -->
+      <div id="hud-drift-banner" class="hud-drift-banner">🔥 MASOVIAN DRIFT!</div>
 
       <!-- COUNTDOWN OVERLAY -->
       <div id="hud-countdown" class="hud-countdown-overlay" style="display: none;">
@@ -155,8 +169,14 @@ export class HUD {
     this.rankEl = this.container.querySelector('#hud-rank')!;
     this.driftScoreEl = this.container.querySelector('#hud-drift')!;
     this.driftCardEl = this.container.querySelector('#hud-drift-card')!;
+    this.driftBannerEl = this.container.querySelector('#hud-drift-banner')!;
     this.damageEl = this.container.querySelector('#hud-damage-status')!;
     this.biasTagEl = this.container.querySelector('#hud-bias-tag')!;
+
+    this.minimapCanvas = this.container.querySelector('#hud-minimap')!;
+    if (this.minimapCanvas) {
+      this.minimapCtx = this.minimapCanvas.getContext('2d');
+    }
 
     this.loadFLEl = this.container.querySelector('#patch-fl .fill')!;
     this.loadFREl = this.container.querySelector('#patch-fr .fill')!;
@@ -187,7 +207,12 @@ export class HUD {
     this.container.style.display = 'none';
   }
 
-  public update(playerState: VehicleState, p2State?: VehicleState): void {
+  public update(
+    playerState: VehicleState,
+    p2State?: VehicleState,
+    allVehicles?: VehicleState[],
+    waypoints?: Waypoint[]
+  ): void {
     this.speedEl.textContent = Math.round(playerState.speedKmh).toString();
     this.rpmEl.textContent = Math.round(playerState.rpm).toString();
 
@@ -219,12 +244,21 @@ export class HUD {
       .toString()
       .padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
 
-    // Drift score & flame animation
+    // Drift score, card flame & dynamic center banner
     this.driftScoreEl.textContent = `${playerState.driftScore} PTS`;
-    if (playerState.isDrifting) {
+    if (playerState.isDrifting && playerState.speedKmh > 22) {
       this.driftCardEl.classList.add('drifting-flame');
+      this.driftBannerEl.classList.add('active');
+      const driftMultiplier = (1.0 + playerState.speedKmh / 80).toFixed(1);
+      this.driftBannerEl.textContent = `🔥 DRIFT x${driftMultiplier}! +${playerState.driftScore} PTS`;
     } else {
       this.driftCardEl.classList.remove('drifting-flame');
+      this.driftBannerEl.classList.remove('active');
+    }
+
+    // Render Real-Time Minimap
+    if (allVehicles && waypoints && this.minimapCtx) {
+      this.renderMinimap(allVehicles, waypoints);
     }
 
     // Weight transfer load telemetry
@@ -283,5 +317,88 @@ export class HUD {
   public hideCountdown(): void {
     const el = document.getElementById('hud-countdown');
     if (el) el.style.display = 'none';
+  }
+
+  /**
+   * Renders the 2D race circuit outline and live car markers
+   */
+  public renderMinimap(allVehicles: VehicleState[], waypoints: Waypoint[]): void {
+    if (!this.minimapCtx || waypoints.length === 0) return;
+    const ctx = this.minimapCtx;
+    const w = this.minimapCanvas.width;
+    const h = this.minimapCanvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Track boundary coordinates
+    const minX = -190, maxX = 295;
+    const minZ = -355, maxZ = 280;
+    const spanX = maxX - minX;
+    const spanZ = maxZ - minZ;
+
+    const toMap = (x: number, z: number): [number, number] => {
+      const pad = 14;
+      const mx = pad + ((x - minX) / spanX) * (w - pad * 2);
+      const my = pad + ((z - minZ) / spanZ) * (h - pad * 2);
+      return [mx, my];
+    };
+
+    // Draw track path glow & stroke
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const [startX, startY] = toMap(waypoints[0].point.x, waypoints[0].point.z);
+    ctx.moveTo(startX, startY);
+    for (let i = 1; i < waypoints.length; i++) {
+      const [mx, my] = toMap(waypoints[i].point.x, waypoints[i].point.z);
+      ctx.lineTo(mx, my);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)'; // Cyan ambient glow
+    ctx.stroke();
+
+    ctx.lineWidth = 4.5;
+    ctx.strokeStyle = 'rgba(248, 250, 252, 0.85)'; // Crisp white road ribbon
+    ctx.stroke();
+
+    // Start/Finish line marker (gold)
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(startX, startY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw opponent AI vehicles
+    for (const v of allVehicles) {
+      if (v.isPlayer) continue;
+      const [vx, vy] = toMap(v.position.x, v.position.z);
+      ctx.fillStyle = v.name.includes('Kuba') ? '#ef4444' :
+                      v.name.includes('Ania') ? '#e2e8f0' :
+                      v.name.includes('Tomek') ? '#3b82f6' :
+                      v.name.includes('Zofia') ? '#facc15' : '#22c55e';
+      ctx.beginPath();
+      ctx.arc(vx, vy, 4.0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Draw player vehicle (prominent cyan dot with white halo)
+    const player = allVehicles.find((v) => v.isPlayer);
+    if (player) {
+      const [px, py] = toMap(player.position.x, player.position.z);
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
   }
 }

@@ -58,6 +58,7 @@ export class VehiclePhysics {
   private readonly cogHeight = 0.42; // Center of gravity height
 
   // Race progression tracking
+  private brakeRotorHeat = 0;
   public currentLap = 1;
   public currentCheckpointIndex = 0;
   public currentLapTime = 0;
@@ -456,6 +457,35 @@ export class VehiclePhysics {
     } else {
       this.visual.brakeLightMaterial.emissive.setHex(0x450a0a);
       this.visual.brakeLightMaterial.emissiveIntensity = 0.2;
+    }
+
+    // Ventilated steel brake rotor thermal glow effect
+    if (inputs.brake > 0.08 && this.speedKmh > 18) {
+      this.brakeRotorHeat = Math.min(1.0, this.brakeRotorHeat + inputs.brake * (this.speedKmh / 140.0) * dt * 2.2);
+    } else {
+      this.brakeRotorHeat = Math.max(0.0, this.brakeRotorHeat - dt * 0.7);
+    }
+
+    if (this.visual.brakeRotorMaterials && this.visual.brakeRotorMaterials.length > 0) {
+      const heat = this.brakeRotorHeat;
+      for (const mat of this.visual.brakeRotorMaterials) {
+        if (heat > 0.06) {
+          mat.emissive.setHex(0xff3d00); // Incandescent red-orange glow
+          mat.emissiveIntensity = heat * 3.4;
+        } else {
+          mat.emissiveIntensity = 0.0;
+        }
+      }
+    }
+
+    // Voxel Driver Helmet turns head towards corner apex
+    if (this.visual.driverHead) {
+      const targetHeadYaw = -this.steerAngle * 0.65;
+      this.visual.driverHead.rotation.y = THREE.MathUtils.lerp(
+        this.visual.driverHead.rotation.y,
+        targetHeadYaw,
+        dt * 10.0
+      );
     }
   }
 

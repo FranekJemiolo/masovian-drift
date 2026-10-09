@@ -112,9 +112,8 @@ canvas {
 }
 
 .drift-card {
-  margin-left: auto;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  min-width: 140px;
+  min-width: 130px;
   text-align: right;
 }
 
@@ -132,6 +131,54 @@ canvas {
 .drifting-flame .drift-text {
   color: #ff3b30;
   text-shadow: 0 0 16px #ff3b30, 0 0 30px #f59e0b;
+}
+
+/* MINIMAP & DRIFT BANNER */
+.minimap-card {
+  margin-left: auto;
+  padding: 6px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+}
+
+#hud-minimap {
+  width: 120px;
+  height: 120px;
+  border-radius: 10px;
+  display: block;
+}
+
+.hud-drift-banner {
+  position: absolute;
+  top: 85px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.9);
+  padding: 8px 24px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.22);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fbbf24;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-shadow: 0 0 16px rgba(245, 158, 11, 0.8);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.3);
+}
+
+.hud-drift-banner.active {
+  opacity: 1;
+  transform: translateX(-50%) scale(1.06);
 }
 
 /* BOTTOM BAR (Strictly Pinned to Bottom Edge) */
