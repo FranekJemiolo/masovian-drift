@@ -74,6 +74,23 @@ export class HUD {
     onBloomChange?: (val: number) => void;
   } = {};
 
+  // DOM dirty-checking caches to prevent reflows & micro-stutter (P11)
+  private _lastSpeed = -1;
+  private _lastRpm = -1;
+  private _lastRpmWidth = '';
+  private _lastIsRedline = false;
+  private _lastGear = '';
+  private _lastLap = '';
+  private _lastRank = '';
+  private _lastTime = '';
+  private _lastDrift = '';
+  private _lastDamage = '';
+  private _lastBias = '';
+  private _lastMinimapTime = 0;
+  private _lastP2Speed = -1;
+  private _lastP2Rpm = -1;
+  private _lastP2Gear = '';
+
   constructor() {
     this.container = document.createElement('div');
     this.container.id = 'game-hud';
@@ -587,16 +604,34 @@ export class HUD {
     allVehicles?: VehicleState[],
     waypoints?: Waypoint[]
   ): void {
-    this.speedEl.textContent = Math.round(playerState.speedKmh).toString();
-    this.rpmEl.textContent = Math.round(playerState.rpm).toString();
+    const spd = Math.round(playerState.speedKmh);
+    if (spd !== this._lastSpeed) {
+      this.speedEl.textContent = spd.toString();
+      this._lastSpeed = spd;
+    }
+
+    const rpmVal = Math.round(playerState.rpm);
+    if (rpmVal !== this._lastRpm) {
+      this.rpmEl.textContent = rpmVal.toString();
+      this._lastRpm = rpmVal;
+    }
 
     // RPM fill percentage (up to 7800 RPM)
     const rpmPercent = Math.min(100, Math.max(0, (playerState.rpm / 7800) * 100));
-    this.rpmBarEl.style.width = `${rpmPercent}%`;
-    if (playerState.rpm > 6800) {
-      this.rpmBarEl.classList.add('redline');
-    } else {
-      this.rpmBarEl.classList.remove('redline');
+    const widthStr = `${rpmPercent.toFixed(1)}%`;
+    if (widthStr !== this._lastRpmWidth) {
+      this.rpmBarEl.style.width = widthStr;
+      this._lastRpmWidth = widthStr;
+    }
+
+    const isRedline = playerState.rpm > 6800;
+    if (isRedline !== this._lastIsRedline) {
+      if (isRedline) {
+        this.rpmBarEl.classList.add('redline');
+      } else {
+        this.rpmBarEl.classList.remove('redline');
+      }
+      this._lastIsRedline = isRedline;
     }
 
     // 7-Stage Shift Lights Update (Porsche GT3 / Cup Car style)
@@ -619,19 +654,35 @@ export class HUD {
     let gearText = playerState.gear.toString();
     if (playerState.gear === -1) gearText = 'R';
     else if (playerState.gear === 0) gearText = 'N';
-    this.gearEl.textContent = gearText;
+    if (gearText !== this._lastGear) {
+      this.gearEl.textContent = gearText;
+      this._lastGear = gearText;
+    }
 
     // Lap and position
-    this.lapEl.textContent = `${playerState.lap} / 3`;
-    this.rankEl.textContent = getOrdinal(playerState.raceRank);
+    const lapText = `${playerState.lap} / 3`;
+    if (lapText !== this._lastLap) {
+      this.lapEl.textContent = lapText;
+      this._lastLap = lapText;
+    }
+
+    const rankText = getOrdinal(playerState.raceRank);
+    if (rankText !== this._lastRank) {
+      this.rankEl.textContent = rankText;
+      this._lastRank = rankText;
+    }
 
     // Lap time formatting (MM:SS.ms)
     const minutes = Math.floor(playerState.lapTime / 60);
     const seconds = Math.floor(playerState.lapTime % 60);
     const ms = Math.floor((playerState.lapTime * 100) % 100);
-    this.timeEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds
+    const timeText = `${minutes.toString().padStart(2, '0')}:${seconds
       .toString()
       .padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+    if (timeText !== this._lastTime) {
+      this.timeEl.textContent = timeText;
+      this._lastTime = timeText;
+    }
 
     // Delta-time comparison against best lap (U10)
     if (playerState.deltaBestLap !== undefined) {
@@ -653,7 +704,12 @@ export class HUD {
     }
 
     // Drift score, card flame & dynamic center banner
-    this.driftScoreEl.textContent = `${playerState.driftScore} PTS`;
+    const driftText = `${playerState.driftScore} PTS`;
+    if (driftText !== this._lastDrift) {
+      this.driftScoreEl.textContent = driftText;
+      this._lastDrift = driftText;
+    }
+
     if (playerState.isDrifting && playerState.speedKmh > 22) {
       this.driftCardEl.classList.add('drifting-flame');
       this.driftBannerEl.classList.add('active');
@@ -664,8 +720,10 @@ export class HUD {
       this.driftBannerEl.classList.remove('active');
     }
 
-    // Render Real-Time Minimap
-    if (allVehicles && waypoints && this.minimapCtx) {
+    // Render Real-Time Minimap throttled to 30 FPS (P11)
+    const now = performance.now();
+    if (allVehicles && waypoints && this.minimapCtx && (now - this._lastMinimapTime >= 33)) {
+      this._lastMinimapTime = now;
       this.renderMinimap(allVehicles, waypoints);
     }
 
@@ -673,7 +731,11 @@ export class HUD {
     const wt = playerState.weightTransfer;
     const fPct = Math.round(wt.frontBias * 100);
     const rPct = 100 - fPct;
-    this.biasTagEl.textContent = `${fPct}F / ${rPct}R`;
+    const biasText = `${fPct}F / ${rPct}R`;
+    if (biasText !== this._lastBias) {
+      this.biasTagEl.textContent = biasText;
+      this._lastBias = biasText;
+    }
 
     // Dynamic wheel load heights (scaled 0-100%)
     this.loadFLEl.style.height = `${Math.min(100, Math.max(8, wt.frontLeftLoad * 220))}%`;
@@ -691,7 +753,11 @@ export class HUD {
     // Damage status text
     const aeroEfficiency = Math.round((1.0 / playerState.damage.aerodynamicDragPenalty) * 100);
     const alignOk = Math.abs(playerState.damage.steeringAlignmentOffset) < 0.01;
-    this.damageEl.textContent = `AERO: ${aeroEfficiency}% | ALIGN: ${alignOk ? 'OK' : 'BENT'}`;
+    const damageText = `AERO: ${aeroEfficiency}% | ALIGN: ${alignOk ? 'OK' : 'BENT'}`;
+    if (damageText !== this._lastDamage) {
+      this.damageEl.textContent = damageText;
+      this._lastDamage = damageText;
+    }
     if (!alignOk || aeroEfficiency < 85) {
       this.damageEl.classList.add('damaged');
     } else {
@@ -700,11 +766,22 @@ export class HUD {
 
     // Player 2 update if in split-screen
     if (this.isSplitScreen && p2State) {
-      this.p2SpeedEl.textContent = Math.round(p2State.speedKmh).toString();
-      this.p2RpmEl.textContent = Math.round(p2State.rpm).toString();
+      const p2Spd = Math.round(p2State.speedKmh);
+      if (p2Spd !== this._lastP2Speed) {
+        this.p2SpeedEl.textContent = p2Spd.toString();
+        this._lastP2Speed = p2Spd;
+      }
+      const p2RpmVal = Math.round(p2State.rpm);
+      if (p2RpmVal !== this._lastP2Rpm) {
+        this.p2RpmEl.textContent = p2RpmVal.toString();
+        this._lastP2Rpm = p2RpmVal;
+      }
       let p2Gear = p2State.gear.toString();
       if (p2State.gear === -1) p2Gear = 'R';
-      this.p2GearEl.textContent = p2Gear;
+      if (p2Gear !== this._lastP2Gear) {
+        this.p2GearEl.textContent = p2Gear;
+        this._lastP2Gear = p2Gear;
+      }
     }
   }
 

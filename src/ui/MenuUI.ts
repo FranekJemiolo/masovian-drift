@@ -56,6 +56,9 @@ export class MenuUI {
             <button id="btn-quick-race" class="btn-primary">
               <span class="btn-icon">🏁</span> QUICK RACE (VS 5 AI)
             </button>
+            <button id="btn-time-trial" class="btn-secondary">
+              <span class="btn-icon">⏱️</span> TIME TRIAL (GHOST CAR)
+            </button>
             <button id="btn-split-screen" class="btn-secondary">
               <span class="btn-icon">👥</span> SPLIT-SCREEN DUEL (2P LOCAL)
             </button>
@@ -91,6 +94,7 @@ export class MenuUI {
 
   private setupMenuListeners(): void {
     const btnQuick = this.container.querySelector('#btn-quick-race') as HTMLButtonElement;
+    const btnTimeTrial = this.container.querySelector('#btn-time-trial') as HTMLButtonElement;
     const btnSplit = this.container.querySelector('#btn-split-screen') as HTMLButtonElement;
     const btnMulti = this.container.querySelector('#btn-multiplayer') as HTMLButtonElement;
     const btnGarage = this.container.querySelector('#btn-garage') as HTMLButtonElement;
@@ -99,7 +103,7 @@ export class MenuUI {
 
     const audio = AudioManager.getInstance();
 
-    [btnQuick, btnSplit, btnMulti, btnGarage, btnSettings].forEach((b) => {
+    [btnQuick, btnTimeTrial, btnSplit, btnMulti, btnGarage, btnSettings].forEach((b) => {
       b?.addEventListener('mouseenter', () => audio.playUiHover());
     });
 
@@ -107,6 +111,12 @@ export class MenuUI {
       audio.playUiClick();
       this.hide();
       this.callbacks.onStartGame('quick-race');
+    });
+
+    btnTimeTrial?.addEventListener('click', () => {
+      audio.playUiClick();
+      this.hide();
+      this.callbacks.onStartGame('time-trial');
     });
 
     btnSplit?.addEventListener('click', () => {

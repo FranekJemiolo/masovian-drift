@@ -250,6 +250,11 @@ export class AudioManager {
     this.playerSynth?.update(rpm, throttle, slipAngle, speedKmh, surface);
   }
 
+  public setPlayerExhaustProfile(era: 'Classic' | 'Golden' | 'Modern', openExhaust = false): void {
+    this.ensureContext();
+    this.playerSynth?.setExhaustProfile(era, openExhaust);
+  }
+
   public updateP2Engine(
     rpm: number,
     throttle: number,

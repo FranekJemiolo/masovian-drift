@@ -28,7 +28,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | M5 | **Network model.** Snapshot interpolation with jitter buffer, lag compensation. | P1 | L | `[ ]` |
 | M6 | **AI quality.** Racing line, braking-zone lookahead, overtaking offsets, recovery when stuck. | P1 | L | `[x]` done |
 | M7 | **Reset/recovery.** Auto-respawn at last checkpoint when flipped or off-track, manual K key. | P1 | S | `[x]` done |
-| M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[ ]` |
+| M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[x]` done |
 | M9 | **Drivetrain realism.** Boxer torque curve plateau, clutch launch control, rev-limiter cut. | P2 | M | `[x]` done |
 | M10 | **Damage model.** Visible deformation, performance loss tied to repair shop. | P2 | L | `[ ]` |
 | M11 | **Progression/economy balance pass.** Tune prices/rewards; unlock tracks and eras. | P2 | M | `[ ]` |
@@ -42,7 +42,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | G2 | **Bloom HDR buffer.** HalfFloat render target + quadratic soft-knee threshold and 12-tap multi-scale Gaussian blur. | P1 | M | `[x]` done |
 | G3 | **Lighting & Shadows.** Procedural sky IBL, contact AO, soft cascaded shadows. | P1 | L | `[x]` done |
 | G4 | **Car shading.** MeshPhysicalMaterial clearcoat paint, tinted glass reflections, contact shadow. | P1 | L | `[x]` done |
-| G5 | **Terrain.** Splat shader, GPU wind-animated grass instances. | P1 | L | `[ ]` |
+| G5 | **Terrain & Shoulder Foliage.** Splat shader, 1400 wind-animated shoulder grass instances (GPU ShaderMaterial). | P1 | L | `[x]` done |
 | G6 | **Water.** Vertex shader wave displacement with Fresnel and foam. | P1 | M | `[x]` done |
 | G7 | **Sky/atmosphere.** Day/Sunset/Night presets, sun disc bloom, skydome IBL. | P2 | M | `[x]` done |
 | G8 | **Particles.** Surface-tinted smoke (asphalt/gravel/sand/grass), additive kerb sparks. | P2 | M | `[x]` done |
@@ -80,7 +80,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | A6 | **Environmental ambience.** Procedural Mazovian pine forest breeze & wind noise. | P2 | M | `[x]` done |
 | A7 | **Music.** Procedural adaptive synthwave soundtrack (100% Web Audio synthesized). | P2 | L | `[x]` done |
 | A8 | **Mix/QA.** Loudness normalisation (-16 LUFS), clipping protection. | P1 | S | `[x]` done |
-| A9 | Player-selectable exhaust profiles tied to Evolution garage eras. | P2 | M | `[ ]` |
+| A9 | **Exhaust profiles.** Era-specific acoustic profiles (Classic 2.7L, Golden 3.3 Turbo, Modern GT3) + open exhaust toggle. | P2 | M | `[x]` done |
 
 ## 5. Performance & efficiency
 
@@ -93,10 +93,10 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | P5 | **Draw calls/instancing.** Merge static fences, instanced grandstand spectators. | P1 | M | `[ ]` |
 | P6 | **Startup cost.** Spatial grid precomputation for terrain. | P1 | M | `[ ]` |
 | P7 | **Bundle size.** Split 5.4MB chunk into modular vendor chunks (`index.js` = 132 KB). | P0 | S | `[x]` done |
-| P8 | **Physics scheduling.** Fixed-step accumulator with max substeps clamp. | P1 | S | `[ ]` |
+| P8 | **Physics scheduling.** Fixed-step accumulator with max 4 substeps clamp and backlog discard. | P1 | S | `[x]` done |
 | P9 | **Mobile profile.** Dynamic resolution scaling. | P1 | S | `[ ]` |
 | P10 | **Memory hygiene.** Proper disposal across restarts. | P1 | M | `[ ]` |
-| P11 | **HUD DOM updates**: ~10 `textContent`/style writes per frame; update only on change and throttle to 30 Hz. | P2 | S | `[ ]` |
+| P11 | **HUD DOM updates**: Dirty-checking caches on all DOM strings and styles; minimap throttled to 30 Hz. | P2 | S | `[x]` done |
 | P12 | **PWA/offline**: service worker with cache-first for assets, proper `base` handling for GitHub Pages. | P2 | S | `[ ]` |
 
 ## 6. Code quality / maintainability

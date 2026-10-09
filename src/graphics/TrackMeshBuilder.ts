@@ -8,6 +8,7 @@ export interface TrackMeshResult {
   markingsMesh: THREE.Mesh;
   terrainMesh: THREE.Mesh;
   riverMesh: THREE.Mesh;
+  grassMesh?: THREE.InstancedMesh;
   startFinishGantry: THREE.Group;
   checkpoints: { position: THREE.Vector3; index: number; radius: number }[];
 }
@@ -685,7 +686,130 @@ export class TrackMeshBuilder {
     riverMesh.position.set(240, -0.65, -30);
     trackGroup.add(riverMesh);
 
-    // 12. Checkpoints along circuit
+    // 12. Wind-Animated Shoulder Grass InstancedMesh (G5)
+    const grassPlane1 = new THREE.PlaneGeometry(0.65, 0.85);
+    grassPlane1.translate(0, 0.425, 0);
+    const grassPlane2 = new THREE.PlaneGeometry(0.65, 0.85);
+    grassPlane2.rotateY(Math.PI / 2);
+    grassPlane2.translate(0, 0.425, 0);
+
+    const pos1 = grassPlane1.attributes.position.array;
+    const pos2 = grassPlane2.attributes.position.array;
+    const uv1 = grassPlane1.attributes.uv.array;
+    const uv2 = grassPlane2.attributes.uv.array;
+    const idx1 = grassPlane1.index?.array ?? [];
+    const idx2 = grassPlane2.index?.array ?? [];
+
+    const mergedPositions = new Float32Array(pos1.length + pos2.length);
+    mergedPositions.set(pos1, 0);
+    mergedPositions.set(pos2, pos1.length);
+
+    const mergedUvs = new Float32Array(uv1.length + uv2.length);
+    mergedUvs.set(uv1, 0);
+    mergedUvs.set(uv2, uv1.length);
+
+    const mergedIndices: number[] = [];
+    for (let k = 0; k < idx1.length; k++) mergedIndices.push(idx1[k]);
+    const offset = pos1.length / 3;
+    for (let k = 0; k < idx2.length; k++) mergedIndices.push(idx2[k] + offset);
+
+    const grassGeom = new THREE.BufferGeometry();
+    grassGeom.setAttribute('position', new THREE.BufferAttribute(mergedPositions, 3));
+    grassGeom.setAttribute('uv', new THREE.BufferAttribute(mergedUvs, 2));
+    grassGeom.setIndex(mergedIndices);
+    grassGeom.computeVertexNormals();
+
+    const grassMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0.0 },
+        uBaseColor: { value: new THREE.Color(0x274e22) },
+        uTipColor: { value: new THREE.Color(0x84b34b) },
+      },
+      vertexShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        varying vec3 vNormal;
+
+        void main() {
+          vUv = uv;
+          vNormal = normalMatrix * normal;
+
+          vec4 instPos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          float heightFactor = clamp(position.y / 0.85, 0.0, 1.0);
+
+          // Organic wind flutter based on world coordinates & time
+          float sway = sin(uTime * 3.2 + instPos.x * 0.18 + instPos.z * 0.15) *
+                       cos(uTime * 1.9 + instPos.z * 0.12);
+
+          vec3 displaced = position;
+          displaced.x += sway * 0.22 * heightFactor;
+          displaced.z += sway * 0.18 * heightFactor;
+
+          vec4 worldPos = modelMatrix * instanceMatrix * vec4(displaced, 1.0);
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uBaseColor;
+        uniform vec3 uTipColor;
+        varying vec2 vUv;
+        varying vec3 vNormal;
+
+        void main() {
+          vec3 col = mix(uBaseColor, uTipColor, vUv.y);
+          float light = clamp(dot(vNormal, vec3(0.4, 0.8, 0.4)), 0.65, 1.0);
+          gl_FragColor = vec4(col * light, 1.0);
+        }
+      `,
+      side: THREE.DoubleSide,
+      depthWrite: true,
+    });
+
+    const totalGrassInstances = 1400;
+    const grassMesh = new THREE.InstancedMesh(grassGeom, grassMat, totalGrassInstances);
+    grassMesh.receiveShadow = true;
+
+    const dummy = new THREE.Object3D();
+    let grassIdx = 0;
+    for (let i = 0; i < count && grassIdx < totalGrassInstances; i++) {
+      const wp = waypoints[i];
+      const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
+      const halfW = wp.width * 0.5;
+
+      const hash1 = Math.abs(Math.sin(i * 12.9898)) % 1;
+      const hash2 = Math.abs(Math.cos(i * 78.233)) % 1;
+      const hash3 = Math.abs(Math.sin(i * 43.123)) % 1;
+
+      // Left shoulder instance
+      if (grassIdx < totalGrassInstances) {
+        const distL = halfW + 1.2 + hash1 * 3.5;
+        const posX = wp.point.x - norm.x * distL;
+        const posZ = wp.point.z - norm.z * distL;
+        const scale = 0.75 + hash2 * 0.5;
+        dummy.position.set(posX, 0.05, posZ);
+        dummy.rotation.set(0, hash3 * Math.PI * 2, 0);
+        dummy.scale.set(scale, scale, scale);
+        dummy.updateMatrix();
+        grassMesh.setMatrixAt(grassIdx++, dummy.matrix);
+      }
+
+      // Right shoulder instance
+      if (grassIdx < totalGrassInstances) {
+        const distR = halfW + 1.2 + hash2 * 3.5;
+        const posX = wp.point.x + norm.x * distR;
+        const posZ = wp.point.z + norm.z * distR;
+        const scale = 0.75 + hash1 * 0.5;
+        dummy.position.set(posX, 0.05, posZ);
+        dummy.rotation.set(0, hash1 * Math.PI * 2, 0);
+        dummy.scale.set(scale, scale, scale);
+        dummy.updateMatrix();
+        grassMesh.setMatrixAt(grassIdx++, dummy.matrix);
+      }
+    }
+    grassMesh.instanceMatrix.needsUpdate = true;
+    trackGroup.add(grassMesh);
+
+    // 13. Checkpoints along circuit
     const checkpointStep = Math.floor(count / 14);
     const checkpoints: { position: THREE.Vector3; index: number; radius: number }[] = [];
     for (let i = 0; i < count; i += checkpointStep) {
@@ -703,6 +827,7 @@ export class TrackMeshBuilder {
       markingsMesh,
       terrainMesh,
       riverMesh,
+      grassMesh,
       startFinishGantry: gantry,
       checkpoints,
     };

@@ -365,4 +365,25 @@ export class VoxelCarBuilder {
       exhaustPipes,
     };
   }
+
+  /**
+   * Builds a translucent holographic ghost car for Time Trial lap replays (M8)
+   */
+  public static createGhostCar(): THREE.Group {
+    const visual = VoxelCarBuilder.createVoxelBoxer(0x38bdf8, 0x0284c7, false);
+    const ghostMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    });
+    visual.root.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.material = ghostMat;
+        child.castShadow = false;
+        child.receiveShadow = false;
+      }
+    });
+    return visual.root;
+  }
 }

@@ -86,4 +86,4 @@ export interface EconomyState {
   unlockedEras: ('Classic' | 'Golden' | 'Modern')[];
 }
 
-export type GameMode = 'quick-race' | 'split-screen' | 'career' | 'multiplayer-host' | 'multiplayer-join';
+export type GameMode = 'quick-race' | 'time-trial' | 'split-screen' | 'career' | 'multiplayer-host' | 'multiplayer-join';

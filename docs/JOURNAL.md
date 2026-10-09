@@ -87,7 +87,35 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
   - Added Polish / English language toggle in Settings & HUD.
 
 **Automated verification sweep results**:
-- `tests/smoke-suite.mjs`: All 6 isolated browser sections PASSED (0 console errors, 0 page errors).
+### 2026-10-10 — Depth & Performance: Wind Grass, Time Trial Ghost, Exhaust Profiles & DOM Throttling
+
+**Implementations**:
+- **G5 Wind-Animated Shoulder Grass InstancedMesh**:
+  - Engineered crossed double-quad geometry (width 0.65m, height 0.85m) combined into a single `BufferGeometry` with normal computation.
+  - Deployed custom `ShaderMaterial` with vertex wind flutter shader (`uTime`, height damping `clamp(pos.y / 0.85, 0.0, 1.0)`, and world coordinates wave interference).
+  - Instanced 1,400 grass clumps along both circuit shoulders with pseudo-random scales, rotations, and lateral offsets.
+  - Animated dynamically in render loop via `mat.uniforms.uTime.value = clock.getElapsedTime()`.
+- **M8 Time Trial Mode & Holographic Ghost Car**:
+  - Added dedicated `TIME TRIAL (GHOST CAR)` button to Main Menu.
+  - Implemented 20Hz lap telemetry sampling (`{ time, position, quaternion }`).
+  - Stored fastest lap persistently in `localStorage` (`masovian_ghost_lap`).
+  - Rendered holographic translucent ghost car (`0x38bdf8`, opacity 0.42, `depthWrite: false`) interpolated seamlessly between telemetry keyframes during hotlaps.
+  - Solo track experience (AI opponents omitted) with drift scoring rewards upon finish.
+- **A9 Era-Specific Exhaust Acoustic Profiles**:
+  - Added `setExhaustProfile(era, openExhaust)` to `EngineSynth` and `AudioManager`.
+  - Classic 2.7L: crisp mechanical metallic chatter, odd-harmonic overtone boost (`oscHarmonicGain = 0.28`), moderate distortion (14).
+  - Golden 3.3 Turbo: deep throaty muffled burble (`oscSubGain = 0.52`), boosted BOV flutter.
+  - Modern GT3: piercing high-Q race howl (`Q = 4.8`, distortion 30, high filter frequency cutoff up to 2600 Hz).
+  - Open exhaust upgrade boost: +8 distortion, +550 Hz filter cutoff, and 1.25x master gain increase.
+- **P8 Physics Accumulator Substep Clamping**:
+  - Enforced a hard limit of maximum 4 substeps per frame in `PhysicsWorld.step()`.
+  - Discarded residual backlog if frame lag exceeds maximum threshold to completely prevent death-spiral lag spikes on background tab unfocus.
+- **P11 HUD DOM Updates Throttling & Dirty-Checking**:
+  - Implemented string and style dirty-checking across all HUD elements (speedometer, RPM bar, gear, lap, rank, timer, drift score, bias, and damage).
+  - Throttled minimap 2D canvas rendering to 30 FPS (`now - lastMinimapTime >= 33ms`), significantly reducing layout reflows and composite overhead at high refresh rates.
+
+**Automated verification sweep results**:
+- `tests/smoke-suite.mjs`: All 7 isolated browser sections PASSED (0 console errors, 0 page errors).
 - `tests/mechanics.spec.mjs`: Race finish modal & restart mechanics PASSED (0 console errors).
 
 ### Tracking
@@ -95,4 +123,4 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 |-------|-------|--------|
 | Stabilise (P0) | V1 V2 M1 M2 M3 U1 U2 A1 P1 P3 P7 G1 | `[x]` done |
 | Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
-| Depth | G3 G4 G6 G7 G8 G9 G10 G11 A2–A7 M1 M2 M3 M4 M6 M7 M9 M12 U1–U7 U9 U10 U11 U12 | `[x]` done |
+| Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 A2–A7 A9 M1 M2 M3 M4 M6 M7 M8 M9 M12 P8 P11 U1–U7 U9 U10 U11 U12 | `[x]` done |

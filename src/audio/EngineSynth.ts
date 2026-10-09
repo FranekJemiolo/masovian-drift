@@ -45,6 +45,10 @@ export class EngineSynth {
   public isSpatial = false;
   private pannerNode: PannerNode | null = null;
 
+  // Era Acoustic Profile (A9)
+  private era: 'Classic' | 'Golden' | 'Modern' = 'Golden';
+  private openExhaust = false;
+
   // Previous throttle for BOV detection
   private prevThrottle = 0;
   private lastBovTime = 0;
@@ -339,12 +343,18 @@ export class EngineSynth {
       limiterCut = Math.sin(t * Math.PI * 2 * 26) > 0 ? 0.08 : 1.0;
     }
 
-    // Filter opens up wide when throttle is applied
-    const targetFilterFreq = (380 + (rpm / 7500) * 1600 + throttle * 1900) * limiterCut;
+    // Filter opens up wide when throttle is applied, modulated by Era acoustic profile (A9)
+    let maxFilterCut = 1900;
+    if (this.era === 'Modern') maxFilterCut = 2600;
+    else if (this.era === 'Classic') maxFilterCut = 1450;
+    if (this.openExhaust) maxFilterCut += 550;
+
+    const targetFilterFreq = (380 + (rpm / 7500) * 1600 + throttle * maxFilterCut) * limiterCut;
     this.filter.frequency.setTargetAtTime(targetFilterFreq, t, 0.04);
 
     // Oscillator mix balance: more sawtooth rasp at high throttle/RPM
-    const sawGainVal = (0.22 + throttle * 0.28 + (rpm / 7500) * 0.2) * limiterCut;
+    const raspMultiplier = this.era === 'Modern' ? 1.25 : (this.era === 'Classic' ? 0.85 : 1.0);
+    const sawGainVal = (0.22 + throttle * 0.28 * raspMultiplier + (rpm / 7500) * 0.2) * limiterCut;
     this.oscSawGain.gain.setTargetAtTime(sawGainVal, t, 0.04);
 
     // Intake air induction roar under high throttle load
@@ -505,6 +515,49 @@ export class EngineSynth {
     gain.connect(this.outputNode);
     osc.start(t);
     osc.stop(t + 0.4);
+  }
+
+  /**
+   * Modulates distortion curve, resonance Q, and harmonics for era acoustics (A9)
+   */
+  public setExhaustProfile(era: 'Classic' | 'Golden' | 'Modern', openExhaust = false): void {
+    this.era = era;
+    this.openExhaust = openExhaust;
+
+    let distVal = 18;
+    let qVal = 3.5;
+    let subGain = 0.45;
+    let harmonicGain = 0.18;
+
+    if (era === 'Classic') {
+      distVal = 14;
+      qVal = 2.6;
+      subGain = 0.38;
+      harmonicGain = 0.28;
+    } else if (era === 'Golden') {
+      distVal = 22;
+      qVal = 3.6;
+      subGain = 0.52;
+      harmonicGain = 0.16;
+    } else if (era === 'Modern') {
+      distVal = 30;
+      qVal = 4.8;
+      subGain = 0.32;
+      harmonicGain = 0.40;
+    }
+
+    if (openExhaust) {
+      distVal += 8;
+      qVal += 0.8;
+      this.masterGain.gain.value = 0.35;
+    } else {
+      this.masterGain.gain.value = 0.28;
+    }
+
+    this.filter.Q.value = qVal;
+    this.waveShaper.curve = this.makeDistortionCurve(distVal) as any;
+    this.oscSubGain.gain.value = subGain;
+    this.oscHarmonicGain.gain.value = harmonicGain;
   }
 
   public setVolume(volume: number): void {

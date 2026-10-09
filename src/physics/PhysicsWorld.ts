@@ -91,18 +91,27 @@ export class PhysicsWorld {
   }
 
   /**
-   * Deterministic fixed timestep update loop
+   * Deterministic fixed timestep update loop with strict max substep clamping (P8)
    */
   public step(delta: number, onFixedStep?: (dt: number) => void): void {
     if (!this.initialized) return;
 
-    this.accumulator += Math.min(delta, 0.1); // Prevent spiral of death
-    while (this.accumulator >= this.fixedTimeStep) {
+    this.accumulator += Math.min(delta, 0.1); // Clamp frame delta
+    let steps = 0;
+    const maxSubSteps = 4; // Prevent spiral of death on tab unfocus or GPU spikes
+
+    while (this.accumulator >= this.fixedTimeStep && steps < maxSubSteps) {
       if (onFixedStep) {
         onFixedStep(this.fixedTimeStep);
       }
       this.world.step();
       this.accumulator -= this.fixedTimeStep;
+      steps++;
+    }
+
+    // Discard any excess backlog if frame lag exceeded max substeps
+    if (this.accumulator >= this.fixedTimeStep) {
+      this.accumulator = 0;
     }
   }
 }

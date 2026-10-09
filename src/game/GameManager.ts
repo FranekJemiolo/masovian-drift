@@ -20,6 +20,22 @@ import { MenuUI } from '../ui/MenuUI';
 import { GameMode, VehicleState } from './Types';
 import { PRNG } from '../utils/PRNG';
 
+interface GhostSample {
+  time: number;
+  x: number;
+  y: number;
+  z: number;
+  qx: number;
+  qy: number;
+  qz: number;
+  qw: number;
+}
+
+interface GhostRecording {
+  bestLapTime: number;
+  samples: GhostSample[];
+}
+
 export class GameManager {
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
@@ -37,6 +53,13 @@ export class GameManager {
   private waypoints!: Waypoint[];
   private checkpoints: { position: THREE.Vector3; index: number; radius: number }[] = [];
   private riverMesh: THREE.Mesh | null = null;
+  private grassMesh: THREE.InstancedMesh | null = null;
+
+  // Time Trial Ghost Car Replay (M8)
+  private ghostVisual: THREE.Group | null = null;
+  private recordedGhostLap: GhostRecording | null = null;
+  private currentLapGhostSamples: GhostSample[] = [];
+  private ghostSampleTimer = 0;
 
   // Vehicles
   private playerVehicle!: VehiclePhysics;
@@ -140,6 +163,7 @@ export class GameManager {
     this.scene.add(trackData.trackGroup);
     this.checkpoints = trackData.checkpoints;
     this.riverMesh = trackData.riverMesh;
+    this.grassMesh = trackData.grassMesh ?? null;
 
     // Build World Physics Colliders
     this.physicsWorld.buildWorldColliders(this.waypoints);
@@ -304,6 +328,10 @@ export class GameManager {
       currentCar.damage
     );
     this.allVehicles.push(this.playerVehicle);
+    this.audioManager.setPlayerExhaustProfile(
+      currentCar.specs.era,
+      currentCar.upgrades?.openExhaust ?? false
+    );
 
     // Initial camera position overlooking the starting straight, car and gantry arch
     this.p1Camera.camera.position.set(spawnPos.x + 4.5, spawnPos.y + 1.6, spawnPos.z - 5.5);
@@ -325,6 +353,13 @@ export class GameManager {
     this.allVehicles = [];
     this.aiBots = [];
     this.p2Vehicle = null;
+
+    if (this.ghostVisual) {
+      this.scene.remove(this.ghostVisual);
+      this.ghostVisual = null;
+    }
+    this.currentLapGhostSamples = [];
+    this.ghostSampleTimer = 0;
 
     // 1. Spawn Player 1 Boxer on Pole Position
     const currentCar = this.evolutionStore.getCurrentCar();
@@ -360,6 +395,12 @@ export class GameManager {
     );
     this.allVehicles.push(this.playerVehicle);
     this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
+
+    // Era-specific exhaust profile (A9)
+    this.audioManager.setPlayerExhaustProfile(
+      currentCar.specs.era,
+      currentCar.upgrades?.openExhaust ?? false
+    );
 
     // 2. Handle Game Modes
     if (mode === 'quick-race') {
@@ -399,12 +440,28 @@ export class GameManager {
           const d = aiSpawn.distanceTo(this.waypoints[w].point);
           if (d < minWpDist) {
             minWpDist = d;
-            closestWpIdx = w;
           }
+          closestWpIdx = w;
         }
         aiController.setTargetIndex(closestWpIdx);
         this.aiBots.push(aiController);
         this.allVehicles.push(aiVehicle);
+      }
+      this.audioManager.startEngines();
+      this.audioManager.startMusic();
+
+    } else if (mode === 'time-trial') {
+      // Solo Time Trial against Holographic Ghost Car (M8)
+      try {
+        const savedGhost = localStorage.getItem('masovian_ghost_lap');
+        if (savedGhost) {
+          this.recordedGhostLap = JSON.parse(savedGhost);
+        }
+      } catch (_) {}
+
+      if (this.recordedGhostLap && this.recordedGhostLap.samples && this.recordedGhostLap.samples.length > 0) {
+        this.ghostVisual = VoxelCarBuilder.createGhostCar();
+        this.scene.add(this.ghostVisual);
       }
       this.audioManager.startEngines();
       this.audioManager.startMusic();
@@ -591,6 +648,51 @@ export class GameManager {
 
         // Track checkpoints & lap progression (M7 auto-recovery)
         if (!isCountingDown) {
+          // Time Trial Ghost Telemetry Recording & Replay (M8)
+          if (this.currentMode === 'time-trial') {
+            this.ghostSampleTimer += dt;
+            if (this.ghostSampleTimer >= 0.05) {
+              this.ghostSampleTimer = 0;
+              const p = this.playerVehicle.position;
+              const q = this.playerVehicle.quaternion;
+              this.currentLapGhostSamples.push({
+                time: this.playerVehicle.currentLapTime,
+                x: p.x, y: p.y, z: p.z,
+                qx: q.x, qy: q.y, qz: q.z, qw: q.w,
+              });
+            }
+
+            // Replay ghost car along recorded lap
+            if (this.ghostVisual && this.recordedGhostLap && this.recordedGhostLap.samples.length > 0) {
+              const lapT = this.playerVehicle.currentLapTime;
+              const samples = this.recordedGhostLap.samples;
+              const idx = samples.findIndex((s) => s.time >= lapT);
+              if (idx <= 0) {
+                const s = samples[0];
+                this.ghostVisual.position.set(s.x, s.y, s.z);
+                this.ghostVisual.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+              } else if (idx >= samples.length) {
+                const s = samples[samples.length - 1];
+                this.ghostVisual.position.set(s.x, s.y, s.z);
+                this.ghostVisual.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+              } else {
+                const s0 = samples[idx - 1];
+                const s1 = samples[idx];
+                const dtSegment = Math.max(0.001, s1.time - s0.time);
+                const alpha = Math.max(0, Math.min(1, (lapT - s0.time) / dtSegment));
+                this.ghostVisual.position.set(
+                  s0.x + (s1.x - s0.x) * alpha,
+                  s0.y + (s1.y - s0.y) * alpha,
+                  s0.z + (s1.z - s0.z) * alpha
+                );
+                const q0 = new THREE.Quaternion(s0.qx, s0.qy, s0.qz, s0.qw);
+                const q1 = new THREE.Quaternion(s1.qx, s1.qy, s1.qz, s1.qw);
+                q0.slerp(q1, alpha);
+                this.ghostVisual.quaternion.copy(q0);
+              }
+            }
+          }
+
           this.updateRaceProgression(dt);
           for (const v of this.allVehicles) {
             this.checkVehicleRecovery(v, dt);
@@ -656,6 +758,14 @@ export class GameManager {
       // Dynamic River wave ripple animation (GPU ShaderMaterial, G6/P2)
       if (this.riverMesh) {
         const mat = this.riverMesh.material as THREE.ShaderMaterial;
+        if (mat.uniforms?.uTime) {
+          mat.uniforms.uTime.value = this.clock.getElapsedTime();
+        }
+      }
+
+      // Dynamic Grass wind flutter animation (GPU ShaderMaterial, G5)
+      if (this.grassMesh) {
+        const mat = this.grassMesh.material as THREE.ShaderMaterial;
         if (mat.uniforms?.uTime) {
           mat.uniforms.uTime.value = this.clock.getElapsedTime();
         }
@@ -787,8 +897,26 @@ export class GameManager {
 
         // Completed a full lap
         if (v.currentCheckpointIndex === 0) {
-          if (v.currentLapTime < v.bestLapTime) {
-            v.bestLapTime = v.currentLapTime;
+          const completedLapTime = v.currentLapTime;
+          if (completedLapTime < v.bestLapTime) {
+            v.bestLapTime = completedLapTime;
+          }
+
+          if (v.isPlayer && this.currentMode === 'time-trial') {
+            if (!this.recordedGhostLap || completedLapTime < this.recordedGhostLap.bestLapTime) {
+              this.recordedGhostLap = {
+                bestLapTime: completedLapTime,
+                samples: [...this.currentLapGhostSamples],
+              };
+              try {
+                localStorage.setItem('masovian_ghost_lap', JSON.stringify(this.recordedGhostLap));
+              } catch (_) {}
+              if (!this.ghostVisual) {
+                this.ghostVisual = VoxelCarBuilder.createGhostCar();
+                this.scene.add(this.ghostVisual);
+              }
+            }
+            this.currentLapGhostSamples = [];
           }
 
           v.currentLap++;
@@ -860,7 +988,7 @@ export class GameManager {
   }
 
   private handleRaceFinish(): void {
-    const rank = this.playerVehicle.raceRank;
+    const rank = this.currentMode === 'time-trial' ? 1 : this.playerVehicle.raceRank;
     const prize = this.evolutionStore.rewardRaceFinish(rank, this.playerVehicle.driftScore);
 
     // Save persistent damage to IndexedDB

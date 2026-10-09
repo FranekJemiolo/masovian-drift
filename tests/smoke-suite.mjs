@@ -72,11 +72,12 @@ async function main() {
     if (!title?.includes('VOXEL BOXER')) throw new Error(`Unexpected title: ${title}`);
 
     const quickRaceBtn = await page.$('#btn-quick-race');
+    const timeTrialBtn = await page.$('#btn-time-trial');
     const garageBtn = await page.$('#btn-garage');
     const splitBtn = await page.$('#btn-split-screen');
     const multiBtn = await page.$('#btn-multiplayer');
 
-    if (!quickRaceBtn || !garageBtn || !splitBtn || !multiBtn) {
+    if (!quickRaceBtn || !timeTrialBtn || !garageBtn || !splitBtn || !multiBtn) {
       throw new Error('Missing primary menu action buttons');
     }
 
@@ -174,6 +175,22 @@ async function main() {
 
     // Close modal
     await page.click('#btn-close-mp');
+  });
+
+  // SECTION 7: Time Trial Mode & Holographic Ghost
+  results['7 Time trial'] = await runSectionTest('7 Time trial', async (page) => {
+    await page.click('#btn-time-trial');
+    await page.waitForSelector('#game-hud', { timeout: 5000 });
+    await page.waitForSelector('#hud-countdown', { timeout: 5000 });
+
+    const speed = await page.$('#hud-speed');
+    const minimap = await page.$('#hud-minimap');
+    if (!speed || !minimap) throw new Error('Missing HUD elements in time trial');
+
+    // Drive for 1.5 seconds to record ghost telemetry
+    await page.keyboard.down('KeyW');
+    await page.waitForTimeout(1500);
+    await page.keyboard.up('KeyW');
   });
 
   console.log('\n========================================');
