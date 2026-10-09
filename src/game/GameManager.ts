@@ -59,33 +59,40 @@ export class GameManager {
   private async init(): Promise<void> {
     // 1. Setup Three.js WebGL Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x93c5fd); // Clear Masovian sky
-    this.scene.fog = new THREE.FogExp2(0x93c5fd, 0.0035);
+    this.scene.background = new THREE.Color(0x8ecae6); // Clear vibrant sky
+    this.scene.fog = new THREE.FogExp2(0xa7d2e8, 0.0022); // Atmospheric mountain/pine mist
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(this.renderer.domElement);
 
-    // 2. Setup Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    // 2. Setup Lighting & Atmosphere
+    const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x5c4033, 0.95);
+    this.scene.add(hemiLight);
+
+    const ambientLight = new THREE.AmbientLight(0xfffaed, 0.45);
     this.scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 1.4);
-    sunLight.position.set(120, 180, 80);
+    const sunLight = new THREE.DirectionalLight(0xfff3d6, 2.2);
+    sunLight.position.set(110, 160, 90);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
     sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 450;
+    sunLight.shadow.camera.far = 420;
     const d = 160;
     sunLight.shadow.camera.left = -d;
     sunLight.shadow.camera.right = d;
     sunLight.shadow.camera.top = d;
     sunLight.shadow.camera.bottom = -d;
+    sunLight.shadow.bias = -0.0005;
     this.scene.add(sunLight);
+
+    // Add floating voxel clouds
+    this.generateVoxelClouds();
 
     // 3. Initialize Physics World (Rapier3D WASM)
     this.physicsWorld = new PhysicsWorld();
@@ -104,15 +111,15 @@ export class GameManager {
     EnvironmentGenerator.generateEnvironment(this.scene, this.waypoints);
 
     // 5. Cameras
-    this.p1Camera = new FollowCamera(62, window.innerWidth / window.innerHeight);
-    this.p2Camera = new FollowCamera(62, (window.innerWidth * 0.5) / window.innerHeight);
+    this.p1Camera = new FollowCamera(64, window.innerWidth / window.innerHeight);
+    this.p2Camera = new FollowCamera(64, (window.innerWidth * 0.5) / window.innerHeight);
 
-    // 6. Pixel-Art Post-Processor (Milestone 2)
+    // 6. High-Fidelity Post-Processor (Native 1.0 resolution)
     this.postProcessor = new PixelPostProcessor(
       this.renderer,
       this.scene,
       this.p1Camera.camera,
-      { pixelScale: 2.2 }
+      { pixelScale: 1.0, edgeStrength: 0.45 }
     );
 
     // 7. Initialize Economy & Audio & Input
@@ -160,6 +167,34 @@ export class GameManager {
     this.animate();
   }
 
+  private generateVoxelClouds(): void {
+    const cloudCount = 28;
+    const cloudGroup = new THREE.Group();
+    const cloudGeo = new THREE.BoxGeometry(24, 6, 36);
+    const cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      flatShading: true,
+    });
+    const instancedClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudCount);
+
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < cloudCount; i++) {
+      const x = (Math.random() - 0.5) * 1200;
+      const y = 80 + Math.random() * 35;
+      const z = (Math.random() - 0.5) * 1200;
+      const s = 0.8 + Math.random() * 1.4;
+      dummy.position.set(x, y, z);
+      dummy.scale.set(s * (1 + Math.random() * 0.6), s * 0.6, s * (1 + Math.random() * 0.6));
+      dummy.rotation.y = Math.random() * Math.PI;
+      dummy.updateMatrix();
+      instancedClouds.setMatrixAt(i, dummy.matrix);
+    }
+    instancedClouds.instanceMatrix.needsUpdate = true;
+    cloudGroup.add(instancedClouds);
+    this.scene.add(cloudGroup);
+  }
+
   private spawnShowcaseCar(): void {
     const currentCar = this.evolutionStore.getCurrentCar();
     const p1Visual = VoxelCarBuilder.createVoxelBoxer(
@@ -170,7 +205,7 @@ export class GameManager {
     this.scene.add(p1Visual.root);
 
     const spawnWp = this.waypoints[0];
-    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.4, -4.0));
+    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.82, -4.0));
     const spawnQuat = new THREE.Quaternion();
     if (spawnWp.tangent) {
       spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), spawnWp.tangent);
@@ -190,9 +225,9 @@ export class GameManager {
     );
     this.allVehicles.push(this.playerVehicle);
 
-    // Initial camera position overlooking the starting straight and Gurewicz villa
-    this.p1Camera.camera.position.set(spawnPos.x + 8.0, spawnPos.y + 3.0, spawnPos.z + 8.0);
-    this.p1Camera.camera.lookAt(spawnPos.x, spawnPos.y + 0.8, spawnPos.z);
+    // Initial camera position overlooking the starting straight, car and gantry arch
+    this.p1Camera.camera.position.set(spawnPos.x + 4.8, spawnPos.y + 1.8, spawnPos.z + 5.8);
+    this.p1Camera.camera.lookAt(spawnPos.x, spawnPos.y + 0.6, spawnPos.z);
   }
 
   public startGame(mode: GameMode): void {
@@ -219,7 +254,7 @@ export class GameManager {
     this.scene.add(p1Visual.root);
 
     const spawnWp = this.waypoints[0];
-    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.4, -4.0));
+    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.82, -4.0));
     const spawnQuat = new THREE.Quaternion();
     if (spawnWp.tangent) {
       spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), spawnWp.tangent);
@@ -250,7 +285,7 @@ export class GameManager {
 
         const aiOffset = (i % 2 === 0 ? -3.0 : 3.0);
         const aiSpawn = spawnWp.point.clone()
-          .add(new THREE.Vector3(aiOffset, 0.4, -14.0 - i * 9.0));
+          .add(new THREE.Vector3(aiOffset, 0.82, -14.0 - i * 9.0));
 
         const aiVehicle = new VehiclePhysics(
           `ai-${i}`,
@@ -275,7 +310,7 @@ export class GameManager {
       const p2Visual = VoxelCarBuilder.createVoxelBoxer(0x2563eb, 0xffffff, false);
       this.scene.add(p2Visual.root);
 
-      const p2Spawn = spawnWp.point.clone().add(new THREE.Vector3(-2.5, 0.4, -4.0));
+      const p2Spawn = spawnWp.point.clone().add(new THREE.Vector3(-2.5, 0.82, -4.0));
       this.p2Vehicle = new VehiclePhysics(
         'player-2',
         'Player 2 (Cobalt Boxer)',
@@ -295,7 +330,7 @@ export class GameManager {
       const remoteVisual = VoxelCarBuilder.createVoxelBoxer(0xeab308, 0x111111, false);
       this.scene.add(remoteVisual.root);
 
-      const remoteSpawn = spawnWp.point.clone().add(new THREE.Vector3(-2.5, 0.4, -4.0));
+      const remoteSpawn = spawnWp.point.clone().add(new THREE.Vector3(-2.5, 0.82, -4.0));
       this.p2Vehicle = new VehiclePhysics(
         'peer-remote',
         'Opponent (P2P)',

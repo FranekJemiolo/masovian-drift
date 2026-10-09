@@ -1,16 +1,15 @@
 import * as THREE from 'three';
 
 export interface PixelPostProcessorOptions {
-  pixelScale?: number; // Downscale factor (e.g., 2, 3, or 4 for chunky pixel-art)
-  edgeThreshold?: number;
-  edgeColor?: THREE.Color;
+  pixelScale?: number;
+  edgeStrength?: number;
 }
 
 export class PixelPostProcessor {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.Camera;
-  private pixelScale: number;
+  public pixelScale: number;
 
   private renderTarget: THREE.WebGLRenderTarget;
   private depthTexture: THREE.DepthTexture;
@@ -32,7 +31,8 @@ export class PixelPostProcessor {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
-    this.pixelScale = options.pixelScale ?? 2.5;
+    // Native crisp resolution (1.0) by default for sharp modern screens
+    this.pixelScale = options.pixelScale ?? 1.0;
 
     const size = new THREE.Vector2();
     renderer.getSize(size);
@@ -43,8 +43,8 @@ export class PixelPostProcessor {
     this.depthTexture.type = THREE.UnsignedShortType;
 
     this.renderTarget = new THREE.WebGLRenderTarget(this.width, this.height, {
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
       depthTexture: this.depthTexture,
       depthBuffer: true,
@@ -78,36 +78,34 @@ export class PixelPostProcessor {
         vec2 texel = 1.0 / uResolution;
         vec4 color = texture2D(tDiffuse, vUv);
 
-        // Sobel Edge Detection on depth & luminance
+        // Crisp Geometric Voxel Edge Detection
         float d00 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, -texel.y)).r);
-        float d10 = linearizeDepth(texture2D(tDepth, vUv + vec2(0.0, -texel.y)).r);
         float d20 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, -texel.y)).r);
-        float d01 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, 0.0)).r);
-        float d21 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, 0.0)).r);
         float d02 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, texel.y)).r);
-        float d12 = linearizeDepth(texture2D(tDepth, vUv + vec2(0.0, texel.y)).r);
         float d22 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, texel.y)).r);
 
-        float gx = (d20 + 2.0 * d21 + d22) - (d00 + 2.0 * d01 + d02);
-        float gy = (d02 + 2.0 * d12 + d22) - (d00 + 2.0 * d10 + d20);
-        float edge = sqrt(gx * gx + gy * gy);
+        float edge = length(vec2(d20 - d02, d22 - d00)) * 12.0;
 
-        // Color edge detection for contrast
+        // Color difference for crisp outline
         vec3 cLeft = texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb;
         vec3 cRight = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb;
         vec3 cUp = texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb;
         vec3 cDown = texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
-        float colorDiff = length(cRight - cLeft) + length(cUp - cDown);
+        float colorEdge = length(cRight - cLeft) + length(cUp - cDown);
 
-        float edgeFactor = clamp((edge * 45.0 + colorDiff * 0.4) * uEdgeStrength, 0.0, 1.0);
+        float edgeFactor = clamp((edge * 0.8 + colorEdge * 0.25) * uEdgeStrength, 0.0, 1.0);
 
-        // Subtle retro color quantization for authentic pixel-art palette
-        vec3 quantized = floor(color.rgb * 32.0 + 0.5) / 32.0;
+        // Rich arcade color enhancement (vibrant saturation & micro contrast)
+        vec3 rgb = color.rgb;
+        // Mild tone mapping & saturation boost
+        float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
+        vec3 satColor = mix(vec3(lum), rgb, 1.15); // +15% saturation for vibrant Mazovian atmosphere
+        vec3 contrastColor = (satColor - 0.5) * 1.06 + 0.5;
 
-        // Dark retro outline
-        vec3 finalColor = mix(quantized, vec3(0.06, 0.06, 0.09), edgeFactor * 0.85);
+        // Clean subtle outline border
+        vec3 finalColor = mix(contrastColor, vec3(0.08, 0.08, 0.12), edgeFactor * 0.45);
 
-        gl_FragColor = vec4(finalColor, 1.0);
+        gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
       }
     `;
 
@@ -119,8 +117,8 @@ export class PixelPostProcessor {
         tDepth: { value: this.renderTarget.depthTexture },
         uResolution: { value: new THREE.Vector2(this.width, this.height) },
         uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 1000.0 },
-        uEdgeStrength: { value: 0.75 },
+        uCameraFar: { value: 1200.0 },
+        uEdgeStrength: { value: options.edgeStrength ?? 0.5 },
       },
       depthWrite: false,
       depthTest: false,
@@ -157,11 +155,11 @@ export class PixelPostProcessor {
       return;
     }
 
-    // Step 1: Render scene to low-res target with nearest-neighbor sampling
+    // Step 1: Render scene to offscreen buffer
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.render(this.scene, cam);
 
-    // Step 2: Render full-screen quad to screen using nearest-neighbor scaling
+    // Step 2: Render crisp post-processed frame to canvas
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.postScene, this.postCamera);
   }

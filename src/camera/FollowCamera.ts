@@ -67,21 +67,23 @@ export class FollowCamera {
 
     if (this.mode === 'chase') {
       // Offset behind and slightly above the vehicle
-      const distBehind = 7.0 + (speedKmh / 160.0) * 1.5;
-      const heightAbove = 2.8 + (speedKmh / 220.0) * 0.4;
+      const distBehind = 6.0 + (speedKmh / 160.0) * 1.4;
+      const heightAbove = 2.3 + (speedKmh / 220.0) * 0.4;
 
       desiredPos.copy(targetPos)
         .addScaledVector(forward, -distBehind)
         .addScaledVector(up, heightAbove);
 
-      // Look slightly ahead of the car, oriented with velocity direction
+      // Smooth lookahead along forward heading and velocity vector
       const velDir = velocity.clone().normalize();
-      const blendDir = velDir.lengthSq() > 0.1 ? velDir : forward;
-      const lookLead = 8.0 + (speedKmh / 120.0) * 8.0;
+      const blendDir = (velDir.lengthSq() > 0.1 && forward.dot(velDir) > 0.3)
+        ? forward.clone().lerp(velDir, 0.35).normalize()
+        : forward;
+      const lookLead = 14.0 + (speedKmh / 120.0) * 8.0;
 
       desiredLook.copy(targetPos)
         .addScaledVector(blendDir, lookLead)
-        .addScaledVector(new THREE.Vector3(0, 1, 0), 1.2);
+        .addScaledVector(new THREE.Vector3(0, 1, 0), 0.9);
 
     } else if (this.mode === 'hood') {
       // Hood / Bumper camera
