@@ -62,6 +62,15 @@ export class PurePursuitAI {
   private currentTargetIndex = 0;
   private readonly wheelbase = 2.4; // Wheelbase in meters
 
+  // Static scratch objects to avoid per-frame allocations across all bots (P1)
+  private static readonly _targetPoint = new THREE.Vector3();
+  private static readonly _toOther = new THREE.Vector3();
+  private static readonly _forward = new THREE.Vector3();
+  private static readonly _right = new THREE.Vector3();
+  private static readonly _toTargetWorld = new THREE.Vector3();
+  private static readonly _invQuat = new THREE.Quaternion();
+  private static readonly _toTargetLocal = new THREE.Vector3();
+
   constructor(vehicle: VehiclePhysics, profile: AIBotProfile, waypoints: Waypoint[]) {
     this.vehicle = vehicle;
     this.profile = profile;
@@ -131,18 +140,18 @@ export class PurePursuitAI {
       lookaheadIndex = nextIdx;
     }
 
-    const targetPoint = this.waypoints[lookaheadIndex].point.clone();
+    const targetPoint = PurePursuitAI._targetPoint.copy(this.waypoints[lookaheadIndex].point);
 
     // 4. Opponent Avoidance (lateral offset when approaching cars ahead)
     for (const other of otherVehicles) {
       if (other.id === this.vehicle.id) continue;
       const distToOther = pos.distanceTo(other.position);
       if (distToOther < 8.0) {
-        const toOther = other.position.clone().sub(pos);
-        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
+        const toOther = PurePursuitAI._toOther.copy(other.position).sub(pos);
+        const forward = PurePursuitAI._forward.set(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
         // Only avoid if car is ahead
         if (forward.dot(toOther) > 0.3) {
-          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.vehicle.quaternion);
+          const right = PurePursuitAI._right.set(1, 0, 0).applyQuaternion(this.vehicle.quaternion);
           const isRight = right.dot(toOther) > 0;
           const avoidanceNormal = isRight ? -2.2 : 2.2;
           if (currentWp.normal) {
@@ -153,9 +162,9 @@ export class PurePursuitAI {
     }
 
     // 5. PURE PURSUIT LATERAL CONTROLLER
-    const toTargetWorld = targetPoint.clone().sub(pos);
-    const invQuat = this.vehicle.quaternion.clone().invert();
-    const toTargetLocal = toTargetWorld.applyQuaternion(invQuat);
+    const toTargetWorld = PurePursuitAI._toTargetWorld.copy(targetPoint).sub(pos);
+    const invQuat = PurePursuitAI._invQuat.copy(this.vehicle.quaternion).invert();
+    const toTargetLocal = PurePursuitAI._toTargetLocal.copy(toTargetWorld).applyQuaternion(invQuat);
 
     // Calculate heading deviation angle alpha
     const alpha = Math.atan2(toTargetLocal.x, Math.max(0.5, toTargetLocal.z));

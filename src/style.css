@@ -1306,3 +1306,101 @@ button {
   100% { transform: scale(0.95); opacity: 0.95; }
 }
 
+/* ==========================================================================
+   RACE RESULTS MODAL (M2)
+   ========================================================================== */
+.results-dialog {
+  max-width: 520px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.8), 0 0 40px rgba(245, 158, 11, 0.15);
+}
+
+.results-header {
+  margin-bottom: 24px;
+}
+
+.results-badge {
+  display: inline-block;
+  padding: 6px 18px;
+  border-radius: 9999px;
+  font-family: var(--font-tech);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+.badge-gold {
+  background: linear-gradient(135deg, #f59e0b, #fbbf24);
+  color: #111;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+}
+
+.badge-silver {
+  background: linear-gradient(135deg, #94a3b8, #e2e8f0);
+  color: #0f172a;
+  box-shadow: 0 0 20px rgba(226, 232, 240, 0.4);
+}
+
+.badge-bronze {
+  background: linear-gradient(135deg, #b45309, #d97706);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(217, 119, 6, 0.4);
+}
+
+.badge-finisher {
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.results-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.result-stat-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-lbl {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.stat-val {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: var(--font-tech);
+}
+
+.stat-gold {
+  color: #fbbf24;
+}
+
+.stat-emerald {
+  color: #34d399;
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.4);
+}
+
+.stat-cyan {
+  color: #38bdf8;
+}
+
+.results-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+

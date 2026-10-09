@@ -66,6 +66,20 @@ export class VehiclePhysics {
   public raceFinished = false;
   public raceRank = 1;
 
+  // Surface & Kerb geometry tracking (M1)
+  public currentSurface: 'asphalt' | 'gravel' | 'sand' | 'kerb' | 'grass' = 'asphalt';
+  public isOnKerb = false;
+  public isOffTrack = false;
+  private lastClosestWpIdx = 0;
+
+  // Scratch objects for zero-allocation per-frame physics (P1)
+  private static readonly _vForward = new THREE.Vector3();
+  private static readonly _vRight = new THREE.Vector3();
+  private static readonly _vUp = new THREE.Vector3();
+  private static readonly _vAccel = new THREE.Vector3();
+  private static readonly _vForceWorld = new THREE.Vector3();
+  private static readonly _vToCar = new THREE.Vector3();
+
   // Collision damage accumulator
   private lastVelocity = new THREE.Vector3();
 
@@ -143,17 +157,17 @@ export class VehiclePhysics {
     this.velocity.set(lv.x, lv.y, lv.z);
     this.angularVelocity.set(av.x, av.y, av.z);
 
-    // Compute vehicle coordinate frame
-    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.quaternion);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.quaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
+    // Compute vehicle coordinate frame using static scratch vectors (P1)
+    const forward = VehiclePhysics._vForward.set(0, 0, 1).applyQuaternion(this.quaternion);
+    const right = VehiclePhysics._vRight.set(1, 0, 0).applyQuaternion(this.quaternion);
+    const up = VehiclePhysics._vUp.set(0, 1, 0).applyQuaternion(this.quaternion);
 
     const forwardSpeed = this.velocity.dot(forward);
     const lateralSpeed = this.velocity.dot(right);
     this.speedKmh = Math.abs(forwardSpeed) * 3.6;
 
     // Detect impact shock & accumulate damage
-    const accelVector = this.velocity.clone().sub(this.lastVelocity).divideScalar(dt);
+    const accelVector = VehiclePhysics._vAccel.copy(this.velocity).sub(this.lastVelocity).divideScalar(dt);
     const impactG = accelVector.length() / 9.81;
     if (impactG > 12.0) {
       const damageAmount = Math.min(0.25, (impactG - 12.0) * 0.015);
@@ -170,20 +184,49 @@ export class VehiclePhysics {
     }
     this.lastVelocity.copy(this.velocity);
 
-    // Determine current surface grip (Tarmac = 1.0, Gravel = 0.75, Sand = 0.45)
-    let surfaceGrip = 0.95;
+    // M1: Real Geometric Kerb & Track Surface Detection
+    let surfaceGrip = 1.0;
     if (waypoints && waypoints.length > 0) {
-      let minDist = Infinity;
-      let closestSurface: 'asphalt' | 'gravel' | 'sand' = 'asphalt';
-      for (let i = 0; i < waypoints.length; i += 3) {
-        const d = this.position.distanceTo(waypoints[i].point);
-        if (d < minDist) {
-          minDist = d;
-          closestSurface = waypoints[i].surface;
+      const n = waypoints.length;
+      let closestIdx = this.lastClosestWpIdx;
+      let minDistSq = this.position.distanceToSquared(waypoints[closestIdx].point);
+
+      for (let offset = -6; offset <= 12; offset++) {
+        const idx = (this.lastClosestWpIdx + offset + n) % n;
+        const dSq = this.position.distanceToSquared(waypoints[idx].point);
+        if (dSq < minDistSq) {
+          minDistSq = dSq;
+          closestIdx = idx;
         }
       }
-      if (closestSurface === 'gravel') surfaceGrip = 0.72;
-      else if (closestSurface === 'sand') surfaceGrip = 0.42; // Mazovian river sand
+      this.lastClosestWpIdx = closestIdx;
+      const wp = waypoints[closestIdx];
+
+      const toCar = VehiclePhysics._vToCar.copy(this.position).sub(wp.point);
+      const normal = wp.normal ?? right;
+      const lateralDist = toCar.dot(normal);
+      const absOffset = Math.abs(lateralDist);
+      const halfWidth = wp.width * 0.5;
+      const curbWidth = 1.45;
+
+      if (absOffset <= halfWidth) {
+        this.isOnKerb = false;
+        this.isOffTrack = false;
+        this.currentSurface = wp.surface;
+        if (wp.surface === 'asphalt') surfaceGrip = 1.0;
+        else if (wp.surface === 'gravel') surfaceGrip = 0.74;
+        else if (wp.surface === 'sand') surfaceGrip = 0.44;
+      } else if (absOffset <= halfWidth + curbWidth) {
+        this.isOnKerb = true;
+        this.isOffTrack = false;
+        this.currentSurface = 'kerb';
+        surfaceGrip = 0.88;
+      } else {
+        this.isOnKerb = false;
+        this.isOffTrack = true;
+        this.currentSurface = 'grass';
+        surfaceGrip = 0.52;
+      }
     }
 
     // 2. DYNAMIC WEIGHT TRANSFER CALCULATIONS (Porsche Unleashed Inspiration)
@@ -325,7 +368,7 @@ export class VehiclePhysics {
     // Apply forces and torques to Rapier RigidBody
     // 1. Forward Net Force
     const netLongForce = (driveForceN - Math.sign(forwardSpeed) * (brakeForceN + aeroDragForce));
-    const forceWorld = forward.clone().multiplyScalar(netLongForce);
+    const forceWorld = VehiclePhysics._vForceWorld.copy(forward).multiplyScalar(netLongForce);
 
     // 2. Lateral Force (lateral tire adhesion holding car to corner line)
     const driftGripScale = this.isDrifting ? 0.65 : 1.0;
@@ -333,7 +376,7 @@ export class VehiclePhysics {
     forceWorld.addScaledVector(right, netLatForce);
 
     // 3. Downforce
-    forceWorld.addScaledVector(new THREE.Vector3(0, -1, 0), aeroDownforce);
+    forceWorld.y -= aeroDownforce;
 
     // Apply linear impulse
     this.rigidBody.applyImpulse(
@@ -439,7 +482,7 @@ export class VehiclePhysics {
     this.visual.wheelFR.rotation.y = this.steerAngle;
 
     // Spin wheels along forward axle X axis via dedicated spin sub-groups (no gimbal wobble!)
-    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.quaternion);
+    const forward = VehiclePhysics._vForward.set(0, 0, 1).applyQuaternion(this.quaternion);
     const forwardSpeed = this.velocity.dot(forward);
     const wheelSpinDelta = (forwardSpeed / 0.32) * dt;
 
@@ -504,6 +547,51 @@ export class VehiclePhysics {
     this.rpm = this.specs.idleRpm;
     this.currentGear = 1;
     this.isDrifting = false;
+  }
+
+  /**
+   * M3: Comprehensive race restart - eliminates leftover heat, drift, or yaw state
+   */
+  public reset(spawnPos: THREE.Vector3, spawnQuat: THREE.Quaternion): void {
+    this.resetPosition(spawnPos, spawnQuat);
+    this.steerAngle = 0;
+    this.targetSteerAngle = 0;
+    this.slipAngle = 0;
+    this.isDrifting = false;
+    this.driftScore = 0;
+    this.driftDuration = 0;
+    this.brakeRotorHeat = 0;
+    this.currentLap = 1;
+    this.currentCheckpointIndex = 0;
+    this.currentLapTime = 0;
+    this.raceFinished = false;
+    this.isOnKerb = false;
+    this.isOffTrack = false;
+    this.currentSurface = 'asphalt';
+    this.lastVelocity.set(0, 0, 0);
+
+    // Reset weight transfer
+    this.weightTransfer.frontLeftLoad = 0.20;
+    this.weightTransfer.frontRightLoad = 0.20;
+    this.weightTransfer.rearLeftLoad = 0.30;
+    this.weightTransfer.rearRightLoad = 0.30;
+    this.weightTransfer.frontBias = 0.40;
+    this.weightTransfer.rearBias = 0.60;
+    this.weightTransfer.rollAngle = 0;
+    this.weightTransfer.pitchAngle = 0;
+
+    // Reset visual rotations and emissives
+    this.visual.bodyMesh.rotation.set(0, 0, 0);
+    this.visual.wheelFL.rotation.set(0, 0, 0);
+    this.visual.wheelFR.rotation.set(0, 0, 0);
+    if (this.visual.driverHead) this.visual.driverHead.rotation.set(0, 0, 0);
+    this.visual.brakeLightMaterial.emissive.setHex(0x450a0a);
+    this.visual.brakeLightMaterial.emissiveIntensity = 0.2;
+    if (this.visual.brakeRotorMaterials) {
+      for (const mat of this.visual.brakeRotorMaterials) {
+        mat.emissiveIntensity = 0.0;
+      }
+    }
   }
 
   public getVehicleState(): VehicleState {

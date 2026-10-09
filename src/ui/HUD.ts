@@ -1,6 +1,23 @@
 import { VehicleState } from '../game/Types';
 import { Waypoint } from '../physics/TrackWaypoints';
 
+export function getOrdinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+export interface RaceResultsData {
+  rank: number;
+  prize: number;
+  bestLapTime: number;
+  totalTime: number;
+  driftScore: number;
+  onRetry: () => void;
+  onGarage: () => void;
+  onMenu: () => void;
+}
+
 export class HUD {
   private container: HTMLDivElement;
 
@@ -39,10 +56,13 @@ export class HUD {
 
   // Pause modal & controls
   private pauseModal!: HTMLElement;
+  private resultsModal!: HTMLElement;
+  private currentResultsData: RaceResultsData | null = null;
   public isPaused = false;
   public isSplitScreen = false;
   public callbacks: {
     onResume?: () => void;
+    onPause?: () => void;
     onRestart?: () => void;
     onQuit?: () => void;
     onVolumeChange?: (vol: number) => void;
@@ -253,6 +273,48 @@ export class HUD {
         </div>
       </div>
 
+      <!-- IN-GAME FROSTED GLASS RACE FINISH & RESULTS MODAL (M2) -->
+      <div id="hud-results-modal" class="hud-pause-modal" style="display: none;">
+        <div class="pause-dialog hud-glass results-dialog">
+          <div class="results-header">
+            <div id="results-rank-badge" class="results-badge badge-gold">1st PLACE</div>
+            <h2 id="results-headline">🏆 VICTORY!</h2>
+            <span class="pause-subtitle">WARSAW SUBURBS GRAND PRIX • OFFICIAL TIMING</span>
+          </div>
+
+          <div class="results-stats-grid">
+            <div class="result-stat-card">
+              <span class="stat-lbl">FINAL POSITION</span>
+              <span id="res-val-pos" class="stat-val stat-gold">1st</span>
+            </div>
+            <div class="result-stat-card">
+              <span class="stat-lbl">BEST LAP</span>
+              <span id="res-val-bestlap" class="stat-val time-mono">00:00.00</span>
+            </div>
+            <div class="result-stat-card">
+              <span class="stat-lbl">TOTAL TIME</span>
+              <span id="res-val-totaltime" class="stat-val time-mono">00:00.00</span>
+            </div>
+            <div class="result-stat-card">
+              <span class="stat-lbl">PRIZE MONEY</span>
+              <span id="res-val-prize" class="stat-val stat-emerald">+0 PLN</span>
+            </div>
+          </div>
+
+          <div class="results-actions">
+            <button id="btn-results-retry" class="btn-primary">
+              🔄 RETRY RACE (ENTER)
+            </button>
+            <button id="btn-results-garage" class="btn-secondary">
+              🔧 GARAGE & TUNING
+            </button>
+            <button id="btn-results-menu" class="btn-secondary">
+              🏠 MAIN MENU (ESC)
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Player 2 Cluster for Split Screen -->
       <div id="hud-p2" class="hud-p2-cluster hud-glass" style="display: none;">
         <div class="hud-label">PLAYER 2 (RIGHT SCREEN)</div>
@@ -295,9 +357,11 @@ export class HUD {
     // Shift Lights
     this.shiftLeds = Array.from(this.container.querySelectorAll('.shift-led'));
 
-    // Pause Modal & Setup
+    // Modals & Listeners
     this.pauseModal = this.container.querySelector('#hud-pause-modal')!;
+    this.resultsModal = this.container.querySelector('#hud-results-modal')!;
     this.setupPauseListeners();
+    this.setupResultsListeners();
   }
 
   private setupPauseListeners(): void {
@@ -395,9 +459,84 @@ export class HUD {
     });
   }
 
+  private setupResultsListeners(): void {
+    const btnRetry = this.container.querySelector('#btn-results-retry');
+    const btnGarage = this.container.querySelector('#btn-results-garage');
+    const btnMenu = this.container.querySelector('#btn-results-menu');
+
+    btnRetry?.addEventListener('click', () => {
+      this.hideRaceResults();
+      this.currentResultsData?.onRetry();
+    });
+
+    btnGarage?.addEventListener('click', () => {
+      this.hideRaceResults();
+      this.currentResultsData?.onGarage();
+    });
+
+    btnMenu?.addEventListener('click', () => {
+      this.hideRaceResults();
+      this.currentResultsData?.onMenu();
+    });
+  }
+
+  public showRaceResults(data: RaceResultsData): void {
+    this.currentResultsData = data;
+    const badge = this.container.querySelector('#results-rank-badge');
+    const headline = this.container.querySelector('#results-headline');
+    const resPos = this.container.querySelector('#res-val-pos');
+    const resBest = this.container.querySelector('#res-val-bestlap');
+    const resTotal = this.container.querySelector('#res-val-totaltime');
+    const resPrize = this.container.querySelector('#res-val-prize');
+
+    const ord = getOrdinal(data.rank);
+    if (resPos) resPos.textContent = ord;
+
+    if (badge && headline) {
+      badge.className = 'results-badge';
+      if (data.rank === 1) {
+        badge.classList.add('badge-gold');
+        badge.textContent = '1ST PLACE • CHAMPION';
+        headline.textContent = '🏆 VICTORY!';
+      } else if (data.rank === 2) {
+        badge.classList.add('badge-silver');
+        badge.textContent = '2ND PLACE • PODIUM';
+        headline.textContent = '🥈 EXCELLENT DRIVE!';
+      } else if (data.rank === 3) {
+        badge.classList.add('badge-bronze');
+        badge.textContent = '3RD PLACE • PODIUM';
+        headline.textContent = '🥉 PODIUM FINISH!';
+      } else {
+        badge.classList.add('badge-finisher');
+        badge.textContent = `${ord.toUpperCase()} PLACE • FINISHER`;
+        headline.textContent = '🏁 RACE COMPLETED';
+      }
+    }
+
+    const fmt = (t: number) => {
+      if (!isFinite(t) || t <= 0) return '--:--.--';
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60);
+      const ms = Math.floor((t * 100) % 100);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+    };
+
+    if (resBest) resBest.textContent = fmt(data.bestLapTime);
+    if (resTotal) resTotal.textContent = fmt(data.totalTime);
+    if (resPrize) resPrize.textContent = `+${data.prize.toLocaleString()} PLN`;
+
+    this.resultsModal.style.display = 'flex';
+  }
+
+  public hideRaceResults(): void {
+    this.resultsModal.style.display = 'none';
+    this.currentResultsData = null;
+  }
+
   public showPauseModal(): void {
     this.isPaused = true;
     this.pauseModal.style.display = 'flex';
+    this.callbacks.onPause?.();
   }
 
   public hidePauseModal(): void {
@@ -475,8 +614,7 @@ export class HUD {
 
     // Lap and position
     this.lapEl.textContent = `${playerState.lap} / 3`;
-    const rankSuffix = ['th', 'st', 'nd', 'rd', 'th', 'th', 'th'][playerState.raceRank] || 'th';
-    this.rankEl.textContent = `${playerState.raceRank}${rankSuffix}`;
+    this.rankEl.textContent = getOrdinal(playerState.raceRank);
 
     // Lap time formatting (MM:SS.ms)
     const minutes = Math.floor(playerState.lapTime / 60);

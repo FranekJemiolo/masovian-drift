@@ -47,8 +47,8 @@ export class GameManager {
   private audioManager!: AudioManager;
   private inputManager!: InputManager;
   private evolutionStore!: EvolutionStore;
-  private hud!: HUD;
-  private menuUI!: MenuUI;
+  public hud!: HUD;
+  public menuUI!: MenuUI;
   private webRTCManager!: WebRTCManager;
 
   // Game state
@@ -56,6 +56,7 @@ export class GameManager {
   public isRacing = false;
   public isPaused = false;
   private countdownRemaining = 3.2;
+  private totalRaceTime = 0;
   private networkSequence = 0;
   private lastNetworkSendTime = 0;
   private clock = new THREE.Clock();
@@ -146,9 +147,13 @@ export class GameManager {
     this.hud.callbacks = {
       onResume: () => {
         this.isPaused = false;
+        this.clock.getDelta(); // flush accumulated pause delta
+        this.audioManager.resume();
       },
       onRestart: () => {
         this.isPaused = false;
+        this.clock.getDelta(); // flush accumulated pause delta
+        this.audioManager.resume();
         this.restartRace();
       },
       onQuit: () => {
@@ -159,7 +164,7 @@ export class GameManager {
         this.isRacing = false;
       },
       onVolumeChange: (vol) => {
-        this.audioManager.playerSynth?.setVolume(vol);
+        this.audioManager.setMasterVolume(vol);
       },
       onCameraChange: (mode) => {
         this.p1Camera.mode = mode;
@@ -205,6 +210,12 @@ export class GameManager {
       } else if (e.code === 'Escape' || e.code === 'KeyP') {
         if (this.isRacing) {
           this.isPaused = this.hud.togglePause();
+          if (this.isPaused) {
+            this.audioManager.pause();
+          } else {
+            this.clock.getDelta(); // flush accumulated pause delta
+            this.audioManager.resume();
+          }
         }
       }
     });
@@ -612,13 +623,10 @@ export class GameManager {
         }
       }
 
-      // Curb strike tactile vibration and sound
-      if (this.playerVehicle.speedKmh > 32 && Math.abs(this.playerVehicle.steerAngle) > 0.14) {
-        const wt = this.playerVehicle.weightTransfer;
-        if (Math.abs(wt.rollAngle) > 0.035 && Math.random() < 0.08) {
-          this.audioManager.playCurb();
-          this.p1Camera.addTrauma(0.06);
-        }
+      // M1: Geometric curb strike tactile vibration and sound
+      if (this.playerVehicle.isOnKerb && this.playerVehicle.speedKmh > 20) {
+        this.audioManager.playCurb();
+        this.p1Camera.addTrauma(0.04);
       }
 
       // 5. Update HUD (with real-time circuit Minimap & Drift Combo Banner)
@@ -675,22 +683,18 @@ export class GameManager {
     const height = window.innerHeight;
 
     if (this.currentMode === 'split-screen' && this.p2Vehicle) {
-      // Split Screen Duel Mode
-      this.renderer.setScissorTest(true);
-
+      // Split Screen Duel Mode (G1: full post-processing pipeline for both viewports)
       const halfWidth = Math.floor(width * 0.5);
 
+      this.renderer.setScissorTest(true);
+
       // View 1: Left Screen (Player 1)
-      this.renderer.setViewport(0, 0, halfWidth, height);
-      this.renderer.setScissor(0, 0, halfWidth, height);
       this.p1Camera.setAspect(halfWidth / height);
-      this.renderer.render(this.scene, this.p1Camera.camera);
+      this.postProcessor.renderToViewport(this.p1Camera.camera, 0, 0, halfWidth, height);
 
       // View 2: Right Screen (Player 2)
-      this.renderer.setViewport(halfWidth, 0, halfWidth, height);
-      this.renderer.setScissor(halfWidth, 0, halfWidth, height);
       this.p2Camera.setAspect(halfWidth / height);
-      this.renderer.render(this.scene, this.p2Camera.camera);
+      this.postProcessor.renderToViewport(this.p2Camera.camera, halfWidth, 0, halfWidth, height);
 
       this.renderer.setScissorTest(false);
 
@@ -702,6 +706,7 @@ export class GameManager {
   }
 
   private updateRaceProgression(dt: number): void {
+    this.totalRaceTime += dt;
     const cpCount = this.checkpoints.length;
 
     for (const v of this.allVehicles) {
@@ -751,20 +756,40 @@ export class GameManager {
     // Save persistent damage to IndexedDB
     this.evolutionStore.updateDamage(this.evolutionStore.getCurrentCar().id, this.playerVehicle.damage);
 
-    setTimeout(() => {
-      alert(`🏁 RACE FINISHED! You placed ${rank}${['st', 'nd', 'rd', 'th'][Math.min(3, rank - 1)]}!\nEarned ${prize} PLN! Persistent damage saved to Evolution garage.`);
-      this.hud.hide();
-      this.audioManager.stopEngines();
-      this.menuUI.renderMainMenu();
-      this.isRacing = false;
-    }, 800);
+    this.audioManager.pause();
+    this.hud.showRaceResults({
+      rank,
+      prize,
+      bestLapTime: this.playerVehicle.bestLapTime,
+      totalTime: this.totalRaceTime,
+      driftScore: this.playerVehicle.driftScore,
+      onRetry: () => {
+        this.restartRace();
+      },
+      onGarage: () => {
+        this.hud.hide();
+        this.audioManager.stopEngines();
+        this.isRacing = false;
+        this.menuUI.renderMainMenu();
+        this.menuUI.renderGarageModal();
+      },
+      onMenu: () => {
+        this.hud.hide();
+        this.audioManager.stopEngines();
+        this.isRacing = false;
+        this.menuUI.renderMainMenu();
+      },
+    });
   }
 
   public restartRace(): void {
     if (!this.isRacing || !this.playerVehicle) return;
     this.countdownRemaining = 3.2;
     this.isPaused = false;
+    this.totalRaceTime = 0;
     this.hud.hidePauseModal();
+    this.hud.hideRaceResults();
+    this.particleFX.reset();
 
     const spawnWp = this.waypoints[0];
     const tangent = spawnWp.tangent ?? new THREE.Vector3(0, 0, 1);
@@ -775,12 +800,7 @@ export class GameManager {
       .addScaledVector(tangent, -6.0)
       .addScaledVector(normal, 2.8);
     p1Spawn.y += 0.45;
-    this.playerVehicle.resetPosition(p1Spawn, spawnQuat);
-    this.playerVehicle.currentLap = 1;
-    this.playerVehicle.currentLapTime = 0;
-    this.playerVehicle.currentCheckpointIndex = 0;
-    this.playerVehicle.driftScore = 0;
-    this.playerVehicle.raceFinished = false;
+    this.playerVehicle.reset(p1Spawn, spawnQuat);
     this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
 
     if (this.p2Vehicle) {
@@ -788,12 +808,7 @@ export class GameManager {
         .addScaledVector(tangent, -6.0)
         .addScaledVector(normal, -2.8);
       p2Spawn.y += 0.45;
-      this.p2Vehicle.resetPosition(p2Spawn, spawnQuat);
-      this.p2Vehicle.currentLap = 1;
-      this.p2Vehicle.currentLapTime = 0;
-      this.p2Vehicle.currentCheckpointIndex = 0;
-      this.p2Vehicle.driftScore = 0;
-      this.p2Vehicle.raceFinished = false;
+      this.p2Vehicle.reset(p2Spawn, spawnQuat);
       this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
     }
 
@@ -805,11 +820,7 @@ export class GameManager {
         .addScaledVector(tangent, -distBack)
         .addScaledVector(normal, sideOffset);
       aiSpawn.y += 0.45;
-      this.aiBots[i].vehicle.resetPosition(aiSpawn, spawnQuat);
-      this.aiBots[i].vehicle.currentLap = 1;
-      this.aiBots[i].vehicle.currentLapTime = 0;
-      this.aiBots[i].vehicle.currentCheckpointIndex = 0;
-      this.aiBots[i].vehicle.raceFinished = false;
+      this.aiBots[i].vehicle.reset(aiSpawn, spawnQuat);
 
       let closestWpIdx = 0;
       let minWpDist = Infinity;

@@ -44,6 +44,10 @@ export class ParticleFX {
   private skidDummy = new THREE.Object3D();
   private nextSkidIdx = 0;
 
+  // Static scratch vectors for tire positions (P1)
+  private static readonly _scratchTireL = new THREE.Vector3();
+  private static readonly _scratchTireR = new THREE.Vector3();
+
   constructor(scene: THREE.Scene) {
     this.scene = scene;
 
@@ -209,9 +213,9 @@ export class ParticleFX {
       const isSlipping = v.speedKmh > 18 && (isDrifting || v.weightTransfer.rearLeftLoad < 0.1);
 
       if (isSlipping) {
-        // Rear tire positions in world space
-        const leftRear = new THREE.Vector3(-0.8, 0.15, -1.05).applyQuaternion(v.quaternion).add(v.position);
-        const rightRear = new THREE.Vector3(0.8, 0.15, -1.05).applyQuaternion(v.quaternion).add(v.position);
+        // Rear tire positions in world space using static scratch vectors (P1)
+        const leftRear = ParticleFX._scratchTireL.set(-0.8, 0.15, -1.05).applyQuaternion(v.quaternion).add(v.position);
+        const rightRear = ParticleFX._scratchTireR.set(0.8, 0.15, -1.05).applyQuaternion(v.quaternion).add(v.position);
 
         if (Math.random() < 0.65) {
           this.emitTireSmoke(leftRear, v.velocity);
@@ -268,5 +272,37 @@ export class ParticleFX {
       this.flameMeshR.visible = false;
       this.flameLight.intensity = 0;
     }
+  }
+
+  /**
+   * M3: Comprehensive FX restart - removes leftover skidmarks, smoke, and flames
+   */
+  public reset(): void {
+    // Clear smoke
+    for (let i = 0; i < this.maxSmoke; i++) {
+      this.smokeParticles[i].active = false;
+      this.smokeDummy.position.set(0, -999, 0);
+      this.smokeDummy.scale.set(0, 0, 0);
+      this.smokeDummy.updateMatrix();
+      this.smokeMesh.setMatrixAt(i, this.smokeDummy.matrix);
+    }
+    this.smokeMesh.instanceMatrix.needsUpdate = true;
+
+    // Clear skidmarks
+    for (let i = 0; i < this.maxSkids; i++) {
+      this.skidSegments[i].active = false;
+      this.skidDummy.position.set(0, -999, 0);
+      this.skidDummy.scale.set(0, 0, 0);
+      this.skidDummy.updateMatrix();
+      this.skidMesh.setMatrixAt(i, this.skidDummy.matrix);
+    }
+    this.skidMesh.instanceMatrix.needsUpdate = true;
+    this.nextSkidIdx = 0;
+
+    // Clear flames
+    this.flameTimer = 0;
+    this.flameMeshL.visible = false;
+    this.flameMeshR.visible = false;
+    this.flameLight.intensity = 0;
   }
 }

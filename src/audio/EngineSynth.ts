@@ -33,8 +33,11 @@ export class EngineSynth {
   private prevThrottle = 0;
   private lastBovTime = 0;
 
-  constructor(ctx: AudioContext) {
+  private outputNode: AudioNode;
+
+  constructor(ctx: AudioContext, destination?: AudioNode) {
     this.ctx = ctx;
+    this.outputNode = destination ?? ctx.destination;
 
     // Master Engine Bus
     this.masterGain = ctx.createGain();
@@ -59,12 +62,12 @@ export class EngineSynth {
     this.oscSawGain.gain.value = 0.35;
 
     // Connect Engine Chain:
-    // Oscillators -> Gains -> WaveShaper -> Filter -> MasterGain -> Destination
+    // Oscillators -> Gains -> WaveShaper -> Filter -> MasterGain -> Destination Bus
     this.oscSubGain.connect(this.waveShaper);
     this.oscSawGain.connect(this.waveShaper);
     this.waveShaper.connect(this.filter);
     this.filter.connect(this.masterGain);
-    this.masterGain.connect(ctx.destination);
+    this.masterGain.connect(this.outputNode);
 
     // Straight-Cut Transmission Gear Whine Bus
     this.gearWhineGain = ctx.createGain();
@@ -85,7 +88,7 @@ export class EngineSynth {
     this.tireGain = ctx.createGain();
     this.tireGain.gain.value = 0.0;
     this.tireFilter.connect(this.tireGain);
-    this.tireGain.connect(ctx.destination);
+    this.tireGain.connect(this.outputNode);
   }
 
   private makeDistortionCurve(amount: number): Float32Array {
@@ -326,7 +329,7 @@ export class EngineSynth {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
 
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(this.outputNode);
     osc.start(t);
     osc.stop(t + 0.4);
   }

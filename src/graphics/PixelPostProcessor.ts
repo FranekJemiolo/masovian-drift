@@ -241,6 +241,68 @@ export class PixelPostProcessor {
     this.renderer.render(this.postScene, this.postCamera);
   }
 
+  /**
+   * G1: Render through full post-processing pipeline into a designated viewport & scissor box
+   * Allows Split-Screen mode to retain full post-processing without degradation!
+   */
+  public renderToViewport(
+    cam: THREE.Camera,
+    vx: number,
+    vy: number,
+    vw: number,
+    vh: number
+  ): void {
+    if (cam instanceof THREE.PerspectiveCamera) {
+      this.postMaterial.uniforms.uCameraNear.value = cam.near;
+      this.postMaterial.uniforms.uCameraFar.value = cam.far;
+    }
+
+    if (!this.enabled) {
+      this.renderer.setViewport(vx, vy, vw, vh);
+      this.renderer.setScissor(vx, vy, vw, vh);
+      this.renderer.render(this.scene, cam);
+      return;
+    }
+
+    // Step 1: Render scene to offscreen buffer
+    this.renderer.setRenderTarget(this.renderTarget);
+    this.renderer.render(this.scene, cam);
+
+    // Step 2: Composite post-processed frame into the designated screen viewport
+    this.renderer.setRenderTarget(null);
+    this.renderer.setViewport(vx, vy, vw, vh);
+    this.renderer.setScissor(vx, vy, vw, vh);
+    this.renderer.render(this.postScene, this.postCamera);
+  }
+
+  /**
+   * P3: Quality presets for dynamic performance scaling
+   */
+  public setQualityPreset(preset: 'low' | 'medium' | 'high' | 'ultra'): void {
+    switch (preset) {
+      case 'low':
+        this.setPixelScale(2.0);
+        this.setBloomIntensity(0.0);
+        this.postMaterial.uniforms.uEdgeStrength.value = 0.4;
+        break;
+      case 'medium':
+        this.setPixelScale(1.5);
+        this.setBloomIntensity(0.7);
+        this.postMaterial.uniforms.uEdgeStrength.value = 0.6;
+        break;
+      case 'high':
+        this.setPixelScale(1.0);
+        this.setBloomIntensity(1.25);
+        this.postMaterial.uniforms.uEdgeStrength.value = 0.85;
+        break;
+      case 'ultra':
+        this.setPixelScale(1.0);
+        this.setBloomIntensity(1.6);
+        this.postMaterial.uniforms.uEdgeStrength.value = 1.0;
+        break;
+    }
+  }
+
   public dispose(): void {
     this.renderTarget.dispose();
     this.depthTexture.dispose();
