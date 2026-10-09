@@ -139,6 +139,9 @@ export class GameManager {
       },
     });
 
+    // 10. Spawn Initial Showcase Car at Start Line
+    this.spawnShowcaseCar();
+
     // Handle window resize
     window.addEventListener('resize', () => this.onWindowResize());
 
@@ -155,6 +158,41 @@ export class GameManager {
 
     // Start Main Render & Simulation Loop
     this.animate();
+  }
+
+  private spawnShowcaseCar(): void {
+    const currentCar = this.evolutionStore.getCurrentCar();
+    const p1Visual = VoxelCarBuilder.createVoxelBoxer(
+      currentCar.specs.bodyColor,
+      currentCar.specs.accentColor,
+      true
+    );
+    this.scene.add(p1Visual.root);
+
+    const spawnWp = this.waypoints[0];
+    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.4, -4.0));
+    const spawnQuat = new THREE.Quaternion();
+    if (spawnWp.tangent) {
+      spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), spawnWp.tangent);
+    }
+
+    this.playerVehicle = new VehiclePhysics(
+      'player-1',
+      currentCar.modelName,
+      currentCar.specs,
+      p1Visual,
+      this.physicsWorld.world,
+      spawnPos,
+      spawnQuat,
+      true,
+      false,
+      currentCar.damage
+    );
+    this.allVehicles.push(this.playerVehicle);
+
+    // Initial camera position overlooking the starting straight and Gurewicz villa
+    this.p1Camera.camera.position.set(spawnPos.x + 8.0, spawnPos.y + 3.0, spawnPos.z + 8.0);
+    this.p1Camera.camera.lookAt(spawnPos.x, spawnPos.y + 0.8, spawnPos.z);
   }
 
   public startGame(mode: GameMode): void {
@@ -418,6 +456,19 @@ export class GameManager {
           this.webRTCManager.sendState(buffer);
         }
       }
+    } else {
+      // Menu showcase mode: slow cinematic orbit camera around the player's voxel car!
+      if (this.playerVehicle) {
+        const t = this.clock.getElapsedTime() * 0.22;
+        const carPos = this.playerVehicle.position;
+        const camDist = 9.5;
+        this.p1Camera.camera.position.set(
+          carPos.x + Math.sin(t) * camDist,
+          carPos.y + 2.8,
+          carPos.z + Math.cos(t) * camDist
+        );
+        this.p1Camera.camera.lookAt(carPos.x, carPos.y + 0.9, carPos.z);
+      }
     }
 
     // 6. RENDER FRAME (Split-Screen Scissor / Viewport or Fullscreen)
@@ -512,6 +563,7 @@ export class GameManager {
     setTimeout(() => {
       alert(`🏁 RACE FINISHED! You placed ${rank}${['st', 'nd', 'rd', 'th'][Math.min(3, rank - 1)]}!\nEarned ${prize} PLN! Persistent damage saved to Evolution garage.`);
       this.hud.hide();
+      this.audioManager.stopEngines();
       this.menuUI.renderMainMenu();
       this.isRacing = false;
     }, 800);

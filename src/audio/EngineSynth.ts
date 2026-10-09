@@ -190,10 +190,18 @@ export class EngineSynth {
     if (!this.isRunning) return;
     try {
       this.oscSub?.stop();
+      this.oscSub?.disconnect();
       this.oscSaw1?.stop();
+      this.oscSaw1?.disconnect();
       this.oscSaw2?.stop();
+      this.oscSaw2?.disconnect();
       this.tireNoiseNode?.stop();
+      this.tireNoiseNode?.disconnect();
     } catch (_) {}
+    this.oscSub = null;
+    this.oscSaw1 = null;
+    this.oscSaw2 = null;
+    this.tireNoiseNode = null;
     this.isRunning = false;
   }
 }

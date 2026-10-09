@@ -31,6 +31,7 @@ export class HUD {
   constructor() {
     this.container = document.createElement('div');
     this.container.id = 'game-hud';
+    this.container.style.display = 'none';
     this.createDom();
     document.body.appendChild(this.container);
   }

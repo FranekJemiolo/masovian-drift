@@ -64,6 +64,11 @@ export class AudioManager {
     this.playerSynth?.start();
   }
 
+  public stopEngines(): void {
+    this.playerSynth?.stop();
+    this.p2Synth?.stop();
+  }
+
   public startSplitScreenEngines(): void {
     this.ensureContext();
     this.playerSynth?.start();
