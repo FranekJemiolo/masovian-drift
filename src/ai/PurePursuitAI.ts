@@ -68,6 +68,10 @@ export class PurePursuitAI {
     this.waypoints = waypoints;
   }
 
+  public setTargetIndex(index: number): void {
+    this.currentTargetIndex = THREE.MathUtils.clamp(index, 0, this.waypoints.length - 1);
+  }
+
   /**
    * Updates AI steering, throttle, and braking using Adaptive Pure Pursuit
    */
@@ -77,29 +81,39 @@ export class PurePursuitAI {
     const speedMs = speedKmh / 3.6;
     const count = this.waypoints.length;
 
-    // 1. Find closest waypoint to vehicle
+    // 1. Find closest waypoint to vehicle along race spline
     let closestDist = Infinity;
     let closestIndex = this.currentTargetIndex;
-    const searchWindow = 12;
 
-    for (let k = -4; k <= searchWindow; k++) {
-      const idx = (this.currentTargetIndex + k + count) % count;
-      const d = pos.distanceTo(this.waypoints[idx].point);
-      if (d < closestDist) {
-        closestDist = d;
-        closestIndex = idx;
+    const currentDist = pos.distanceTo(this.waypoints[this.currentTargetIndex].point);
+    if (currentDist > 20.0) {
+      // Full circuit search if displaced or initializing
+      for (let i = 0; i < count; i++) {
+        const d = pos.distanceTo(this.waypoints[i].point);
+        if (d < closestDist) {
+          closestDist = d;
+          closestIndex = i;
+        }
+      }
+    } else {
+      // Local progression window
+      const searchWindow = 14;
+      for (let k = -4; k <= searchWindow; k++) {
+        const idx = (this.currentTargetIndex + k + count) % count;
+        const d = pos.distanceTo(this.waypoints[idx].point);
+        if (d < closestDist) {
+          closestDist = d;
+          closestIndex = idx;
+        }
       }
     }
     this.currentTargetIndex = closestIndex;
 
-    // 2. ADAPTIVE LOOKAHEAD DISTANCE ALGORITHM (Milestone 6 requirement)
-    // At high speeds on straightaways: lengthen lookahead (up to 28m) to prevent erratic oscillations.
-    // In sharp, sandy corners: contract lookahead (down to 7m) to follow tight envelopes and initiate oversteer!
-    const minLookahead = 7.5;
+    // 2. ADAPTIVE LOOKAHEAD DISTANCE ALGORITHM
+    const minLookahead = 8.0;
     const maxLookahead = 28.0;
     const currentWp = this.waypoints[this.currentTargetIndex];
 
-    // Sharpness discount: if target speed is low (tight corner), shrink lookahead
     const cornerFactor = Math.min(1.0, currentWp.targetSpeedKmh / 160.0);
     const adaptiveLookahead = THREE.MathUtils.clamp(
       minLookahead + (speedMs * this.profile.lookaheadGain * 3.8) * cornerFactor,
@@ -123,14 +137,13 @@ export class PurePursuitAI {
     for (const other of otherVehicles) {
       if (other.id === this.vehicle.id) continue;
       const distToOther = pos.distanceTo(other.position);
-      if (distToOther < 9.0) {
+      if (distToOther < 8.0) {
         const toOther = other.position.clone().sub(pos);
         const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
-        // Only avoid if car is in front
-        if (forward.dot(toOther) > 0.5) {
+        // Only avoid if car is ahead
+        if (forward.dot(toOther) > 0.3) {
           const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.vehicle.quaternion);
           const isRight = right.dot(toOther) > 0;
-          // Offset target point away from other vehicle
           const avoidanceNormal = isRight ? -2.2 : 2.2;
           if (currentWp.normal) {
             targetPoint.addScaledVector(currentWp.normal, avoidanceNormal);
@@ -139,30 +152,26 @@ export class PurePursuitAI {
       }
     }
 
-    // 5. PURE PURSUIT LATERAL CONTROLLER (Trigonometric curvature calculation)
-    // Transform target point to vehicle local space
+    // 5. PURE PURSUIT LATERAL CONTROLLER
     const toTargetWorld = targetPoint.clone().sub(pos);
     const invQuat = this.vehicle.quaternion.clone().invert();
     const toTargetLocal = toTargetWorld.applyQuaternion(invQuat);
 
     // Calculate heading deviation angle alpha
-    const lookaheadDist = toTargetLocal.length();
-    const alpha = Math.atan2(toTargetLocal.x, toTargetLocal.z);
+    const alpha = Math.atan2(toTargetLocal.x, Math.max(0.5, toTargetLocal.z));
+    const lookaheadDist = Math.max(3.0, toTargetLocal.length());
 
     // Pure pursuit curvature: kappa = (2 * sin(alpha)) / L_d
-    const curvature = (2.0 * Math.sin(alpha)) / Math.max(2.0, lookaheadDist);
+    const curvature = (2.0 * Math.sin(alpha)) / lookaheadDist;
 
-    // Required steering angle: delta = atan(curvature * wheelbase)
+    // Required steering angle
     const rawSteerAngle = Math.atan(curvature * this.wheelbase);
-
-    // Normalize steer between -1.0 and +1.0
     const steerInput = THREE.MathUtils.clamp(rawSteerAngle / 0.55, -1.0, 1.0);
 
     // 6. SPEED & THROTTLE/BRAKING CONTROLLER
-    // Adjust target speed by bot aggression and surface condition
     let adjustedTargetSpeed = currentWp.targetSpeedKmh * this.profile.aggression;
     if (currentWp.surface === 'sand') {
-      adjustedTargetSpeed *= 0.88; // Extra caution on loose dunes
+      adjustedTargetSpeed *= 0.88;
     }
 
     let throttle = 0;
@@ -171,18 +180,22 @@ export class PurePursuitAI {
 
     const speedDiff = speedKmh - adjustedTargetSpeed;
 
-    if (speedDiff > 5.0) {
-      // Over speed: brake hard to shift weight to front and rotate car
-      brake = Math.min(1.0, (speedDiff / 30.0) * 1.2);
+    if (speedDiff > 8.0) {
+      // Over speed: brake into turn
+      brake = Math.min(1.0, (speedDiff / 25.0));
       throttle = 0;
 
-      // In sandy sharp corners, tap handbrake to induce deliberate drift slide!
+      // Sandy hairpins drift tap
       if (Math.abs(alpha) > 0.45 && currentWp.surface === 'sand' && Math.random() < 0.08 * this.profile.driftEnthusiasm) {
         handbrake = true;
       }
+    } else if (speedDiff > 0.0) {
+      // Modulate throttle near limit
+      throttle = 0.7;
+      brake = 0;
     } else {
-      // Accelerate out of turn
-      throttle = Math.min(1.0, Math.max(0.3, 1.0 - (speedDiff / 15.0)));
+      // Full throttle acceleration down straights!
+      throttle = 1.0;
       brake = 0;
     }
 

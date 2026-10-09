@@ -103,19 +103,20 @@ export class VehiclePhysics {
     spawnQuat: THREE.Quaternion
   ): void {
     const rbDesc = RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(spawnPos.x, spawnPos.y + 0.5, spawnPos.z)
+      .setTranslation(spawnPos.x, spawnPos.y + 0.45, spawnPos.z)
       .setRotation(new RAPIER.Quaternion(spawnQuat.x, spawnQuat.y, spawnQuat.z, spawnQuat.w))
-      .setLinearDamping(0.15)
-      .setAngularDamping(2.8)
+      .setLinearDamping(0.04)
+      .setAngularDamping(0.4)
       .setCanSleep(false);
 
     this.rigidBody = world.createRigidBody(rbDesc);
 
     // Chassis collision box (centered with 60% rear weight bias)
+    // 0.0 friction on chassis collider so tire dynamics mathematically govern traction & lateral grip!
     const colDesc = RAPIER.ColliderDesc.cuboid(0.85, 0.35, 1.95)
       .setMass(this.specs.mass)
-      .setFriction(0.3)
-      .setRestitution(0.12);
+      .setFriction(0.0)
+      .setRestitution(0.08);
 
     this.position.copy(spawnPos);
     this.quaternion.copy(spawnQuat);
@@ -228,22 +229,21 @@ export class VehiclePhysics {
     this.updatePowertrain(inputs, forwardSpeed, dt);
 
     // 5. TIRE FORCES & OVERSTEER DYNAMICS
-    // Normal force per axle (Newtons)
     const totalWeightN = this.specs.mass * 9.81;
     const frontNormalN = totalWeightN * dynamicFrontBias;
     const rearNormalN = totalWeightN * dynamicRearBias;
 
     // Tire grip limits (governed by normal force * surface friction)
-    const frontMaxGrip = frontNormalN * surfaceGrip * 1.15;
-    let rearMaxGrip = rearNormalN * surfaceGrip * 1.25;
+    const frontMaxGrip = frontNormalN * surfaceGrip * 1.35;
+    let rearMaxGrip = rearNormalN * surfaceGrip * 1.45;
 
     // Handbrake breaks rear traction immediately
     if (inputs.handbrake) {
-      rearMaxGrip *= 0.22;
+      rearMaxGrip *= 0.20;
     }
 
     // Rear slip angle (rad)
-    this.slipAngle = Math.atan2(lateralSpeed, Math.max(2.0, Math.abs(forwardSpeed)));
+    this.slipAngle = Math.atan2(lateralSpeed, Math.max(1.5, Math.abs(forwardSpeed)));
 
     // Trail-Braking Oversteer:
     // If braking into a turn, rearNormalN drops drastically (unloaded rear axle).
@@ -263,26 +263,31 @@ export class VehiclePhysics {
       driveForceN = (wheelTorque / tireRadius);
 
       // Tire traction limit (rear axle)
-      if (driveForceN > rearMaxGrip) {
-        driveForceN = rearMaxGrip; // Wheelspin!
+      if (driveForceN > rearMaxGrip * 1.6) {
+        driveForceN = rearMaxGrip * 1.6; // Wheelspin!
       }
     }
 
     // Braking Force (60% front, 40% rear bias)
     let brakeForceN = 0;
     if (inputs.brake > 0) {
-      brakeForceN = inputs.brake * 14000.0;
-      if (forwardSpeed < 1.0 && inputs.brake > 0.5) {
+      brakeForceN = inputs.brake * 16000.0;
+      if (forwardSpeed < 1.0 && inputs.brake > 0.4) {
         // Reverse gear
-        driveForceN = -inputs.brake * 3800.0;
+        driveForceN = -inputs.brake * 5500.0;
         brakeForceN = 0;
       }
     }
 
-    // Lateral Cornering Forces
-    // Front lateral force (steers car)
+    // Lateral Tire Grip:
+    // Cancels lateral sliding cleanly when not drifting
+    const latCancelForce = -lateralSpeed * (this.specs.mass * 9.5);
+    const maxCombinedGrip = (frontMaxGrip + rearMaxGrip);
+    const clampedLatForce = THREE.MathUtils.clamp(latCancelForce, -maxCombinedGrip, maxCombinedGrip);
+
+    // Front lateral cornering force
     const frontSlipAngle = this.slipAngle - this.steerAngle;
-    const frontCorneringStiffness = 38000.0;
+    const frontCorneringStiffness = 45000.0;
     const frontLateralForce = -THREE.MathUtils.clamp(
       frontSlipAngle * frontCorneringStiffness,
       -frontMaxGrip,
@@ -290,7 +295,7 @@ export class VehiclePhysics {
     );
 
     // Rear lateral force
-    const rearCorneringStiffness = 44000.0;
+    const rearCorneringStiffness = 48000.0;
     const rearLateralForce = -THREE.MathUtils.clamp(
       this.slipAngle * rearCorneringStiffness,
       -rearMaxGrip,
@@ -298,8 +303,8 @@ export class VehiclePhysics {
     );
 
     // Detect Drift state
-    const driftThreshold = 0.16; // ~9.2 degrees
-    if (Math.abs(this.slipAngle) > driftThreshold && this.speedKmh > 28.0) {
+    const driftThreshold = 0.15; // ~8.5 degrees
+    if (Math.abs(this.slipAngle) > driftThreshold && this.speedKmh > 22.0) {
       this.isDrifting = true;
       this.driftDuration += dt;
       const scoreGain = Math.floor(Math.abs(this.slipAngle) * (this.speedKmh / 20) * dt * 250);
@@ -321,43 +326,50 @@ export class VehiclePhysics {
     const netLongForce = (driveForceN - Math.sign(forwardSpeed) * (brakeForceN + aeroDragForce));
     const forceWorld = forward.clone().multiplyScalar(netLongForce);
 
-    // 2. Lateral Force (Sum of front and rear grip)
-    const netLatForce = frontLateralForce + rearLateralForce;
+    // 2. Lateral Force (lateral tire adhesion holding car to corner line)
+    const driftGripScale = this.isDrifting ? 0.65 : 1.0;
+    const netLatForce = clampedLatForce * driftGripScale;
     forceWorld.addScaledVector(right, netLatForce);
 
     // 3. Downforce
     forceWorld.addScaledVector(new THREE.Vector3(0, -1, 0), aeroDownforce);
 
-    // Apply central force
+    // Apply linear impulse
     this.rigidBody.applyImpulse(
       new RAPIER.Vector3(forceWorld.x * dt, forceWorld.y * dt, forceWorld.z * dt),
       true
     );
 
-    // 4. Yaw Torque (Yaw moment around center of gravity)
-    // Distance to front axle = wheelbase * 0.60; Distance to rear axle = wheelbase * 0.40
-    const yawTorque = (frontLateralForce * (this.wheelbase * 0.60)) - (rearLateralForce * (this.wheelbase * 0.40));
-    // Damping yaw rate
-    const yawDamping = -this.angularVelocity.y * 3200.0;
-    const netYawMoment = yawTorque + yawDamping;
+    // 4. RESPONSIVE YAW & STEERING INTEGRATION (Kinematic + Dynamic)
+    // Low speeds (< 24 km/h): Kinematic Ackermann steering ensures immediate, agile vehicle rotation
+    const lowSpeedBlend = THREE.MathUtils.clamp(1.0 - (this.speedKmh / 24.0), 0.0, 1.0);
+    const targetAckermannYawRate = (forwardSpeed / this.wheelbase) * Math.tan(this.steerAngle) * 1.25;
+
+    // High speeds: Dynamic yaw torque from tire slip difference + direct steering moment
+    const dynamicYawTorque = (frontLateralForce * (this.wheelbase * 0.58)) - (rearLateralForce * (this.wheelbase * 0.42));
+    const directSteerTorque = this.steerAngle * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
+    const highSpeedYawTorque = dynamicYawTorque * 3.8 + directSteerTorque;
+
+    // Compute yaw impulse and apply along local vehicle UP axis
+    const currentYawRate = this.angularVelocity.y;
+    const kinematicYawImpulse = (targetAckermannYawRate - currentYawRate) * (this.specs.mass * 1.6) * lowSpeedBlend;
+    const dynamicYawImpulse = (highSpeedYawTorque - currentYawRate * 1800.0) * (1.0 - lowSpeedBlend) * dt;
+
+    const totalYawImpulse = kinematicYawImpulse + dynamicYawImpulse;
+    const yawImpulseWorld = up.clone().multiplyScalar(totalYawImpulse);
     this.rigidBody.applyTorqueImpulse(
-      new RAPIER.Vector3(0, netYawMoment * dt, 0),
+      new RAPIER.Vector3(yawImpulseWorld.x, yawImpulseWorld.y, yawImpulseWorld.z),
       true
     );
 
     // Anti-roll & stabilization upright torque
     const tiltDot = up.dot(new THREE.Vector3(0, 1, 0));
     if (tiltDot < 0.98) {
-      const uprightCorrection = new THREE.Vector3(0, 1, 0).cross(up).multiplyScalar(-8000.0 * dt);
+      const uprightCorrection = new THREE.Vector3(0, 1, 0).cross(up).multiplyScalar(-9500.0 * dt);
       this.rigidBody.applyTorqueImpulse(
         new RAPIER.Vector3(uprightCorrection.x, uprightCorrection.y, uprightCorrection.z),
         true
       );
-    }
-
-    // Keep car grounded on slopes
-    if (this.position.y > 0.8 && this.position.y < 3.0) {
-      this.rigidBody.applyImpulse(new RAPIER.Vector3(0, -9.81 * this.specs.mass * dt * 0.8, 0), true);
     }
 
     // 6. UPDATE 3D VISUALS (Chassis and Wheels)
@@ -421,16 +433,21 @@ export class VehiclePhysics {
     this.visual.bodyMesh.rotation.x = -this.weightTransfer.pitchAngle * 0.6;
     this.visual.bodyMesh.rotation.z = this.weightTransfer.rollAngle * 0.7;
 
-    // Steer front wheels
+    // Steer front wheels cleanly around vertical Y axis (isolated steering knuckle)
     this.visual.wheelFL.rotation.y = this.steerAngle;
     this.visual.wheelFR.rotation.y = this.steerAngle;
 
-    // Spin wheels according to vehicle speed
-    const wheelSpinDelta = (this.velocity.length() / 0.32) * dt;
-    this.visual.wheelFL.rotation.x += wheelSpinDelta;
-    this.visual.wheelFR.rotation.x += wheelSpinDelta;
-    this.visual.wheelRL.rotation.x += wheelSpinDelta;
-    this.visual.wheelRR.rotation.x += wheelSpinDelta;
+    // Spin wheels along forward axle X axis via dedicated spin sub-groups (no gimbal wobble!)
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.quaternion);
+    const forwardSpeed = this.velocity.dot(forward);
+    const wheelSpinDelta = (forwardSpeed / 0.32) * dt;
+
+    if (this.visual.wheelSpins && this.visual.wheelSpins.length === 4) {
+      this.visual.wheelSpins[0].rotation.x += wheelSpinDelta;
+      this.visual.wheelSpins[1].rotation.x += wheelSpinDelta;
+      this.visual.wheelSpins[2].rotation.x += wheelSpinDelta;
+      this.visual.wheelSpins[3].rotation.x += wheelSpinDelta;
+    }
 
     // Brake light glowing emissive response
     if (inputs.brake > 0.05) {
@@ -488,5 +505,14 @@ export class VehiclePhysics {
       raceFinished: this.raceFinished,
       raceRank: this.raceRank,
     };
+  }
+
+  public destroy(world: RAPIER.World): void {
+    if (this.collider) {
+      world.removeCollider(this.collider, false);
+    }
+    if (this.rigidBody) {
+      world.removeRigidBody(this.rigidBody);
+    }
   }
 }

@@ -66,45 +66,48 @@ export class FollowCamera {
     const desiredLook = new THREE.Vector3();
 
     if (this.mode === 'chase') {
-      // Offset behind and slightly above the vehicle
-      const distBehind = 6.0 + (speedKmh / 160.0) * 1.4;
-      const heightAbove = 2.3 + (speedKmh / 220.0) * 0.4;
+      // Stable horizontal chase framing inspired by Need for Speed & classic racers
+      const distBehind = 5.5 + (speedKmh / 160.0) * 1.2;
+      const heightAbove = 2.15 + (speedKmh / 200.0) * 0.35;
+
+      // Flatten forward vector horizontally to decouple camera height from suspension pitch/roll
+      const forwardFlat = new THREE.Vector3(forward.x, 0, forward.z).normalize();
+      if (forwardFlat.lengthSq() < 0.1) forwardFlat.copy(forward);
 
       desiredPos.copy(targetPos)
-        .addScaledVector(forward, -distBehind)
-        .addScaledVector(up, heightAbove);
+        .addScaledVector(forwardFlat, -distBehind)
+        .add(new THREE.Vector3(0, heightAbove, 0));
 
-      // Smooth lookahead along forward heading and velocity vector
-      const velDir = velocity.clone().normalize();
-      const blendDir = (velDir.lengthSq() > 0.1 && forward.dot(velDir) > 0.3)
-        ? forward.clone().lerp(velDir, 0.35).normalize()
-        : forward;
-      const lookLead = 14.0 + (speedKmh / 120.0) * 8.0;
+      // Dynamic apex lookahead: lead camera gaze into corners based on lateral movement
+      const lateralVel = velocity.dot(right);
+      const steerLead = THREE.MathUtils.clamp(lateralVel * 0.14, -2.6, 2.6);
+      const lookLead = 14.0 + (speedKmh / 120.0) * 7.0;
 
       desiredLook.copy(targetPos)
-        .addScaledVector(blendDir, lookLead)
-        .addScaledVector(new THREE.Vector3(0, 1, 0), 0.9);
+        .addScaledVector(forwardFlat, lookLead)
+        .addScaledVector(right, steerLead)
+        .add(new THREE.Vector3(0, 1.1, 0));
 
     } else if (this.mode === 'hood') {
       // Hood / Bumper camera
       desiredPos.copy(targetPos)
         .addScaledVector(forward, 1.2)
-        .addScaledVector(up, 0.85);
+        .add(new THREE.Vector3(0, 0.85, 0));
 
       desiredLook.copy(targetPos)
         .addScaledVector(forward, 25.0)
-        .addScaledVector(new THREE.Vector3(0, 1, 0), 0.7);
+        .add(new THREE.Vector3(0, 0.75, 0));
 
     } else {
       // Cinematic low side-rear angle
       desiredPos.copy(targetPos)
-        .addScaledVector(forward, -6.0)
-        .addScaledVector(right, 3.2)
-        .addScaledVector(up, 1.6);
+        .addScaledVector(forward, -5.6)
+        .addScaledVector(right, 3.0)
+        .add(new THREE.Vector3(0, 1.6, 0));
 
       desiredLook.copy(targetPos)
         .addScaledVector(forward, 6.0)
-        .addScaledVector(new THREE.Vector3(0, 1, 0), 1.0);
+        .add(new THREE.Vector3(0, 1.0, 0));
     }
 
     // Initialize on first frame
@@ -114,12 +117,11 @@ export class FollowCamera {
     }
 
     // Smooth position interpolation (Vector3.lerp)
-    // Faster follow when moving quickly, softer damping when idling
-    const posLerpRate = THREE.MathUtils.clamp(delta * (8.0 + (speedKmh / 100) * 4.0), 0.05, 0.45);
+    const posLerpRate = THREE.MathUtils.clamp(delta * (10.0 + (speedKmh / 80.0) * 4.0), 0.08, 0.55);
     this.currentPosition.lerp(desiredPos, posLerpRate);
 
     // Smooth look target interpolation to eliminate jitter
-    const lookLerpRate = THREE.MathUtils.clamp(delta * 12.0, 0.1, 0.6);
+    const lookLerpRate = THREE.MathUtils.clamp(delta * 14.0, 0.12, 0.7);
     this.currentLookTarget.lerp(desiredLook, lookLerpRate);
 
     // Apply trauma camera shake

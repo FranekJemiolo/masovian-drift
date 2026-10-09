@@ -216,7 +216,7 @@ export class GameManager {
     const spawnPos = spawnWp.point.clone()
       .addScaledVector(tangent, -6.0)
       .addScaledVector(normal, 2.8);
-    spawnPos.y += 0.85;
+    spawnPos.y += 0.45;
 
     const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
@@ -246,9 +246,10 @@ export class GameManager {
     this.hud.show();
     this.hud.setSplitScreen(mode === 'split-screen');
 
-    // Clean up previous vehicles
+    // Clean up previous vehicles and their Rapier physics bodies
     for (const v of this.allVehicles) {
       this.scene.remove(v.visual.root);
+      v.destroy(this.physicsWorld.world);
     }
     this.allVehicles = [];
     this.aiBots = [];
@@ -270,7 +271,7 @@ export class GameManager {
     const spawnPos = spawnWp.point.clone()
       .addScaledVector(tangent, -6.0)
       .addScaledVector(normal, 2.8);
-    spawnPos.y += 0.85;
+    spawnPos.y += 0.45;
 
     const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
@@ -299,13 +300,13 @@ export class GameManager {
 
         // Staggered grid (P2 left, P3 right, P4 left, P5 right, P6 left)
         const isRight = (i % 2 !== 0);
-        const distBack = 14.5 + i * 8.5;
+        const distBack = 12.0 + i * 8.0;
         const sideOffset = isRight ? 2.8 : -2.8;
 
         const aiSpawn = spawnWp.point.clone()
           .addScaledVector(tangent, -distBack)
           .addScaledVector(normal, sideOffset);
-        aiSpawn.y += 0.85;
+        aiSpawn.y += 0.45;
 
         const aiVehicle = new VehiclePhysics(
           `ai-${i}`,
@@ -320,6 +321,17 @@ export class GameManager {
         );
 
         const aiController = new PurePursuitAI(aiVehicle, profile, this.waypoints);
+        // Sync AI bot to the nearest waypoint along the starting grid
+        let closestWpIdx = 0;
+        let minWpDist = Infinity;
+        for (let w = 0; w < this.waypoints.length; w++) {
+          const d = aiSpawn.distanceTo(this.waypoints[w].point);
+          if (d < minWpDist) {
+            minWpDist = d;
+            closestWpIdx = w;
+          }
+        }
+        aiController.setTargetIndex(closestWpIdx);
         this.aiBots.push(aiController);
         this.allVehicles.push(aiVehicle);
       }

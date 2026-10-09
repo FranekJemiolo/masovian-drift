@@ -7,6 +7,7 @@ export interface CarVisualElements {
   wheelFR: THREE.Group;
   wheelRL: THREE.Group;
   wheelRR: THREE.Group;
+  wheelSpins: [THREE.Group, THREE.Group, THREE.Group, THREE.Group]; // FL, FR, RL, RR spin hubs
   brakeLightMaterial: THREE.MeshStandardMaterial;
   headlightLight: THREE.SpotLight | null;
   exhaustPipes: THREE.Vector3[];
@@ -176,13 +177,17 @@ export class VoxelCarBuilder {
       new THREE.Vector3(0.42, 0.22, -2.15),
     ];
 
-    // 10. Wheels (FL, FR, RL, RR)
-    const createWheel = (x: number, z: number, isRight: boolean): THREE.Group => {
-      const wheelGroup = new THREE.Group();
-      wheelGroup.position.set(x, 0.32, z);
+    // 10. Wheels (FL, FR, RL, RR) with isolated steer pivot and axle spin hub
+    const createWheel = (x: number, z: number, isRight: boolean): { pivot: THREE.Group; spin: THREE.Group } => {
+      const pivotGroup = new THREE.Group();
+      pivotGroup.position.set(x, 0.32, z);
+
+      // Separate spin group so rotating around X does not cause gimbal wobble with Y steering
+      const spinGroup = new THREE.Group();
+      pivotGroup.add(spinGroup);
 
       // Tire (cylinder rotated 90 deg)
-      const tireGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.24, 12);
+      const tireGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.24, 16);
       const tireMat = new THREE.MeshStandardMaterial({
         color: 0x1c1917,
         roughness: 0.9,
@@ -191,31 +196,31 @@ export class VoxelCarBuilder {
       const tireMesh = new THREE.Mesh(tireGeo, tireMat);
       tireMesh.rotation.z = Math.PI / 2;
       tireMesh.castShadow = true;
-      wheelGroup.add(tireMesh);
+      spinGroup.add(tireMesh);
 
       // Rim (chrome / silver center)
-      const rimGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.25, 8);
+      const rimGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.25, 10);
       const rimMesh = new THREE.Mesh(rimGeo, chromeMat);
       rimMesh.rotation.z = Math.PI / 2;
-      wheelGroup.add(rimMesh);
+      spinGroup.add(rimMesh);
 
-      // Brake caliper
+      // Brake caliper (remains attached to pivotGroup, does NOT rotate with wheel roll!)
       const caliperMat = new THREE.MeshStandardMaterial({
         color: 0xd97706,
         roughness: 0.5,
       });
       const caliper = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.08), caliperMat);
       caliper.position.set(isRight ? -0.06 : 0.06, 0.1, 0);
-      wheelGroup.add(caliper);
+      pivotGroup.add(caliper);
 
-      root.add(wheelGroup);
-      return wheelGroup;
+      root.add(pivotGroup);
+      return { pivot: pivotGroup, spin: spinGroup };
     };
 
-    const wheelFL = createWheel(-0.76, 1.05, false);
-    const wheelFR = createWheel(0.76, 1.05, true);
-    const wheelRL = createWheel(-0.80, -1.05, false);
-    const wheelRR = createWheel(0.80, -1.05, true);
+    const wheelFLData = createWheel(-0.76, 1.05, false);
+    const wheelFRData = createWheel(0.76, 1.05, true);
+    const wheelRLData = createWheel(-0.80, -1.05, false);
+    const wheelRRData = createWheel(0.80, -1.05, true);
 
     // Optional headlight spot for player
     let headlightLight: THREE.SpotLight | null = null;
@@ -230,10 +235,11 @@ export class VoxelCarBuilder {
     return {
       root,
       bodyMesh: bodyGroup,
-      wheelFL,
-      wheelFR,
-      wheelRL,
-      wheelRR,
+      wheelFL: wheelFLData.pivot,
+      wheelFR: wheelFRData.pivot,
+      wheelRL: wheelRLData.pivot,
+      wheelRR: wheelRRData.pivot,
+      wheelSpins: [wheelFLData.spin, wheelFRData.spin, wheelRLData.spin, wheelRRData.spin],
       brakeLightMaterial: brakeLightMat,
       headlightLight,
       exhaustPipes,
