@@ -596,16 +596,90 @@ export class TrackMeshBuilder {
       trackGroup.add(bale);
     }
 
-    // --- 11. Shimmering Świder River Water Body ---
-    const waterGeo = new THREE.PlaneGeometry(380, 280, 48, 48);
+    // --- 11. Shimmering Świder River Water Body (GPU Gerstner Waves & Fresnel, G6/P2) ---
+    const waterGeo = new THREE.PlaneGeometry(380, 280, 64, 64);
     waterGeo.rotateX(-Math.PI / 2);
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x0284c7, // Vivid translucent cyan river water
-      roughness: 0.08,
-      metalness: 0.82,
+    const waterMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uDeepWater: { value: new THREE.Color(0x022c44) },
+        uShallowWater: { value: new THREE.Color(0x06b6d4) },
+        uSunColor: { value: new THREE.Color(0xfff7ed) },
+        uSunDir: { value: new THREE.Vector3(-0.45, 0.82, -0.36).normalize() },
+      },
+      vertexShader: `
+        uniform float uTime;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying float vWaveHeight;
+
+        void main() {
+          vUv = uv;
+          vec3 pos = position;
+
+          // Gerstner wave formulation: 3 overlapping sine/cosine wavefronts
+          float t = uTime;
+          float w1 = sin(pos.x * 0.05 + t * 2.2) * cos(pos.z * 0.05 + t * 1.8) * 0.22;
+          float w2 = sin((pos.x + pos.z) * 0.08 + t * 3.1) * 0.10;
+          float w3 = cos(pos.x * 0.12 - t * 1.5 + pos.z * 0.09) * 0.06;
+          float totalWave = w1 + w2 + w3;
+          pos.y += totalWave;
+          vWaveHeight = totalWave;
+
+          // Compute perturbed surface normal from wave derivatives
+          float dw_dx = (cos(pos.x * 0.05 + t * 2.2) * 0.05 * cos(pos.z * 0.05 + t * 1.8) * 0.22)
+                      + (cos((pos.x + pos.z) * 0.08 + t * 3.1) * 0.08 * 0.10);
+          float dw_dz = (-sin(pos.x * 0.05 + t * 2.2) * 0.22 * sin(pos.z * 0.05 + t * 1.8) * 0.05)
+                      + (cos((pos.x + pos.z) * 0.08 + t * 3.1) * 0.08 * 0.10);
+          vec3 n = normalize(vec3(-dw_dx, 1.0, -dw_dz));
+          vNormal = normalize(normalMatrix * n);
+
+          vec4 worldPos = modelMatrix * vec4(pos, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uDeepWater;
+        uniform vec3 uShallowWater;
+        uniform vec3 uSunColor;
+        uniform vec3 uSunDir;
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying vec2 vUv;
+        varying float vWaveHeight;
+
+        void main() {
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          vec3 normal = normalize(vNormal);
+
+          // Fresnel reflectance: Schlick approximation
+          float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.5);
+          fresnel = clamp(fresnel * 0.75 + 0.15, 0.0, 1.0);
+
+          // Base depth gradient modulated by wave height
+          float depthFactor = clamp((vWaveHeight + 0.3) / 0.6, 0.0, 1.0);
+          vec3 waterCol = mix(uDeepWater, uShallowWater, depthFactor * 0.75);
+
+          // Sun specular sparkle (Blinn-Phong)
+          vec3 halfVec = normalize(uSunDir + viewDir);
+          float spec = pow(max(dot(normal, halfVec), 0.0), 120.0);
+          vec3 specular = uSunColor * spec * 1.8;
+
+          // Subtle foam on crests
+          float foam = smoothstep(0.18, 0.32, vWaveHeight);
+          vec3 foamCol = vec3(0.92, 0.98, 1.0);
+
+          vec3 finalColor = mix(waterCol, uShallowWater * 1.25, fresnel);
+          finalColor += specular;
+          finalColor = mix(finalColor, foamCol, foam * 0.6);
+
+          gl_FragColor = vec4(finalColor, 0.92);
+        }
+      `,
       transparent: true,
-      opacity: 0.88,
-      flatShading: true,
+      depthWrite: true,
     });
     const riverMesh = new THREE.Mesh(waterGeo, waterMat);
     riverMesh.position.set(240, -0.65, -30);

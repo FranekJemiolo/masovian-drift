@@ -33,9 +33,26 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 | 6 Multiplayer lobby | **PASSED** | 0 | 0 |
 | Mechanics (Finish & Restart) | **PASSED** | 0 | 0 |
 
+## 2026-10-09 — Phase 2: Feel & Polish Complete; Automated Regression Verified
+ 
+**Done**
+- **G6 & P2 GPU Gerstner Water Shader**: Moved 2,400-vertex CPU river displacement in `GameManager` to custom `ShaderMaterial` with 3-wave Gerstner vertex displacement, normal perturbation, Schlick Fresnel reflectance, shallow-to-deep gradient, and wave-crest foam. CPU loop eliminated.
+- **G2 HDR Bloom HalfFloat Buffer**: Switched `PixelPostProcessor` render target to `THREE.HalfFloatType`. Replaced hard thresholding with quadratic soft-knee threshold and 12-tap multi-scale Gaussian blur composite.
+- **M4 Fixed-Step Determinism PRNG**: Created `src/utils/PRNG.ts` (Mulberry32). Replaced `Math.random()` across physics, AI, and environment generation.
+- **G10 InstancedMesh Bounding Spheres & Frustum Culling**: Added `.computeBoundingSphere()` across all 12 instanced meshes (pines, birches, villas, roofs, verandas, chimneys, windows, tire stacks, hay bales, fences) in `EnvironmentGenerator`.
+- **A2 & A3 Flat-Six Engine Sound & Buffer Reuse**: Engine synthesis refactored with pre-rendered white/pink/BOV/backfire static noise buffers. Added 3rd harmonic order, induction roar, and 26Hz rev-limiter ignition cut at 7,200 RPM.
+- **A4 & A5 Spatial Audio & Surface Acoustics**: PannerNode HRTF spatialization on opponent engines, dynamic listener position/orientation updates. Frequency-shaped tyre screeches (asphalt bandpass, gravel lowpass, sand) and speed-proportional procedural wind roar.
+- **M6 & M7 AI Lookahead & Stuck Recovery**: PurePursuitAI upgraded with braking-zone anticipation, apex lateral bias, overtaking offsets, and automatic stuck reverse maneuvers. Added automatic checkpoint respawn when flipped or off-track, plus manual `K` respawn key.
+- **U3–U7 Settings, Accessibility, Gamepad & Loading Screen**: Added Settings & Accessibility modal (volumes, quality presets, reduced motion, high-contrast shift lights, gamepad telemetry). Added Gamepad API dual-motor rumble and haptic kerb feedback. Added mobile safe-area insets. Added retro-futuristic animated loading screen.
+- **U11 Multiplayer Lobby Status**: Added real-time signaling status badge and quality indicator in `MenuUI`.
+
+**Automated verification sweep results**:
+- `tests/smoke-suite.mjs`: All 6 isolated browser sections PASSED (0 console errors, 0 page errors).
+- `tests/mechanics.spec.mjs`: Race finish modal & restart mechanics PASSED (0 console errors).
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
 | Stabilise (P0) | V1 V2 M1 M2 M3 U1 U2 A1 P1 P3 P7 G1 | `[x]` done |
-| Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[ ]` not started |
-| Depth | G3–G5 M5 M8–M12 A6–A9 U8–U12 G7–G12 | `[ ]` not started |
+| Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
+| Depth | G3–G5 M5 M8–M12 A6–A9 U8–U12 G7–G12 | `[~]` in progress |

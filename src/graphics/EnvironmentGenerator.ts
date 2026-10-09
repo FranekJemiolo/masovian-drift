@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
+import { PRNG } from '../utils/PRNG';
 
 export class EnvironmentGenerator {
   /**
@@ -10,6 +11,7 @@ export class EnvironmentGenerator {
     scene: THREE.Scene,
     waypoints: Waypoint[]
   ): THREE.Group {
+    const rng = new PRNG(1920042);
     const envGroup = new THREE.Group();
     const wpCount = waypoints.length;
     const dummy = new THREE.Object3D();
@@ -72,15 +74,15 @@ export class EnvironmentGenerator {
     let pineAttempts = 0;
     while (placedPines < pineCount && pineAttempts < pineCount * 4) {
       pineAttempts++;
-      const wpIdx = Math.floor(Math.random() * wpCount);
+      const wpIdx = Math.floor(rng.next() * wpCount);
       const wp = waypoints[wpIdx];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
       const isStartStraight = wpIdx < 18 || wpIdx > wpCount - 18;
       const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 6.0);
-      const side = Math.random() < 0.5 ? -1 : 1;
-      const distFromTrack = minClearance + Math.random() * 120.0;
-      const alongOffset = (Math.random() - 0.5) * 16.0;
+      const side = rng.chance(0.5) ? -1 : 1;
+      const distFromTrack = minClearance + rng.next() * 120.0;
+      const alongOffset = (rng.next() - 0.5) * 16.0;
 
       const posX = wp.point.x + normal.x * distFromTrack * side + (wp.tangent ? wp.tangent.x * alongOffset : 0);
       const posZ = wp.point.z + normal.z * distFromTrack * side + (wp.tangent ? wp.tangent.z * alongOffset : 0);
@@ -90,22 +92,22 @@ export class EnvironmentGenerator {
         continue;
       }
 
-      const scale = 0.85 + Math.random() * 0.65;
-      const rotY = Math.random() * Math.PI * 2;
+      const scale = 0.85 + rng.next() * 0.65;
+      const rotY = rng.next() * Math.PI * 2;
 
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set((Math.random() - 0.5) * 0.04, rotY, (Math.random() - 0.5) * 0.04);
-      dummy.scale.set(scale, scale * (0.9 + Math.random() * 0.25), scale);
+      dummy.rotation.set((rng.next() - 0.5) * 0.04, rotY, (rng.next() - 0.5) * 0.04);
+      dummy.scale.set(scale, scale * (0.9 + rng.next() * 0.25), scale);
       dummy.updateMatrix();
 
       trunkInstanced.setMatrixAt(placedPines, dummy.matrix);
       pineFoliageInstanced.setMatrixAt(placedPines, dummy.matrix);
 
-      // Random color variation for organic Mazovian forest
+      // Deterministic color variation for organic Mazovian forest
       const col = new THREE.Color().setHSL(
-        0.38 + (Math.random() - 0.5) * 0.05,
-        0.55 + Math.random() * 0.25,
-        0.24 + Math.random() * 0.14
+        0.38 + (rng.next() - 0.5) * 0.05,
+        0.55 + rng.next() * 0.25,
+        0.24 + rng.next() * 0.14
       );
       pineFoliageInstanced.setColorAt(placedPines, col);
       placedPines++;
@@ -114,6 +116,9 @@ export class EnvironmentGenerator {
     trunkInstanced.instanceMatrix.needsUpdate = true;
     pineFoliageInstanced.instanceMatrix.needsUpdate = true;
     if (pineFoliageInstanced.instanceColor) pineFoliageInstanced.instanceColor.needsUpdate = true;
+
+    trunkInstanced.computeBoundingSphere();
+    pineFoliageInstanced.computeBoundingSphere();
 
     envGroup.add(trunkInstanced);
     envGroup.add(pineFoliageInstanced);
@@ -154,14 +159,14 @@ export class EnvironmentGenerator {
     let birchAttempts = 0;
     while (placedBirches < birchCount && birchAttempts < birchCount * 4) {
       birchAttempts++;
-      const wpIdx = Math.floor(Math.random() * wpCount);
+      const wpIdx = Math.floor(rng.next() * wpCount);
       const wp = waypoints[wpIdx];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
       const isStartStraight = wpIdx < 18 || wpIdx > wpCount - 18;
       const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 8.0);
-      const side = Math.random() < 0.5 ? -1 : 1;
-      const distFromTrack = minClearance + Math.random() * 80.0;
+      const side = rng.chance(0.5) ? -1 : 1;
+      const distFromTrack = minClearance + rng.next() * 80.0;
 
       const posX = wp.point.x + normal.x * distFromTrack * side;
       const posZ = wp.point.z + normal.z * distFromTrack * side;
@@ -171,19 +176,19 @@ export class EnvironmentGenerator {
         continue;
       }
 
-      const scale = 0.9 + Math.random() * 0.5;
+      const scale = 0.9 + rng.next() * 0.5;
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set((Math.random() - 0.5) * 0.08, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.08);
-      dummy.scale.set(scale, scale * (0.95 + Math.random() * 0.25), scale);
+      dummy.rotation.set((rng.next() - 0.5) * 0.08, rng.next() * Math.PI * 2, (rng.next() - 0.5) * 0.08);
+      dummy.scale.set(scale, scale * (0.95 + rng.next() * 0.25), scale);
       dummy.updateMatrix();
 
       birchTrunkInstanced.setMatrixAt(placedBirches, dummy.matrix);
       birchFoliageInstanced.setMatrixAt(placedBirches, dummy.matrix);
 
       const bCol = new THREE.Color().setHSL(
-        0.24 + Math.random() * 0.06,
-        0.75 + Math.random() * 0.2,
-        0.42 + Math.random() * 0.12
+        0.24 + rng.next() * 0.06,
+        0.75 + rng.next() * 0.2,
+        0.42 + rng.next() * 0.12
       );
       birchFoliageInstanced.setColorAt(placedBirches, bCol);
       placedBirches++;
@@ -192,6 +197,9 @@ export class EnvironmentGenerator {
     birchTrunkInstanced.instanceMatrix.needsUpdate = true;
     birchFoliageInstanced.instanceMatrix.needsUpdate = true;
     if (birchFoliageInstanced.instanceColor) birchFoliageInstanced.instanceColor.needsUpdate = true;
+
+    birchTrunkInstanced.computeBoundingSphere();
+    birchFoliageInstanced.computeBoundingSphere();
 
     envGroup.add(birchTrunkInstanced);
     envGroup.add(birchFoliageInstanced);
@@ -308,6 +316,12 @@ export class EnvironmentGenerator {
     chimneyInstanced.instanceMatrix.needsUpdate = true;
     windowInstanced.instanceMatrix.needsUpdate = true;
 
+    villaBodyInstanced.computeBoundingSphere();
+    roofInstanced.computeBoundingSphere();
+    verandaInstanced.computeBoundingSphere();
+    chimneyInstanced.computeBoundingSphere();
+    windowInstanced.computeBoundingSphere();
+
     envGroup.add(villaBodyInstanced);
     envGroup.add(roofInstanced);
     envGroup.add(verandaInstanced);
@@ -349,7 +363,7 @@ export class EnvironmentGenerator {
       const posY = wp.point.y + 0.40;
 
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      dummy.rotation.set(0, rng.next() * Math.PI * 2, 0);
       dummy.scale.set(1.0, 1.0, 1.0);
       dummy.updateMatrix();
 
@@ -364,6 +378,7 @@ export class EnvironmentGenerator {
     }
     tireStackInstanced.instanceMatrix.needsUpdate = true;
     if (tireStackInstanced.instanceColor) tireStackInstanced.instanceColor.needsUpdate = true;
+    tireStackInstanced.computeBoundingSphere();
     envGroup.add(tireStackInstanced);
 
     // -------------------------------------------------------------
@@ -393,17 +408,18 @@ export class EnvironmentGenerator {
       const posY = wp.point.y + 0.38;
 
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set(0, Math.random() * Math.PI, 0);
+      dummy.rotation.set(0, rng.next() * Math.PI, 0);
       dummy.scale.set(1.0, 1.0 + (placedHay % 3) * 0.2, 1.0);
       dummy.updateMatrix();
 
       hayInstanced.setMatrixAt(placedHay, dummy.matrix);
-      const hColor = new THREE.Color().setHSL(0.12 + Math.random() * 0.03, 0.85, 0.44 + Math.random() * 0.1);
+      const hColor = new THREE.Color().setHSL(0.12 + rng.next() * 0.03, 0.85, 0.44 + rng.next() * 0.1);
       hayInstanced.setColorAt(placedHay, hColor);
       placedHay++;
     }
     hayInstanced.instanceMatrix.needsUpdate = true;
     if (hayInstanced.instanceColor) hayInstanced.instanceColor.needsUpdate = true;
+    hayInstanced.computeBoundingSphere();
     envGroup.add(hayInstanced);
 
     // -------------------------------------------------------------
@@ -452,6 +468,7 @@ export class EnvironmentGenerator {
       placedFences++;
     }
     fenceInstanced.instanceMatrix.needsUpdate = true;
+    fenceInstanced.computeBoundingSphere();
     envGroup.add(fenceInstanced);
 
     // -------------------------------------------------------------

@@ -18,6 +18,7 @@ import { VehiclePhysics } from '../physics/VehiclePhysics';
 import { HUD } from '../ui/HUD';
 import { MenuUI } from '../ui/MenuUI';
 import { GameMode, VehicleState } from './Types';
+import { PRNG } from '../utils/PRNG';
 
 export class GameManager {
   private renderer!: THREE.WebGLRenderer;
@@ -65,7 +66,24 @@ export class GameManager {
     this.init();
   }
 
+  private updateLoadingProgress(pct: number, text: string): void {
+    const fill = document.getElementById('loading-bar-fill');
+    const txt = document.getElementById('loading-status-text');
+    if (fill) fill.style.width = `${pct}%`;
+    if (txt) txt.textContent = text;
+    if (pct >= 100) {
+      setTimeout(() => {
+        const screen = document.getElementById('loading-screen');
+        if (screen) {
+          screen.classList.add('loading-fade-out');
+          setTimeout(() => screen.remove(), 420);
+        }
+      }, 250);
+    }
+  }
+
   private async init(): Promise<void> {
+    this.updateLoadingProgress(20, 'INITIALIZING THREE.JS WEBGL ENGINE...');
     // 1. Setup Three.js WebGL Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x60a5fa); // Vibrant azure blue sky
@@ -108,9 +126,13 @@ export class GameManager {
     this.atmosphere = new Atmosphere(this.scene);
     this.particleFX = new ParticleFX(this.scene);
 
+    this.updateLoadingProgress(50, 'COMPILING RAPIER3D PHYSICS WASM...');
+
     // 3. Initialize Physics World (Rapier3D WASM)
     this.physicsWorld = new PhysicsWorld();
     await this.physicsWorld.init();
+
+    this.updateLoadingProgress(75, 'SYNTHESIZING TRACK & PINE FORESTS...');
 
     // 4. Build Track Waypoints, Road Mesh & Instanced Pine Forests + Świdermajer Villas
     this.waypoints = TrackWaypoints.getCircuitWaypoints();
@@ -136,6 +158,14 @@ export class GameManager {
       this.p1Camera.camera,
       { pixelScale: 1.0, edgeStrength: 0.45 }
     );
+
+    // Restore saved graphics settings on boot (U3)
+    const savedPreset = (localStorage.getItem('masovian_quality_preset') as any) || 'high';
+    this.postProcessor.setQualityPreset(savedPreset);
+    const savedBloom = localStorage.getItem('masovian_bloom_intensity');
+    if (savedBloom !== null) {
+      this.postProcessor.setBloomIntensity(parseFloat(savedBloom));
+    }
 
     // 7. Initialize Economy & Audio & Input
     this.evolutionStore = new EvolutionStore();
@@ -174,6 +204,7 @@ export class GameManager {
       },
       onBloomChange: (val) => {
         this.postProcessor.setBloomIntensity(val);
+        localStorage.setItem('masovian_bloom_intensity', val.toString());
       },
     };
 
@@ -191,10 +222,15 @@ export class GameManager {
       onTogglePixelShader: () => {
         this.postProcessor.enabled = !this.postProcessor.enabled;
       },
+      onSetQualityPreset: (preset) => {
+        this.postProcessor.setQualityPreset(preset);
+      },
     });
 
     // 10. Spawn Initial Showcase Car at Start Line
     this.spawnShowcaseCar();
+
+    this.updateLoadingProgress(100, 'READY TO RACE');
 
     // Handle window resize
     window.addEventListener('resize', () => this.onWindowResize());
@@ -540,26 +576,35 @@ export class GameManager {
           bot.vehicle.updatePhysics(botInputs, dt, this.waypoints);
         }
 
-        // Track checkpoints & lap progression
+        // Track checkpoints & lap progression (M7 auto-recovery)
         if (!isCountingDown) {
           this.updateRaceProgression(dt);
+          for (const v of this.allVehicles) {
+            this.checkVehicleRecovery(v, dt);
+          }
+          if (this.inputManager.isKeyJustPressed('KeyK')) {
+            this.respawnVehicleAtCheckpoint(this.playerVehicle);
+          }
         }
       });
 
-      // 2. Audio Synthesizer Update
+      // 2. Audio Synthesizer Update & 3D Spatial Listener Tracking (A4, A5)
       this.audioManager.updatePlayerEngine(
         this.playerVehicle.rpm,
         this.inputManager.getPlayerInputs().throttle,
         this.playerVehicle.slipAngle,
-        this.playerVehicle.speedKmh
+        this.playerVehicle.speedKmh,
+        this.playerVehicle.currentSurface
       );
+      this.audioManager.updateListener(this.p1Camera.camera.position);
 
       if (this.currentMode === 'split-screen' && this.p2Vehicle) {
         this.audioManager.updateP2Engine(
           this.p2Vehicle.rpm,
           this.inputManager.getPlayer2Inputs().throttle,
           this.p2Vehicle.slipAngle,
-          this.p2Vehicle.speedKmh
+          this.p2Vehicle.speedKmh,
+          this.p2Vehicle.currentSurface
         );
       }
 
@@ -595,18 +640,12 @@ export class GameManager {
       // Dynamic Environment animation (rotating wind turbines)
       EnvironmentGenerator.update(delta);
 
-      // Dynamic River wave ripple animation
+      // Dynamic River wave ripple animation (GPU ShaderMaterial, G6/P2)
       if (this.riverMesh) {
-        const pos = this.riverMesh.geometry.attributes.position;
-        const t = this.clock.getElapsedTime();
-        for (let i = 0; i < pos.count; i++) {
-          const u = pos.getX(i);
-          const v = pos.getY(i);
-          const wave = Math.sin(u * 0.05 + t * 2.2) * Math.cos(v * 0.05 + t * 1.8) * 0.18 +
-                       Math.sin(u * 0.10 - t * 3.0) * 0.06;
-          pos.setZ(i, wave);
+        const mat = this.riverMesh.material as THREE.ShaderMaterial;
+        if (mat.uniforms?.uTime) {
+          mat.uniforms.uTime.value = this.clock.getElapsedTime();
         }
-        pos.needsUpdate = true;
       }
 
       // Post-Processing uniforms (time, high-speed lens warp, photographic bloom)
@@ -615,18 +654,26 @@ export class GameManager {
         this.playerVehicle.speedKmh
       );
 
-      // Exhaust backfire pop on high RPM throttle lift-off
+      // Exhaust backfire pop on high RPM throttle lift-off (M4 deterministic PRNG)
       if (this.playerVehicle.rpm > 6200 && this.inputManager.getPlayerInputs().throttle < 0.1) {
-        if (Math.random() < 0.25) {
+        if (PRNG.global.chance(0.25)) {
           this.particleFX.triggerBackfire(this.playerVehicle.visual.exhaustPipes, this.playerVehicle.visual.root);
           this.audioManager.playBackfire();
         }
+      }
+
+      // High-G crash collision response (audio, camera shake, gamepad rumble, U5)
+      if (this.playerVehicle.justCrashed > 0) {
+        this.audioManager.playCrash(this.playerVehicle.justCrashed);
+        this.p1Camera.addTrauma(this.playerVehicle.justCrashed * 0.45);
+        this.inputManager.playRumble(this.playerVehicle.justCrashed, 220);
       }
 
       // M1: Geometric curb strike tactile vibration and sound
       if (this.playerVehicle.isOnKerb && this.playerVehicle.speedKmh > 20) {
         this.audioManager.playCurb();
         this.p1Camera.addTrauma(0.04);
+        this.inputManager.playRumble(0.35, 75);
       }
 
       // 5. Update HUD (with real-time circuit Minimap & Drift Combo Banner)
@@ -747,6 +794,49 @@ export class GameManager {
     sorted.forEach((veh, idx) => {
       veh.raceRank = idx + 1;
     });
+  }
+
+  /**
+   * M7: Auto-recovery for vehicles flipped upside down or stranded far off track
+   */
+  private checkVehicleRecovery(veh: VehiclePhysics, dt: number): void {
+    if (this.checkpoints.length === 0) return;
+    const up = veh.upVector;
+    if (up.y < 0.25) {
+      veh.flipTimer += dt;
+    } else {
+      veh.flipTimer = 0;
+    }
+
+    if (veh.isOffTrack) {
+      veh.offTrackTimer += dt;
+    } else {
+      veh.offTrackTimer = 0;
+    }
+
+    if (veh.flipTimer > 2.0 || veh.offTrackTimer > 3.8) {
+      this.respawnVehicleAtCheckpoint(veh);
+    }
+  }
+
+  public respawnVehicleAtCheckpoint(veh: VehiclePhysics): void {
+    if (this.checkpoints.length === 0) return;
+    veh.flipTimer = 0;
+    veh.offTrackTimer = 0;
+    const cpCount = this.checkpoints.length;
+    const prevCpIdx = (veh.currentCheckpointIndex - 1 + cpCount) % cpCount;
+    const cp = this.checkpoints[prevCpIdx];
+
+    const wpIdx = Math.min(
+      prevCpIdx * Math.floor(this.waypoints.length / cpCount),
+      this.waypoints.length - 1
+    );
+    const wp = this.waypoints[wpIdx];
+    const spawnQuat = new THREE.Quaternion();
+    if (wp && wp.tangent) {
+      spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+    }
+    veh.resetPosition(cp.position, spawnQuat);
   }
 
   private handleRaceFinish(): void {

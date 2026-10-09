@@ -123,6 +123,26 @@ export class InputManager {
     if (this.touchBrake > 0) brake = Math.max(brake, this.touchBrake);
     if (this.touchHandbrake) handbrake = true;
 
+    // Gamepad API integration (Player 1, U5)
+    try {
+      const gamepads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+      const pad = gamepads[0];
+      if (pad && pad.connected) {
+        const rt = pad.buttons[7]?.value ?? (pad.buttons[0]?.pressed ? 1.0 : 0);
+        const lt = pad.buttons[6]?.value ?? (pad.buttons[1]?.pressed ? 1.0 : 0);
+        if (rt > 0.05) throttle = Math.max(throttle, rt);
+        if (lt > 0.05) brake = Math.max(brake, lt);
+
+        const stickX = pad.axes[0] ?? 0;
+        if (Math.abs(stickX) > 0.12) {
+          steer += stickX;
+        }
+        if (pad.buttons[14]?.pressed) steer -= 1.0;
+        if (pad.buttons[15]?.pressed) steer += 1.0;
+        if (pad.buttons[2]?.pressed || pad.buttons[4]?.pressed) handbrake = true;
+      }
+    } catch (_) {}
+
     return {
       throttle: Math.min(1.0, Math.max(0, throttle)),
       brake: Math.min(1.0, Math.max(0, brake)),
@@ -132,7 +152,7 @@ export class InputManager {
   }
 
   /**
-   * Returns driving inputs for Player 2 (Local Split-Screen Duel)
+   * Returns driving inputs for Player 2 (Local Split-Screen Duel, U5 Gamepad 2)
    */
   public getPlayer2Inputs(): VehicleInputs {
     let throttle = 0;
@@ -147,12 +167,48 @@ export class InputManager {
     if (this.keys['ArrowRight'] || this.keys['KeyL']) steer += 1.0;
     if (this.keys['ShiftRight'] || this.keys['Numpad0'] || this.keys['KeyM']) handbrake = true;
 
+    // Gamepad 2 support for Player 2 in split-screen duel
+    try {
+      const gamepads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+      const pad2 = gamepads[1];
+      if (pad2 && pad2.connected) {
+        const rt = pad2.buttons[7]?.value ?? (pad2.buttons[0]?.pressed ? 1.0 : 0);
+        const lt = pad2.buttons[6]?.value ?? (pad2.buttons[1]?.pressed ? 1.0 : 0);
+        if (rt > 0.05) throttle = Math.max(throttle, rt);
+        if (lt > 0.05) brake = Math.max(brake, lt);
+
+        const stickX = pad2.axes[0] ?? 0;
+        if (Math.abs(stickX) > 0.12) steer += stickX;
+        if (pad2.buttons[14]?.pressed) steer -= 1.0;
+        if (pad2.buttons[15]?.pressed) steer += 1.0;
+        if (pad2.buttons[2]?.pressed || pad2.buttons[4]?.pressed) handbrake = true;
+      }
+    } catch (_) {}
+
     return {
       throttle: Math.min(1.0, Math.max(0, throttle)),
       brake: Math.min(1.0, Math.max(0, brake)),
       steer: Math.min(1.0, Math.max(-1.0, steer)),
       handbrake,
     };
+  }
+
+  /**
+   * Dual-motor tactile vibration actuator rumble (U5)
+   */
+  public playRumble(intensity: number, durationMs = 150): void {
+    try {
+      const gamepads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+      const pad = gamepads[0];
+      if (pad && (pad as any).vibrationActuator) {
+        (pad as any).vibrationActuator.playEffect('dual-rumble', {
+          startDelay: 0,
+          duration: durationMs,
+          weakMagnitude: Math.min(1.0, intensity * 0.65),
+          strongMagnitude: Math.min(1.0, intensity),
+        });
+      }
+    } catch (_) {}
   }
 
   public isKeyJustPressed(code: string): boolean {

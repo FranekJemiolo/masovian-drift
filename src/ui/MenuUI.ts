@@ -9,6 +9,7 @@ export interface MenuCallbacks {
   onOpenMultiplayer: () => void;
   onOpenGarage: () => void;
   onTogglePixelShader: () => void;
+  onSetQualityPreset?: (preset: 'low' | 'medium' | 'high' | 'ultra') => void;
 }
 
 export class MenuUI {
@@ -63,6 +64,9 @@ export class MenuUI {
             <button id="btn-garage" class="btn-secondary">
               <span class="btn-icon">🔧</span> EVOLUTION GARAGE & TUNING
             </button>
+            <button id="btn-menu-settings" class="btn-secondary">
+              <span class="btn-icon">⚙️</span> SETTINGS & ACCESSIBILITY
+            </button>
           </div>
 
           <div class="menu-footer">
@@ -89,11 +93,12 @@ export class MenuUI {
     const btnSplit = this.container.querySelector('#btn-split-screen') as HTMLButtonElement;
     const btnMulti = this.container.querySelector('#btn-multiplayer') as HTMLButtonElement;
     const btnGarage = this.container.querySelector('#btn-garage') as HTMLButtonElement;
+    const btnSettings = this.container.querySelector('#btn-menu-settings') as HTMLButtonElement;
     const btnGyro = this.container.querySelector('#btn-gyro-perm') as HTMLButtonElement;
 
     const audio = AudioManager.getInstance();
 
-    [btnQuick, btnSplit, btnMulti, btnGarage].forEach((b) => {
+    [btnQuick, btnSplit, btnMulti, btnGarage, btnSettings].forEach((b) => {
       b?.addEventListener('mouseenter', () => audio.playUiHover());
     });
 
@@ -117,6 +122,11 @@ export class MenuUI {
     btnGarage?.addEventListener('click', () => {
       audio.playUiClick();
       this.renderGarageModal();
+    });
+
+    btnSettings?.addEventListener('click', () => {
+      audio.playUiClick();
+      this.renderSettingsModal();
     });
 
     const input = InputManager.getInstance();
@@ -236,6 +246,155 @@ export class MenuUI {
     });
   }
 
+  public renderSettingsModal(): void {
+    const audio = AudioManager.getInstance();
+    const modal = document.createElement('div');
+    modal.className = 'modal-backdrop';
+
+    const currentVol = Math.round(audio.masterVolume * 100);
+    const isMuted = audio.isMuted;
+    const currentPreset = localStorage.getItem('masovian_quality_preset') || 'high';
+    const reducedMotion = localStorage.getItem('masovian_reduced_motion') === 'true';
+    const highContrast = localStorage.getItem('masovian_high_contrast') === 'true';
+
+    modal.innerHTML = `
+      <div class="modal-dialog hud-glass" style="max-width: 580px;">
+        <div class="modal-header">
+          <h2>⚙️ SETTINGS & ACCESSIBILITY</h2>
+          <button id="btn-close-settings" class="btn-close">&times;</button>
+        </div>
+
+        <div class="pause-settings-grid" style="padding: 16px 0;">
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>🔊 MASTER VOLUME</span>
+              <span id="menu-val-vol">${currentVol}%</span>
+            </div>
+            <input type="range" id="menu-slider-vol" min="0" max="100" value="${currentVol}" class="hud-slider" />
+          </div>
+
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>🔇 MUTE AUDIO</span>
+            </div>
+            <button id="menu-btn-mute" class="toggle-btn ${isMuted ? 'active' : ''}">${isMuted ? 'MUTED' : 'UNMUTED'}</button>
+          </div>
+
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>🖥️ GRAPHICS PRESET</span>
+            </div>
+            <div class="btn-group-toggle">
+              <button id="preset-low" class="toggle-btn ${currentPreset === 'low' ? 'active' : ''}">LOW</button>
+              <button id="preset-medium" class="toggle-btn ${currentPreset === 'medium' ? 'active' : ''}">MED</button>
+              <button id="preset-high" class="toggle-btn ${currentPreset === 'high' ? 'active' : ''}">HIGH</button>
+              <button id="preset-ultra" class="toggle-btn ${currentPreset === 'ultra' ? 'active' : ''}">ULTRA</button>
+            </div>
+          </div>
+
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>♿ ACCESSIBILITY (U4)</span>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 6px;">
+              <button id="btn-reduced-motion" class="toggle-btn ${reducedMotion ? 'active' : ''}">
+                ${reducedMotion ? '✓ REDUCED MOTION' : 'REDUCED MOTION'}
+              </button>
+              <button id="btn-high-contrast" class="toggle-btn ${highContrast ? 'active' : ''}">
+                ${highContrast ? '✓ HIGH CONTRAST' : 'HIGH CONTRAST SHIFT LIGHTS'}
+              </button>
+            </div>
+          </div>
+
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>🎮 CONTROLLER TELEMETRY (U5)</span>
+            </div>
+            <div id="gamepad-status-text" style="font-size: 13px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 4px;">
+              Scanning for controllers...
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 18px; text-align: right;">
+          <button id="btn-save-settings" class="btn-primary">✓ DONE</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const close = () => {
+      audio.playUiClick();
+      modal.remove();
+    };
+
+    modal.querySelector('#btn-close-settings')?.addEventListener('click', close);
+    modal.querySelector('#btn-save-settings')?.addEventListener('click', close);
+
+    // Volume slider
+    const sliderVol = modal.querySelector('#menu-slider-vol') as HTMLInputElement;
+    const valVol = modal.querySelector('#menu-val-vol') as HTMLElement;
+    sliderVol?.addEventListener('input', () => {
+      const v = parseInt(sliderVol.value, 10);
+      if (valVol) valVol.textContent = `${v}%`;
+      audio.setMasterVolume(v / 100);
+    });
+
+    // Mute button
+    const btnMute = modal.querySelector('#menu-btn-mute') as HTMLButtonElement;
+    btnMute?.addEventListener('click', () => {
+      const muted = audio.toggleMute();
+      btnMute.textContent = muted ? 'MUTED' : 'UNMUTED';
+      btnMute.classList.toggle('active', muted);
+    });
+
+    // Quality presets
+    const presets: ('low' | 'medium' | 'high' | 'ultra')[] = ['low', 'medium', 'high', 'ultra'];
+    presets.forEach((p) => {
+      modal.querySelector(`#preset-${p}`)?.addEventListener('click', () => {
+        audio.playUiClick();
+        presets.forEach((o) => modal.querySelector(`#preset-${o}`)?.classList.remove('active'));
+        modal.querySelector(`#preset-${p}`)?.classList.add('active');
+        localStorage.setItem('masovian_quality_preset', p);
+        this.callbacks.onSetQualityPreset?.(p);
+      });
+    });
+
+    // Accessibility toggles
+    const btnMotion = modal.querySelector('#btn-reduced-motion') as HTMLButtonElement;
+    btnMotion?.addEventListener('click', () => {
+      audio.playUiClick();
+      const cur = localStorage.getItem('masovian_reduced_motion') === 'true';
+      const nxt = !cur;
+      localStorage.setItem('masovian_reduced_motion', String(nxt));
+      btnMotion.classList.toggle('active', nxt);
+      btnMotion.textContent = nxt ? '✓ REDUCED MOTION' : 'REDUCED MOTION';
+    });
+
+    const btnContrast = modal.querySelector('#btn-high-contrast') as HTMLButtonElement;
+    btnContrast?.addEventListener('click', () => {
+      audio.playUiClick();
+      const cur = localStorage.getItem('masovian_high_contrast') === 'true';
+      const nxt = !cur;
+      localStorage.setItem('masovian_high_contrast', String(nxt));
+      btnContrast.classList.toggle('active', nxt);
+      btnContrast.textContent = nxt ? '✓ HIGH CONTRAST' : 'HIGH CONTRAST SHIFT LIGHTS';
+    });
+
+    // Gamepad detection update
+    const gpText = modal.querySelector('#gamepad-status-text') as HTMLElement;
+    const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+    const p = pads[0];
+    if (p && p.connected && gpText) {
+      gpText.textContent = `🟢 Connected: ${p.id.slice(0, 32)} (RT/LT Trigger Gas & Brake, Stick Steer)`;
+      gpText.style.color = '#10b981';
+    } else if (gpText) {
+      gpText.textContent = '⚪ No Gamepad detected (Plug in Xbox, DualSense, or generic USB controller)';
+      gpText.style.color = 'var(--text-muted)';
+    }
+  }
+
   public renderMultiplayerModal(
     onHost: () => Promise<string>,
     onAcceptAnswer: (answer: string) => Promise<void>,
@@ -253,6 +412,11 @@ export class MenuUI {
         <div class="mp-tabs">
           <button id="tab-host" class="mp-tab active">HOST RACE</button>
           <button id="tab-join" class="mp-tab">JOIN RACE</button>
+        </div>
+
+        <div id="mp-status-banner" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; margin-bottom: 12px; font-size: 11px; font-family: var(--font-mono);">
+          <span style="color: var(--text-muted);">P2P SIGNALING:</span>
+          <span id="mp-status-badge" style="color: #38bdf8; font-weight: 700;">STANDBY / READY</span>
         </div>
 
         <!-- Host View -->

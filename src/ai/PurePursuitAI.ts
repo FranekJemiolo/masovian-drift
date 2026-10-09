@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { VehicleInputs, VehiclePhysics } from '../physics/VehiclePhysics';
+import { PRNG } from '../utils/PRNG';
 
 export interface AIBotProfile {
   name: string;
@@ -62,6 +63,10 @@ export class PurePursuitAI {
   private currentTargetIndex = 0;
   private readonly wheelbase = 2.4; // Wheelbase in meters
 
+  // Stuck & Recovery state (M6, M7)
+  private stuckTime = 0;
+  private recoveryTimer = 0;
+
   // Static scratch objects to avoid per-frame allocations across all bots (P1)
   private static readonly _targetPoint = new THREE.Vector3();
   private static readonly _toOther = new THREE.Vector3();
@@ -81,14 +86,42 @@ export class PurePursuitAI {
     this.currentTargetIndex = THREE.MathUtils.clamp(index, 0, this.waypoints.length - 1);
   }
 
+  public reset(): void {
+    this.currentTargetIndex = 0;
+    this.stuckTime = 0;
+    this.recoveryTimer = 0;
+  }
+
   /**
-   * Updates AI steering, throttle, and braking using Adaptive Pure Pursuit
+   * Updates AI steering, throttle, and braking using Adaptive Pure Pursuit with Racing Line & Curvature Lookahead (M6)
    */
   public update(dt: number, otherVehicles: VehiclePhysics[]): VehicleInputs {
     const pos = this.vehicle.position;
     const speedKmh = this.vehicle.speedKmh;
     const speedMs = speedKmh / 3.6;
     const count = this.waypoints.length;
+
+    // 0. STUCK RECOVERY CONTROLLER (M6 / M7)
+    if (speedKmh < 4.0) {
+      this.stuckTime += dt;
+      if (this.stuckTime > 1.8) {
+        this.recoveryTimer = 1.2; // Initiate 1.2s reverse gear maneuver
+        this.stuckTime = 0;
+      }
+    } else {
+      this.stuckTime = Math.max(0, this.stuckTime - dt * 2.0);
+    }
+
+    if (this.recoveryTimer > 0) {
+      this.recoveryTimer -= dt;
+      // Reverse out of wall/obstacle
+      return {
+        throttle: 0,
+        brake: 0.85, // Rapier reverses on brake when stopped
+        steer: 0.65,
+        handbrake: false,
+      };
+    }
 
     // 1. Find closest waypoint to vehicle along race spline
     let closestDist = Infinity;
@@ -142,18 +175,33 @@ export class PurePursuitAI {
 
     const targetPoint = PurePursuitAI._targetPoint.copy(this.waypoints[lookaheadIndex].point);
 
-    // 4. Opponent Avoidance (lateral offset when approaching cars ahead)
+    // 4. RACING LINE APEX TURN-IN OFFSETS (M6)
+    if (currentWp.normal && currentWp.tangent) {
+      const ahead4 = this.waypoints[(this.currentTargetIndex + 5) % count];
+      if (ahead4.tangent) {
+        // Cross product of current and upcoming tangents determines corner direction & severity
+        const turnCurvature = currentWp.tangent.x * ahead4.tangent.z - currentWp.tangent.z * ahead4.tangent.x;
+        if (Math.abs(turnCurvature) > 0.08) {
+          // Outside entry, clipping to inside apex
+          const apexOffset = -Math.sign(turnCurvature) * Math.min(2.5, Math.abs(turnCurvature) * 4.5);
+          targetPoint.addScaledVector(currentWp.normal, apexOffset);
+        }
+      }
+    }
+
+    // 5. OPPONENT AVOIDANCE & OVERTAKING OFFSETS (M6)
     for (const other of otherVehicles) {
       if (other.id === this.vehicle.id) continue;
       const distToOther = pos.distanceTo(other.position);
-      if (distToOther < 8.0) {
+      if (distToOther < 9.0) {
         const toOther = PurePursuitAI._toOther.copy(other.position).sub(pos);
         const forward = PurePursuitAI._forward.set(0, 0, 1).applyQuaternion(this.vehicle.quaternion);
-        // Only avoid if car is ahead
+        // Only avoid or overtake if car is ahead
         if (forward.dot(toOther) > 0.3) {
           const right = PurePursuitAI._right.set(1, 0, 0).applyQuaternion(this.vehicle.quaternion);
           const isRight = right.dot(toOther) > 0;
-          const avoidanceNormal = isRight ? -2.2 : 2.2;
+          // Slipstream and switch to opposite flank to overtake
+          const avoidanceNormal = isRight ? -2.4 : 2.4;
           if (currentWp.normal) {
             targetPoint.addScaledVector(currentWp.normal, avoidanceNormal);
           }
@@ -161,7 +209,7 @@ export class PurePursuitAI {
       }
     }
 
-    // 5. PURE PURSUIT LATERAL CONTROLLER
+    // 6. PURE PURSUIT LATERAL CONTROLLER
     const toTargetWorld = PurePursuitAI._toTargetWorld.copy(targetPoint).sub(pos);
     const invQuat = PurePursuitAI._invQuat.copy(this.vehicle.quaternion).invert();
     const toTargetLocal = PurePursuitAI._toTargetLocal.copy(toTargetWorld).applyQuaternion(invQuat);
@@ -177,10 +225,30 @@ export class PurePursuitAI {
     const rawSteerAngle = Math.atan(curvature * this.wheelbase);
     const steerInput = THREE.MathUtils.clamp(rawSteerAngle / 0.55, -1.0, 1.0);
 
-    // 6. SPEED & THROTTLE/BRAKING CONTROLLER
+    // 7. BRAKING-ZONE CURVATURE LOOKAHEAD (M6)
     let adjustedTargetSpeed = currentWp.targetSpeedKmh * this.profile.aggression;
     if (currentWp.surface === 'sand') {
       adjustedTargetSpeed *= 0.88;
+    }
+
+    // Lookahead ahead along upcoming track (up to 12 waypoints / 55 meters)
+    let distAhead = 0;
+    const maxLookaheadDist = Math.max(32.0, speedMs * 1.8);
+    for (let s = 1; s <= 10; s++) {
+      const idxA = (this.currentTargetIndex + s) % count;
+      const wpA = this.waypoints[idxA];
+      const prevA = this.waypoints[(idxA - 1 + count) % count];
+      distAhead += prevA.point.distanceTo(wpA.point);
+      if (distAhead > maxLookaheadDist) break;
+
+      const cornerTargetMs = (wpA.targetSpeedKmh * this.profile.aggression) / 3.6;
+      // Allowable speed approaching corner: v = sqrt(v_target^2 + 2 * a * dist)
+      const maxDecel = 8.5; // m/s^2 typical high-grip boxer braking
+      const allowableMs = Math.sqrt(cornerTargetMs * cornerTargetMs + 2 * maxDecel * distAhead);
+      const allowableKmh = allowableMs * 3.6;
+      if (allowableKmh < adjustedTargetSpeed) {
+        adjustedTargetSpeed = allowableKmh;
+      }
     }
 
     let throttle = 0;
@@ -189,18 +257,22 @@ export class PurePursuitAI {
 
     const speedDiff = speedKmh - adjustedTargetSpeed;
 
-    if (speedDiff > 8.0) {
+    if (speedDiff > 6.0) {
       // Over speed: brake into turn
-      brake = Math.min(1.0, (speedDiff / 25.0));
+      brake = Math.min(1.0, speedDiff / 22.0);
       throttle = 0;
 
-      // Sandy hairpins drift tap
-      if (Math.abs(alpha) > 0.45 && currentWp.surface === 'sand' && Math.random() < 0.08 * this.profile.driftEnthusiasm) {
+      // Sandy hairpins drift tap (deterministic PRNG, M4)
+      if (
+        Math.abs(alpha) > 0.45 &&
+        currentWp.surface === 'sand' &&
+        PRNG.global.chance(0.08 * this.profile.driftEnthusiasm)
+      ) {
         handbrake = true;
       }
     } else if (speedDiff > 0.0) {
-      // Modulate throttle near limit
-      throttle = 0.7;
+      // Modulate throttle near corner limit
+      throttle = 0.65;
       brake = 0;
     } else {
       // Full throttle acceleration down straights!

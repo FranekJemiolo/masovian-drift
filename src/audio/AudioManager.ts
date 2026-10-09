@@ -180,14 +180,44 @@ export class AudioManager {
     this.p2Synth?.start();
   }
 
-  public updatePlayerEngine(rpm: number, throttle: number, slipAngle: number, speedKmh: number): void {
+  public updatePlayerEngine(
+    rpm: number,
+    throttle: number,
+    slipAngle: number,
+    speedKmh: number,
+    surface: string = 'tarmac'
+  ): void {
     if (this.isMuted || this.isPaused) return;
-    this.playerSynth?.update(rpm, throttle, slipAngle, speedKmh);
+    this.playerSynth?.update(rpm, throttle, slipAngle, speedKmh, surface);
   }
 
-  public updateP2Engine(rpm: number, throttle: number, slipAngle: number, speedKmh: number): void {
+  public updateP2Engine(
+    rpm: number,
+    throttle: number,
+    slipAngle: number,
+    speedKmh: number,
+    surface: string = 'tarmac'
+  ): void {
     if (this.isMuted || this.isPaused) return;
-    this.p2Synth?.update(rpm, throttle, slipAngle, speedKmh);
+    this.p2Synth?.update(rpm, throttle, slipAngle, speedKmh, surface);
+  }
+
+  public updateListener(camPos: { x: number; y: number; z: number }): void {
+    if (!this.ctx) return;
+    const l = this.ctx.listener;
+    const t = this.ctx.currentTime;
+    if (l.positionX) {
+      l.positionX.setTargetAtTime(camPos.x, t, 0.04);
+      l.positionY.setTargetAtTime(camPos.y, t, 0.04);
+      l.positionZ.setTargetAtTime(camPos.z, t, 0.04);
+    } else if ((l as any).setPosition) {
+      (l as any).setPosition(camPos.x, camPos.y, camPos.z);
+    }
+  }
+
+  public createSpatialEngineSynth(): EngineSynth {
+    this.ensureContext();
+    return new EngineSynth(this.ctx!, this.engineBus!, true);
   }
 
   public playCrash(intensity: number): void {

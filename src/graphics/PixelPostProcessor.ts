@@ -46,6 +46,7 @@ export class PixelPostProcessor {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
+      type: THREE.HalfFloatType,
       depthTexture: this.depthTexture,
       depthBuffer: true,
     });
@@ -102,33 +103,36 @@ export class PixelPostProcessor {
         float colB = texture2D(tDiffuse, vUv - caOffset).b;
         vec3 color = vec3(colR, colG, colB);
 
-        // High-Quality Multi-Tap Photographic Bloom (Glowing brake lights, sun specular, exhaust fire)
+        // Photographic HDR Soft-Knee Bloom (G2)
         vec3 bloom = vec3(0.0);
-        float bloomThresh = 0.72;
-        
-        // 8-Tap Radial Bloom Kernel
-        vec2 bOffsets[8];
-        bOffsets[0] = vec2(-2.2, -2.2);
-        bOffsets[1] = vec2( 2.2, -2.2);
-        bOffsets[2] = vec2(-2.2,  2.2);
-        bOffsets[3] = vec2( 2.2,  2.2);
-        bOffsets[4] = vec2(-4.5,  0.0);
-        bOffsets[5] = vec2( 4.5,  0.0);
-        bOffsets[6] = vec2( 0.0, -4.5);
-        bOffsets[7] = vec2( 0.0,  4.5);
+        float bloomThresh = 0.70;
+        float knee = bloomThresh * 0.5;
 
-        for (int i = 0; i < 8; i++) {
-          vec3 bSample = texture2D(tDiffuse, vUv + bOffsets[i] * texel * 1.5).rgb;
+        // 12-Tap Multi-Scale Kernel (tight specular core + wide atmospheric halo)
+        vec2 bOffsets[12];
+        bOffsets[0]  = vec2(-1.8, -1.8);
+        bOffsets[1]  = vec2( 1.8, -1.8);
+        bOffsets[2]  = vec2(-1.8,  1.8);
+        bOffsets[3]  = vec2( 1.8,  1.8);
+        bOffsets[4]  = vec2(-3.5,  0.0);
+        bOffsets[5]  = vec2( 3.5,  0.0);
+        bOffsets[6]  = vec2( 0.0, -3.5);
+        bOffsets[7]  = vec2( 0.0,  3.5);
+        bOffsets[8]  = vec2(-5.2, -5.2);
+        bOffsets[9]  = vec2( 5.2, -5.2);
+        bOffsets[10] = vec2(-5.2,  5.2);
+        bOffsets[11] = vec2( 5.2,  5.2);
+
+        for (int i = 0; i < 12; i++) {
+          vec3 bSample = texture2D(tDiffuse, vUv + bOffsets[i] * texel).rgb;
           float bLum = dot(bSample, vec3(0.2126, 0.7152, 0.0722));
-          if (bLum > bloomThresh) {
-            bloom += (bSample - bloomThresh) * 0.14;
-          }
-          // Wide halo tap
-          vec3 bWide = texture2D(tDiffuse, vUv + bOffsets[i] * texel * 3.8).rgb;
-          float bLumW = dot(bWide, vec3(0.2126, 0.7152, 0.0722));
-          if (bLumW > bloomThresh) {
-            bloom += (bWide - bloomThresh) * 0.08;
-          }
+          // Quadratic soft-knee curve:
+          float soft = bLum - bloomThresh + knee;
+          soft = clamp(soft, 0.0, 2.0 * knee);
+          soft = soft * soft / (4.0 * knee + 0.0001);
+          float weight = max(soft, bLum - bloomThresh) / max(bLum, 0.0001);
+          float distWeight = 1.0 / (1.0 + length(bOffsets[i]) * 0.18);
+          bloom += max(bSample * weight, vec3(0.0)) * distWeight * 0.095;
         }
         color += bloom * uBloomIntensity;
 

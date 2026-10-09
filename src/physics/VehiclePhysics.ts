@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { VehicleDamage, VehicleSpecs, VehicleState, WeightTransferState } from '../game/Types';
 import { CarVisualElements } from '../graphics/VoxelCarBuilder';
 import { Waypoint } from './TrackWaypoints';
+import { PRNG } from '../utils/PRNG';
 
 export interface VehicleInputs {
   throttle: number; // 0.0 to 1.0
@@ -22,6 +23,7 @@ export class VehiclePhysics {
   public visual: CarVisualElements;
   public specs: VehicleSpecs;
   public damage: VehicleDamage;
+  public justCrashed = 0;
 
   // Kinematic state
   public position = new THREE.Vector3();
@@ -71,6 +73,14 @@ export class VehiclePhysics {
   public isOnKerb = false;
   public isOffTrack = false;
   private lastClosestWpIdx = 0;
+
+  // Recovery timers (M7)
+  public flipTimer = 0;
+  public offTrackTimer = 0;
+
+  public get upVector(): THREE.Vector3 {
+    return new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
+  }
 
   // Scratch objects for zero-allocation per-frame physics (P1)
   private static readonly _vForward = new THREE.Vector3();
@@ -174,13 +184,16 @@ export class VehiclePhysics {
       this.damage.bodyDamage = Math.min(1.0, this.damage.bodyDamage + damageAmount);
       // Aerodynamic penalty increases with body crumpling
       this.damage.aerodynamicDragPenalty = 1.0 + this.damage.bodyDamage * 1.1; // up to 2.1x drag!
-      // Tie-rod alignment bends slightly with crashes
-      this.damage.steeringAlignmentOffset += (Math.random() - 0.5) * 0.015 * damageAmount;
+      // Tie-rod alignment bends slightly with crashes (deterministic PRNG, M4)
+      this.damage.steeringAlignmentOffset += PRNG.global.range(-0.5, 0.5) * 0.015 * damageAmount;
       this.damage.steeringAlignmentOffset = THREE.MathUtils.clamp(
         this.damage.steeringAlignmentOffset,
         -0.045,
         0.045
       );
+      this.justCrashed = Math.min(1.0, (impactG - 12.0) / 18.0);
+    } else {
+      this.justCrashed = 0;
     }
     this.lastVelocity.copy(this.velocity);
 
