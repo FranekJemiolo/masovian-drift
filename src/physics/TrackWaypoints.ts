@@ -11,7 +11,7 @@ export interface Waypoint {
 }
 
 export class TrackWaypoints {
-  public static readonly CIRCUIT_LENGTH = 1400; // ~1.4 km circuit
+  public static readonly CIRCUIT_LENGTH = 1600; // ~1.6 km circuit
 
   /**
    * Generates a flowing Masovian circuit looping through Warsaw suburbs,
@@ -20,53 +20,58 @@ export class TrackWaypoints {
   public static getCircuitWaypoints(): Waypoint[] {
     // Key control nodes of the circuit
     const rawNodes = [
-      // 1. Start / Finish straight in front of Gurewicz Sanatorium
-      { x: 0, z: -80, y: 0.0, s: 'asphalt', w: 14, speed: 170 },
-      { x: 0, z: 0, y: 0.0, s: 'asphalt', w: 14, speed: 190 },
-      { x: 0, z: 80, y: 0.2, s: 'asphalt', w: 14, speed: 180 },
+      // 1. Start / Finish Main Straight (Sanatorium Gurewicz Straight, wide asphalt)
+      // Perfectly centered along X=0 heading in +Z direction
+      { x: 0, z: -40, y: 0.0, s: 'asphalt', w: 15, speed: 210 },
+      { x: 0, z: 20, y: 0.0, s: 'asphalt', w: 15, speed: 220 },
+      { x: 0, z: 80, y: 0.1, s: 'asphalt', w: 15, speed: 215 },
+      { x: 0, z: 130, y: 0.2, s: 'asphalt', w: 14, speed: 190 },
 
       // 2. Turn 1 (Józefów Forest Right sweeper)
-      { x: 35, z: 150, y: 0.5, s: 'asphalt', w: 13, speed: 130 },
-      { x: 90, z: 200, y: 0.8, s: 'asphalt', w: 12, speed: 110 },
-      { x: 155, z: 215, y: 1.2, s: 'gravel', w: 12, speed: 95 },
+      { x: 35, z: 190, y: 0.4, s: 'asphalt', w: 13, speed: 140 },
+      { x: 90, z: 240, y: 0.7, s: 'asphalt', w: 13, speed: 120 },
+      { x: 155, z: 255, y: 1.0, s: 'gravel', w: 12, speed: 100 },
 
       // 3. Sandy chicane through pine woods (Świdermajer villas)
-      { x: 220, z: 180, y: 1.5, s: 'gravel', w: 11, speed: 85 },
-      { x: 260, z: 120, y: 1.8, s: 'gravel', w: 10, speed: 75 },
-      { x: 285, z: 50, y: 1.2, s: 'sand', w: 12, speed: 70 }, // Sandy river dune!
+      { x: 215, z: 220, y: 1.4, s: 'gravel', w: 12, speed: 85 },
+      { x: 255, z: 155, y: 1.6, s: 'gravel', w: 11, speed: 80 },
+      { x: 275, z: 75, y: 1.2, s: 'sand', w: 12, speed: 75 },
 
       // 4. Świder Riverbank hairpin (deep sand drift zone!)
-      { x: 270, z: -30, y: 0.4, s: 'sand', w: 14, speed: 60 },
-      { x: 230, z: -90, y: 0.2, s: 'sand', w: 13, speed: 65 },
-      { x: 180, z: -130, y: 0.5, s: 'gravel', w: 12, speed: 85 },
+      { x: 260, z: -10, y: 0.4, s: 'sand', w: 13, speed: 65 },
+      { x: 215, z: -70, y: 0.2, s: 'sand', w: 13, speed: 70 },
+      { x: 165, z: -125, y: 0.5, s: 'gravel', w: 12, speed: 90 },
 
       // 5. Back straight through Otwock pine alley
-      { x: 140, z: -200, y: 1.0, s: 'asphalt', w: 13, speed: 150 },
-      { x: 100, z: -270, y: 1.5, s: 'asphalt', w: 14, speed: 180 },
-      { x: 40, z: -320, y: 1.8, s: 'asphalt', w: 13, speed: 160 },
+      { x: 125, z: -195, y: 1.0, s: 'asphalt', w: 13, speed: 160 },
+      { x: 80, z: -265, y: 1.4, s: 'asphalt', w: 14, speed: 185 },
+      { x: 20, z: -320, y: 1.6, s: 'asphalt', w: 13, speed: 170 },
 
-      // 6. Western Chicane & Bridge descent
-      { x: -30, z: -330, y: 1.2, s: 'asphalt', w: 12, speed: 110 },
-      { x: -95, z: -290, y: 0.6, s: 'gravel', w: 11, speed: 90 },
-      { x: -140, z: -220, y: 0.2, s: 'gravel', w: 12, speed: 95 },
+      // 6. Western Chicane & River bridge descent
+      { x: -50, z: -330, y: 1.2, s: 'asphalt', w: 12, speed: 115 },
+      { x: -115, z: -280, y: 0.6, s: 'gravel', w: 11, speed: 90 },
+      { x: -155, z: -210, y: 0.2, s: 'gravel', w: 12, speed: 95 },
 
       // 7. Villa Veranda S-Bends (technical section)
-      { x: -160, z: -140, y: 0.1, s: 'asphalt', w: 11, speed: 85 },
-      { x: -130, z: -70, y: 0.2, s: 'asphalt', w: 12, speed: 90 },
-      { x: -150, z: 10, y: 0.5, s: 'asphalt', w: 12, speed: 85 },
-      { x: -120, z: 80, y: 0.8, s: 'asphalt', w: 12, speed: 95 },
+      { x: -165, z: -130, y: 0.1, s: 'asphalt', w: 11, speed: 85 },
+      { x: -130, z: -50, y: 0.2, s: 'asphalt', w: 12, speed: 90 },
+      { x: -140, z: 20, y: 0.5, s: 'asphalt', w: 12, speed: 85 },
+      { x: -110, z: 80, y: 0.7, s: 'asphalt', w: 12, speed: 95 },
 
-      // 8. Final hairpin onto the Main Straight
-      { x: -70, z: 120, y: 0.6, s: 'asphalt', w: 13, speed: 80 },
-      { x: -25, z: 90, y: 0.3, s: 'asphalt', w: 14, speed: 105 },
-      { x: -10, z: 0, y: 0.0, s: 'asphalt', w: 14, speed: 150 },
+      // 8. Hairpin looping back south to enter Main Straight smoothly
+      { x: -60, z: 100, y: 0.5, s: 'asphalt', w: 13, speed: 85 },
+      { x: -25, z: 60, y: 0.3, s: 'asphalt', w: 13, speed: 105 },
+      { x: -20, z: -20, y: 0.1, s: 'asphalt', w: 13, speed: 135 },
+      { x: -15, z: -80, y: 0.0, s: 'asphalt', w: 14, speed: 160 },
+      { x: -5, z: -130, y: 0.0, s: 'asphalt', w: 15, speed: 180 },
+      { x: 0, z: -100, y: 0.0, s: 'asphalt', w: 15, speed: 195 },
     ];
 
     // Build Catmull-Rom spline for super smooth high-density path
     const points = rawNodes.map((n) => new THREE.Vector3(n.x, n.y, n.z));
     const curve = new THREE.CatmullRomCurve3(points, true, 'centripetal');
 
-    const totalSamples = 120;
+    const totalSamples = 140;
     const waypoints: Waypoint[] = [];
 
     for (let i = 0; i < totalSamples; i++) {

@@ -117,6 +117,10 @@ export class VehiclePhysics {
       .setFriction(0.3)
       .setRestitution(0.12);
 
+    this.position.copy(spawnPos);
+    this.quaternion.copy(spawnQuat);
+    this.visual.root.position.copy(spawnPos);
+    this.visual.root.quaternion.copy(spawnQuat);
     this.collider = world.createCollider(colDesc, this.rigidBody);
   }
 

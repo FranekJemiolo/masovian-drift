@@ -40,7 +40,7 @@ export class PhysicsWorld {
 
       const segmentDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
         midPoint.x,
-        midPoint.y + 0.35,
+        midPoint.y + 0.25,
         midPoint.z
       );
       const segmentBody = this.world.createRigidBody(segmentDesc);

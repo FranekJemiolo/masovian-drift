@@ -84,7 +84,7 @@ export class PixelPostProcessor {
         float d02 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, texel.y)).r);
         float d22 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, texel.y)).r);
 
-        float edge = length(vec2(d20 - d02, d22 - d00)) * 12.0;
+        float edge = length(vec2(d20 - d02, d22 - d00)) * 8.0;
 
         // Color difference for crisp outline
         vec3 cLeft = texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb;
@@ -93,17 +93,22 @@ export class PixelPostProcessor {
         vec3 cDown = texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
         float colorEdge = length(cRight - cLeft) + length(cUp - cDown);
 
-        float edgeFactor = clamp((edge * 0.8 + colorEdge * 0.25) * uEdgeStrength, 0.0, 1.0);
+        float edgeFactor = clamp((edge * 0.6 + colorEdge * 0.25) * uEdgeStrength, 0.0, 1.0);
 
-        // Rich arcade color enhancement (vibrant saturation & micro contrast)
+        // Filmic tone curve & vibrant arcade richness
         vec3 rgb = color.rgb;
-        // Mild tone mapping & saturation boost
-        float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
-        vec3 satColor = mix(vec3(lum), rgb, 1.15); // +15% saturation for vibrant Mazovian atmosphere
-        vec3 contrastColor = (satColor - 0.5) * 1.06 + 0.5;
+        // Mild tone curve preserving highlights and opening shadow details
+        vec3 lifted = pow(rgb, vec3(0.92)); 
+        float lum = dot(lifted, vec3(0.299, 0.587, 0.114));
+        vec3 satColor = mix(vec3(lum), lifted, 1.20); // +20% rich saturation
 
-        // Clean subtle outline border
-        vec3 finalColor = mix(contrastColor, vec3(0.08, 0.08, 0.12), edgeFactor * 0.45);
+        // Clean subtle silhouette enhancement
+        vec3 finalColor = mix(satColor, satColor * 0.55, edgeFactor * 0.4);
+
+        // Soft arcade lens vignette
+        vec2 uvCenter = vUv - 0.5;
+        float vignette = clamp(1.0 - dot(uvCenter, uvCenter) * 0.35, 0.0, 1.0);
+        finalColor *= vignette;
 
         gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
       }

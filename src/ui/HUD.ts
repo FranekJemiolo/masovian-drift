@@ -60,6 +60,11 @@ export class HUD {
         </div>
       </div>
 
+      <!-- COUNTDOWN OVERLAY -->
+      <div id="hud-countdown" class="hud-countdown-overlay" style="display: none;">
+        <div id="hud-countdown-text" class="hud-countdown-val">3</div>
+      </div>
+
       <!-- BOTTOM CLUSTERS (Pinned Strictly to Bottom Edges) -->
       <div class="hud-bottom-bar">
         <!-- 4-Point Dynamic Weight Transfer Telemetry -->
@@ -259,5 +264,24 @@ export class HUD {
       if (p2State.gear === -1) p2Gear = 'R';
       this.p2GearEl.textContent = p2Gear;
     }
+  }
+
+  public showCountdown(val: string): void {
+    const el = document.getElementById('hud-countdown');
+    const txt = document.getElementById('hud-countdown-text');
+    if (el && txt) {
+      el.style.display = 'flex';
+      txt.textContent = val;
+      if (val === 'GO!') {
+        txt.style.color = '#22c55e';
+      } else {
+        txt.style.color = '#ef4444';
+      }
+    }
+  }
+
+  public hideCountdown(): void {
+    const el = document.getElementById('hud-countdown');
+    if (el) el.style.display = 'none';
   }
 }

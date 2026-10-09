@@ -48,6 +48,7 @@ export class GameManager {
   // Game state
   public currentMode: GameMode = 'quick-race';
   public isRacing = false;
+  private countdownRemaining = 3.2;
   private networkSequence = 0;
   private lastNetworkSendTime = 0;
   private clock = new THREE.Clock();
@@ -59,8 +60,8 @@ export class GameManager {
   private async init(): Promise<void> {
     // 1. Setup Three.js WebGL Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x8ecae6); // Clear vibrant sky
-    this.scene.fog = new THREE.FogExp2(0xa7d2e8, 0.0022); // Atmospheric mountain/pine mist
+    this.scene.background = new THREE.Color(0x60a5fa); // Vibrant azure blue sky
+    this.scene.fog = new THREE.FogExp2(0x93c5fd, 0.0016); // Atmospheric Mazovian pine mist
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -69,26 +70,29 @@ export class GameManager {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(this.renderer.domElement);
 
-    // 2. Setup Lighting & Atmosphere
-    const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x5c4033, 0.95);
+    // 2. Setup Lighting & Atmosphere (Warm golden sun, rich bounce light)
+    const hemiLight = new THREE.HemisphereLight(0xbfdbfe, 0x4d7c0f, 0.85);
     this.scene.add(hemiLight);
 
-    const ambientLight = new THREE.AmbientLight(0xfffaed, 0.45);
+    const ambientLight = new THREE.AmbientLight(0xfff7ed, 0.65);
     this.scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfff3d6, 2.2);
-    sunLight.position.set(110, 160, 90);
+    const sunLight = new THREE.DirectionalLight(0xfff1cc, 2.4);
+    // Sun shines from rear-left towards the start straight and cars
+    sunLight.position.set(-100, 170, -90);
+    sunLight.target.position.set(0, 0, 20);
+    this.scene.add(sunLight.target);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
     sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 420;
-    const d = 160;
+    sunLight.shadow.camera.far = 480;
+    const d = 180;
     sunLight.shadow.camera.left = -d;
     sunLight.shadow.camera.right = d;
     sunLight.shadow.camera.top = d;
     sunLight.shadow.camera.bottom = -d;
-    sunLight.shadow.bias = -0.0005;
+    sunLight.shadow.bias = -0.0004;
     this.scene.add(sunLight);
 
     // Add floating voxel clouds
@@ -205,11 +209,16 @@ export class GameManager {
     this.scene.add(p1Visual.root);
 
     const spawnWp = this.waypoints[0];
-    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.82, -4.0));
-    const spawnQuat = new THREE.Quaternion();
-    if (spawnWp.tangent) {
-      spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), spawnWp.tangent);
-    }
+    const normal = spawnWp.normal ?? new THREE.Vector3(1, 0, 0);
+    const tangent = spawnWp.tangent ?? new THREE.Vector3(0, 0, 1);
+
+    // Pole Position (right lane, facing down the open straightaway)
+    const spawnPos = spawnWp.point.clone()
+      .addScaledVector(tangent, -6.0)
+      .addScaledVector(normal, 2.8);
+    spawnPos.y += 0.85;
+
+    const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
     this.playerVehicle = new VehiclePhysics(
       'player-1',
@@ -226,13 +235,14 @@ export class GameManager {
     this.allVehicles.push(this.playerVehicle);
 
     // Initial camera position overlooking the starting straight, car and gantry arch
-    this.p1Camera.camera.position.set(spawnPos.x + 4.8, spawnPos.y + 1.8, spawnPos.z + 5.8);
+    this.p1Camera.camera.position.set(spawnPos.x + 4.5, spawnPos.y + 1.6, spawnPos.z - 5.5);
     this.p1Camera.camera.lookAt(spawnPos.x, spawnPos.y + 0.6, spawnPos.z);
   }
 
   public startGame(mode: GameMode): void {
     this.currentMode = mode;
     this.isRacing = true;
+    this.countdownRemaining = 3.2;
     this.hud.show();
     this.hud.setSplitScreen(mode === 'split-screen');
 
@@ -244,7 +254,7 @@ export class GameManager {
     this.aiBots = [];
     this.p2Vehicle = null;
 
-    // 1. Spawn Player 1 Boxer
+    // 1. Spawn Player 1 Boxer on Pole Position
     const currentCar = this.evolutionStore.getCurrentCar();
     const p1Visual = VoxelCarBuilder.createVoxelBoxer(
       currentCar.specs.bodyColor,
@@ -254,11 +264,15 @@ export class GameManager {
     this.scene.add(p1Visual.root);
 
     const spawnWp = this.waypoints[0];
-    const spawnPos = spawnWp.point.clone().add(new THREE.Vector3(2.5, 0.82, -4.0));
-    const spawnQuat = new THREE.Quaternion();
-    if (spawnWp.tangent) {
-      spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), spawnWp.tangent);
-    }
+    const normal = spawnWp.normal ?? new THREE.Vector3(1, 0, 0);
+    const tangent = spawnWp.tangent ?? new THREE.Vector3(0, 0, 1);
+
+    const spawnPos = spawnWp.point.clone()
+      .addScaledVector(tangent, -6.0)
+      .addScaledVector(normal, 2.8);
+    spawnPos.y += 0.85;
+
+    const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
     this.playerVehicle = new VehiclePhysics(
       'player-1',
@@ -277,15 +291,21 @@ export class GameManager {
 
     // 2. Handle Game Modes
     if (mode === 'quick-race') {
-      // Spawn 5 Pure Pursuit AI bots (Milestone 6)
+      // Spawn 5 Pure Pursuit AI bots in staggered motorsport grid positions
       for (let i = 0; i < AI_BOT_PROFILES.length; i++) {
         const profile = AI_BOT_PROFILES[i];
         const aiVisual = VoxelCarBuilder.createVoxelBoxer(profile.color, profile.accent, false);
         this.scene.add(aiVisual.root);
 
-        const aiOffset = (i % 2 === 0 ? -3.0 : 3.0);
+        // Staggered grid (P2 left, P3 right, P4 left, P5 right, P6 left)
+        const isRight = (i % 2 !== 0);
+        const distBack = 14.5 + i * 8.5;
+        const sideOffset = isRight ? 2.8 : -2.8;
+
         const aiSpawn = spawnWp.point.clone()
-          .add(new THREE.Vector3(aiOffset, 0.82, -14.0 - i * 9.0));
+          .addScaledVector(tangent, -distBack)
+          .addScaledVector(normal, sideOffset);
+        aiSpawn.y += 0.85;
 
         const aiVehicle = new VehiclePhysics(
           `ai-${i}`,
@@ -306,11 +326,15 @@ export class GameManager {
       this.audioManager.startEngines();
 
     } else if (mode === 'split-screen') {
-      // Spawn Player 2 vehicle
+      // Spawn Player 2 vehicle in P2 slot (left lane)
       const p2Visual = VoxelCarBuilder.createVoxelBoxer(0x2563eb, 0xffffff, false);
       this.scene.add(p2Visual.root);
 
-      const p2Spawn = spawnWp.point.clone().add(new THREE.Vector3(-2.5, 0.82, -4.0));
+      const p2Spawn = spawnWp.point.clone()
+        .addScaledVector(tangent, -6.0)
+        .addScaledVector(normal, -2.8);
+      p2Spawn.y += 0.85;
+
       this.p2Vehicle = new VehiclePhysics(
         'player-2',
         'Player 2 (Cobalt Boxer)',
@@ -323,6 +347,7 @@ export class GameManager {
         false
       );
       this.allVehicles.push(this.p2Vehicle);
+      this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
       this.audioManager.startSplitScreenEngines();
 
     } else if (mode === 'multiplayer-host' || mode === 'multiplayer-join') {
@@ -330,7 +355,11 @@ export class GameManager {
       const remoteVisual = VoxelCarBuilder.createVoxelBoxer(0xeab308, 0x111111, false);
       this.scene.add(remoteVisual.root);
 
-      const remoteSpawn = spawnWp.point.clone().add(new THREE.Vector3(-2.5, 0.82, -4.0));
+      const remoteSpawn = spawnWp.point.clone()
+        .addScaledVector(tangent, -6.0)
+        .addScaledVector(normal, -2.8);
+      remoteSpawn.y += 0.85;
+
       this.p2Vehicle = new VehiclePhysics(
         'peer-remote',
         'Opponent (P2P)',
@@ -398,7 +427,7 @@ export class GameManager {
     if (wp.tangent) {
       quat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
     }
-    this.playerVehicle.resetPosition(wp.point.clone().add(new THREE.Vector3(0, 0.4, 0)), quat);
+    this.playerVehicle.resetPosition(wp.point.clone().add(new THREE.Vector3(0, 0.85, 0)), quat);
   }
 
   /**
@@ -410,26 +439,55 @@ export class GameManager {
     const delta = Math.min(this.clock.getDelta(), 0.05);
 
     if (this.isRacing) {
+      let isCountingDown = false;
+      if (this.countdownRemaining > 0) {
+        isCountingDown = true;
+        this.countdownRemaining -= delta;
+        if (this.countdownRemaining > 2.0) {
+          this.hud.showCountdown('3');
+        } else if (this.countdownRemaining > 1.0) {
+          this.hud.showCountdown('2');
+        } else {
+          this.hud.showCountdown('1');
+        }
+      } else if (this.countdownRemaining > -1.0) {
+        this.countdownRemaining -= delta;
+        this.hud.showCountdown('GO!');
+      } else {
+        this.hud.hideCountdown();
+      }
+
       // 1. Step Deterministic Rapier3D Physics
       this.physicsWorld.step(delta, (dt) => {
         // Player 1 inputs
-        const p1Inputs = this.inputManager.getPlayerInputs();
+        let p1Inputs = this.inputManager.getPlayerInputs();
+        if (isCountingDown) {
+          p1Inputs = { throttle: 0.35, brake: 1.0, steer: 0, handbrake: true };
+        }
         this.playerVehicle.updatePhysics(p1Inputs, dt, this.waypoints);
 
         // Player 2 inputs (if in Split-Screen)
         if (this.currentMode === 'split-screen' && this.p2Vehicle) {
-          const p2Inputs = this.inputManager.getPlayer2Inputs();
+          let p2Inputs = this.inputManager.getPlayer2Inputs();
+          if (isCountingDown) {
+            p2Inputs = { throttle: 0.35, brake: 1.0, steer: 0, handbrake: true };
+          }
           this.p2Vehicle.updatePhysics(p2Inputs, dt, this.waypoints);
         }
 
         // AI Opponents (Pure Pursuit)
         for (const bot of this.aiBots) {
-          const botInputs = bot.update(dt, this.allVehicles);
+          let botInputs = bot.update(dt, this.allVehicles);
+          if (isCountingDown) {
+            botInputs = { throttle: 0.25, brake: 1.0, steer: 0, handbrake: true };
+          }
           bot.vehicle.updatePhysics(botInputs, dt, this.waypoints);
         }
 
         // Track checkpoints & lap progression
-        this.updateRaceProgression(dt);
+        if (!isCountingDown) {
+          this.updateRaceProgression(dt);
+        }
       });
 
       // 2. Audio Synthesizer Update
@@ -497,13 +555,13 @@ export class GameManager {
       if (this.playerVehicle) {
         const t = this.clock.getElapsedTime() * 0.22;
         const carPos = this.playerVehicle.position;
-        const camDist = 9.5;
+        const camDist = 6.8;
         this.p1Camera.camera.position.set(
           carPos.x + Math.sin(t) * camDist,
-          carPos.y + 2.8,
+          carPos.y + 1.8,
           carPos.z + Math.cos(t) * camDist
         );
-        this.p1Camera.camera.lookAt(carPos.x, carPos.y + 0.9, carPos.z);
+        this.p1Camera.camera.lookAt(carPos.x, carPos.y + 0.6, carPos.z);
       }
     }
 
