@@ -34,7 +34,22 @@ export class HUD {
   private p2RpmEl!: HTMLElement;
   private p2GearEl!: HTMLElement;
 
+  // Shift lights
+  private shiftLeds: HTMLElement[] = [];
+
+  // Pause modal & controls
+  private pauseModal!: HTMLElement;
+  public isPaused = false;
   public isSplitScreen = false;
+  public callbacks: {
+    onResume?: () => void;
+    onRestart?: () => void;
+    onQuit?: () => void;
+    onVolumeChange?: (vol: number) => void;
+    onCameraChange?: (mode: 'chase' | 'hood' | 'cinematic') => void;
+    onPixelScaleChange?: (scale: number) => void;
+    onBloomChange?: (val: number) => void;
+  } = {};
 
   constructor() {
     this.container = document.createElement('div');
@@ -65,9 +80,12 @@ export class HUD {
           <div id="hud-drift" class="hud-value drift-text">0 PTS</div>
         </div>
 
-        <!-- 2D CIRCUIT MINIMAP -->
-        <div class="minimap-card hud-glass">
-          <canvas id="hud-minimap" width="240" height="240"></canvas>
+        <!-- 2D CIRCUIT MINIMAP & PAUSE BUTTON -->
+        <div class="minimap-wrap">
+          <div class="minimap-card hud-glass">
+            <canvas id="hud-minimap" width="240" height="240"></canvas>
+          </div>
+          <button id="btn-hud-pause" class="btn-pause-icon hud-glass" title="Pause Game (ESC)">⏸️</button>
         </div>
       </div>
 
@@ -116,7 +134,17 @@ export class HUD {
           </div>
         </div>
 
-        <!-- Main Speedometer & Tachometer Cluster -->
+        <!-- Sleek Keyboard & Gamepad Control Helper Pill -->
+        <div class="controls-pill hud-glass">
+          <span class="ctrl-unit"><kbd>W</kbd><kbd>S</kbd> Throttle/Brake</span>
+          <span class="ctrl-unit"><kbd>A</kbd><kbd>D</kbd> Steer</span>
+          <span class="ctrl-unit"><kbd>SPACE</kbd> Drift</span>
+          <span class="ctrl-unit"><kbd>C</kbd> Camera</span>
+          <span class="ctrl-unit"><kbd>R</kbd> Reset</span>
+          <span class="ctrl-unit"><kbd>ESC</kbd> Pause</span>
+        </div>
+
+        <!-- Main Speedometer & Tachometer Cluster with LED Shift Lights -->
         <div class="hud-cluster hud-glass">
           <div class="gear-badge">
             <span class="gear-sub">GEAR</span>
@@ -124,6 +152,17 @@ export class HUD {
           </div>
 
           <div class="cluster-speed-wrap">
+            <!-- 7-Stage Formula / GT3 Shift Lights -->
+            <div class="shift-lights-row" id="hud-shift-lights">
+              <div class="shift-led led-green" data-stage="1"></div>
+              <div class="shift-led led-green" data-stage="2"></div>
+              <div class="shift-led led-yellow" data-stage="3"></div>
+              <div class="shift-led led-yellow" data-stage="4"></div>
+              <div class="shift-led led-orange" data-stage="5"></div>
+              <div class="shift-led led-orange" data-stage="6"></div>
+              <div class="shift-led led-red" data-stage="7"></div>
+            </div>
+
             <div class="speed-row">
               <span id="hud-speed" class="speed-num">0</span>
               <span class="speed-unit">KM/H</span>
@@ -145,6 +184,71 @@ export class HUD {
           <div class="rpm-digital-box">
             <span id="hud-rpm" class="rpm-num">900</span>
             <span class="rpm-lbl">RPM</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- IN-GAME FROSTED GLASS PAUSE & SETTINGS MODAL -->
+      <div id="hud-pause-modal" class="hud-pause-modal" style="display: none;">
+        <div class="pause-dialog hud-glass">
+          <div class="pause-header">
+            <h2>⏸️ RACE PAUSED</h2>
+            <span class="pause-subtitle">MASOVIAN DRIFT • TELEMETRY & WORKSHOP SETTINGS</span>
+          </div>
+
+          <div class="pause-actions">
+            <button id="btn-pause-resume" class="btn-primary">
+              ▶ RESUME RACE (ESC)
+            </button>
+            <button id="btn-pause-restart" class="btn-secondary">
+              🔄 RESTART RACE (R)
+            </button>
+          </div>
+
+          <div class="pause-settings-grid">
+            <div class="pause-setting-item">
+              <div class="setting-title-row">
+                <span>🔊 MASTER AUDIO VOLUME</span>
+                <span id="val-audio-volume">80%</span>
+              </div>
+              <input type="range" id="slider-volume" min="0" max="100" value="80" class="hud-slider">
+            </div>
+
+            <div class="pause-setting-item">
+              <div class="setting-title-row">
+                <span>📹 CAMERA VIEW MODE</span>
+              </div>
+              <div class="btn-group-toggle">
+                <button id="btn-cam-chase" class="toggle-btn active">CHASE</button>
+                <button id="btn-cam-hood" class="toggle-btn">HOOD</button>
+                <button id="btn-cam-cinema" class="toggle-btn">CINEMA</button>
+              </div>
+            </div>
+
+            <div class="pause-setting-item">
+              <div class="setting-title-row">
+                <span>✨ RESOLUTION & PIXEL SHADING</span>
+              </div>
+              <div class="btn-group-toggle">
+                <button id="btn-pixel-1" class="toggle-btn active">CRISP 1X</button>
+                <button id="btn-pixel-2" class="toggle-btn">RETRO 2X</button>
+                <button id="btn-pixel-3" class="toggle-btn">VOXEL 3X</button>
+              </div>
+            </div>
+
+            <div class="pause-setting-item">
+              <div class="setting-title-row">
+                <span>🌟 PHOTOGRAPHIC BLOOM</span>
+                <span id="val-bloom">125%</span>
+              </div>
+              <input type="range" id="slider-bloom" min="0" max="250" value="125" class="hud-slider">
+            </div>
+          </div>
+
+          <div class="pause-footer">
+            <button id="btn-pause-quit" class="btn-danger">
+              🚪 ABANDON RACE & QUIT TO MENU
+            </button>
           </div>
         </div>
       </div>
@@ -187,6 +291,128 @@ export class HUD {
     this.p2SpeedEl = this.container.querySelector('#hud-p2-speed')!;
     this.p2RpmEl = this.container.querySelector('#hud-p2-rpm')!;
     this.p2GearEl = this.container.querySelector('#hud-p2-gear')!;
+
+    // Shift Lights
+    this.shiftLeds = Array.from(this.container.querySelectorAll('.shift-led'));
+
+    // Pause Modal & Setup
+    this.pauseModal = this.container.querySelector('#hud-pause-modal')!;
+    this.setupPauseListeners();
+  }
+
+  private setupPauseListeners(): void {
+    const btnPause = this.container.querySelector('#btn-hud-pause');
+    const btnResume = this.container.querySelector('#btn-pause-resume');
+    const btnRestart = this.container.querySelector('#btn-pause-restart');
+    const btnQuit = this.container.querySelector('#btn-pause-quit');
+
+    btnPause?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.togglePause();
+    });
+
+    btnResume?.addEventListener('click', () => {
+      this.hidePauseModal();
+      this.callbacks.onResume?.();
+    });
+
+    btnRestart?.addEventListener('click', () => {
+      this.hidePauseModal();
+      this.callbacks.onRestart?.();
+    });
+
+    btnQuit?.addEventListener('click', () => {
+      this.hidePauseModal();
+      this.callbacks.onQuit?.();
+    });
+
+    // Volume slider
+    const sliderVol = this.container.querySelector('#slider-volume') as HTMLInputElement;
+    const valVol = this.container.querySelector('#val-audio-volume');
+    sliderVol?.addEventListener('input', () => {
+      const v = parseInt(sliderVol.value, 10);
+      if (valVol) valVol.textContent = `${v}%`;
+      this.callbacks.onVolumeChange?.(v / 100);
+    });
+
+    // Bloom slider
+    const sliderBloom = this.container.querySelector('#slider-bloom') as HTMLInputElement;
+    const valBloom = this.container.querySelector('#val-bloom');
+    sliderBloom?.addEventListener('input', () => {
+      const b = parseInt(sliderBloom.value, 10);
+      if (valBloom) valBloom.textContent = `${b}%`;
+      this.callbacks.onBloomChange?.(b / 100);
+    });
+
+    // Camera toggle buttons
+    const camBtns = {
+      chase: this.container.querySelector('#btn-cam-chase'),
+      hood: this.container.querySelector('#btn-cam-hood'),
+      cinema: this.container.querySelector('#btn-cam-cinema'),
+    };
+    const setCamActive = (activeKey: string) => {
+      Object.entries(camBtns).forEach(([k, btn]) => {
+        if (k === activeKey) btn?.classList.add('active');
+        else btn?.classList.remove('active');
+      });
+    };
+    camBtns.chase?.addEventListener('click', () => {
+      setCamActive('chase');
+      this.callbacks.onCameraChange?.('chase');
+    });
+    camBtns.hood?.addEventListener('click', () => {
+      setCamActive('hood');
+      this.callbacks.onCameraChange?.('hood');
+    });
+    camBtns.cinema?.addEventListener('click', () => {
+      setCamActive('cinema');
+      this.callbacks.onCameraChange?.('cinematic');
+    });
+
+    // Pixel resolution buttons
+    const pxBtns = {
+      1: this.container.querySelector('#btn-pixel-1'),
+      2: this.container.querySelector('#btn-pixel-2'),
+      3: this.container.querySelector('#btn-pixel-3'),
+    };
+    const setPxActive = (scale: number) => {
+      Object.entries(pxBtns).forEach(([k, btn]) => {
+        if (parseInt(k, 10) === scale) btn?.classList.add('active');
+        else btn?.classList.remove('active');
+      });
+    };
+    pxBtns[1]?.addEventListener('click', () => {
+      setPxActive(1);
+      this.callbacks.onPixelScaleChange?.(1.0);
+    });
+    pxBtns[2]?.addEventListener('click', () => {
+      setPxActive(2);
+      this.callbacks.onPixelScaleChange?.(2.0);
+    });
+    pxBtns[3]?.addEventListener('click', () => {
+      setPxActive(3);
+      this.callbacks.onPixelScaleChange?.(3.0);
+    });
+  }
+
+  public showPauseModal(): void {
+    this.isPaused = true;
+    this.pauseModal.style.display = 'flex';
+  }
+
+  public hidePauseModal(): void {
+    this.isPaused = false;
+    this.pauseModal.style.display = 'none';
+  }
+
+  public togglePause(): boolean {
+    if (this.isPaused) {
+      this.hidePauseModal();
+      this.callbacks.onResume?.();
+    } else {
+      this.showPauseModal();
+    }
+    return this.isPaused;
   }
 
   public setSplitScreen(active: boolean): void {
@@ -224,6 +450,22 @@ export class HUD {
     } else {
       this.rpmBarEl.classList.remove('redline');
     }
+
+    // 7-Stage Shift Lights Update (Porsche GT3 / Cup Car style)
+    const stages = [4000, 4700, 5300, 5900, 6400, 6800, 7150];
+    const isLimiter = playerState.rpm >= 7150;
+    this.shiftLeds.forEach((led, idx) => {
+      if (playerState.rpm >= stages[idx]) {
+        led.classList.add('active');
+        if (idx === 6 && isLimiter) {
+          led.classList.add('flashing');
+        } else {
+          led.classList.remove('flashing');
+        }
+      } else {
+        led.classList.remove('active', 'flashing');
+      }
+    });
 
     // Gear formatting
     let gearText = playerState.gear.toString();

@@ -7,6 +7,7 @@ export interface TrackMeshResult {
   curbsMesh: THREE.Mesh;
   markingsMesh: THREE.Mesh;
   terrainMesh: THREE.Mesh;
+  riverMesh: THREE.Mesh;
   startFinishGantry: THREE.Group;
   checkpoints: { position: THREE.Vector3; index: number; radius: number }[];
 }
@@ -596,14 +597,15 @@ export class TrackMeshBuilder {
     }
 
     // --- 11. Shimmering Świder River Water Body ---
-    const waterGeo = new THREE.PlaneGeometry(320, 240);
+    const waterGeo = new THREE.PlaneGeometry(380, 280, 48, 48);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
-      roughness: 0.15,
-      metalness: 0.75,
+      color: 0x0284c7, // Vivid translucent cyan river water
+      roughness: 0.08,
+      metalness: 0.82,
       transparent: true,
       opacity: 0.88,
+      flatShading: true,
     });
     const riverMesh = new THREE.Mesh(waterGeo, waterMat);
     riverMesh.position.set(240, -0.65, -30);
@@ -626,6 +628,7 @@ export class TrackMeshBuilder {
       curbsMesh,
       markingsMesh,
       terrainMesh,
+      riverMesh,
       startFinishGantry: gantry,
       checkpoints,
     };

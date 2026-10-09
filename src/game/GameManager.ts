@@ -35,6 +35,7 @@ export class GameManager {
   private physicsWorld!: PhysicsWorld;
   private waypoints!: Waypoint[];
   private checkpoints: { position: THREE.Vector3; index: number; radius: number }[] = [];
+  private riverMesh: THREE.Mesh | null = null;
 
   // Vehicles
   private playerVehicle!: VehiclePhysics;
@@ -53,6 +54,7 @@ export class GameManager {
   // Game state
   public currentMode: GameMode = 'quick-race';
   public isRacing = false;
+  public isPaused = false;
   private countdownRemaining = 3.2;
   private networkSequence = 0;
   private lastNetworkSendTime = 0;
@@ -114,6 +116,7 @@ export class GameManager {
     const trackData = TrackMeshBuilder.buildTrack(this.waypoints);
     this.scene.add(trackData.trackGroup);
     this.checkpoints = trackData.checkpoints;
+    this.riverMesh = trackData.riverMesh;
 
     // Build World Physics Colliders
     this.physicsWorld.buildWorldColliders(this.waypoints);
@@ -140,6 +143,34 @@ export class GameManager {
     this.audioManager = AudioManager.getInstance();
     this.inputManager = InputManager.getInstance();
     this.hud = new HUD();
+    this.hud.callbacks = {
+      onResume: () => {
+        this.isPaused = false;
+      },
+      onRestart: () => {
+        this.isPaused = false;
+        this.restartRace();
+      },
+      onQuit: () => {
+        this.isPaused = false;
+        this.hud.hide();
+        this.audioManager.stopEngines();
+        this.menuUI.renderMainMenu();
+        this.isRacing = false;
+      },
+      onVolumeChange: (vol) => {
+        this.audioManager.playerSynth?.setVolume(vol);
+      },
+      onCameraChange: (mode) => {
+        this.p1Camera.mode = mode;
+      },
+      onPixelScaleChange: (scale) => {
+        this.postProcessor.setPixelScale(scale);
+      },
+      onBloomChange: (val) => {
+        this.postProcessor.setBloomIntensity(val);
+      },
+    };
 
     // 8. Setup WebRTC Multiplayer Manager (Milestone 5)
     this.webRTCManager = new WebRTCManager(
@@ -163,14 +194,18 @@ export class GameManager {
     // Handle window resize
     window.addEventListener('resize', () => this.onWindowResize());
 
-    // Cycle camera with 'C'
+    // In-game controls: Camera, Mute, Quick Reset, Pause
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyC') {
         this.p1Camera.cycleMode();
       } else if (e.code === 'KeyM') {
         this.audioManager.toggleMute();
       } else if (e.code === 'KeyR') {
-        this.resetPlayerVehicle();
+        if (this.isRacing && !this.isPaused) this.restartRace();
+      } else if (e.code === 'Escape' || e.code === 'KeyP') {
+        if (this.isRacing) {
+          this.isPaused = this.hud.togglePause();
+        }
       }
     });
 
@@ -430,10 +465,25 @@ export class GameManager {
     const delta = Math.min(this.clock.getDelta(), 0.05);
 
     if (this.isRacing) {
+      if (this.isPaused) {
+        // While paused, still render current frame
+        this.renderFrame();
+        return;
+      }
+
       let isCountingDown = false;
+      const prevStep = Math.ceil(this.countdownRemaining);
+
       if (this.countdownRemaining > 0) {
         isCountingDown = true;
         this.countdownRemaining -= delta;
+        const currentStep = Math.ceil(this.countdownRemaining);
+
+        // Procedural Audio Starting Beeps (3, 2, 1)
+        if (currentStep !== prevStep && currentStep >= 1 && currentStep <= 3) {
+          this.audioManager.playCountdownBeep(false);
+        }
+
         if (this.countdownRemaining > 2.0) {
           this.hud.showCountdown('3');
         } else if (this.countdownRemaining > 1.0) {
@@ -443,6 +493,10 @@ export class GameManager {
         }
       } else if (this.countdownRemaining > -1.0) {
         this.countdownRemaining -= delta;
+        // GO! Chord
+        if (prevStep >= 1 && Math.ceil(this.countdownRemaining) <= 0) {
+          this.audioManager.playCountdownBeep(true);
+        }
         this.hud.showCountdown('GO!');
       } else {
         this.hud.hideCountdown();
@@ -530,6 +584,20 @@ export class GameManager {
       // Dynamic Environment animation (rotating wind turbines)
       EnvironmentGenerator.update(delta);
 
+      // Dynamic River wave ripple animation
+      if (this.riverMesh) {
+        const pos = this.riverMesh.geometry.attributes.position;
+        const t = this.clock.getElapsedTime();
+        for (let i = 0; i < pos.count; i++) {
+          const u = pos.getX(i);
+          const v = pos.getY(i);
+          const wave = Math.sin(u * 0.05 + t * 2.2) * Math.cos(v * 0.05 + t * 1.8) * 0.18 +
+                       Math.sin(u * 0.10 - t * 3.0) * 0.06;
+          pos.setZ(i, wave);
+        }
+        pos.needsUpdate = true;
+      }
+
       // Post-Processing uniforms (time, high-speed lens warp, photographic bloom)
       this.postProcessor.update(
         this.clock.getElapsedTime(),
@@ -540,6 +608,16 @@ export class GameManager {
       if (this.playerVehicle.rpm > 6200 && this.inputManager.getPlayerInputs().throttle < 0.1) {
         if (Math.random() < 0.25) {
           this.particleFX.triggerBackfire(this.playerVehicle.visual.exhaustPipes, this.playerVehicle.visual.root);
+          this.audioManager.playBackfire();
+        }
+      }
+
+      // Curb strike tactile vibration and sound
+      if (this.playerVehicle.speedKmh > 32 && Math.abs(this.playerVehicle.steerAngle) > 0.14) {
+        const wt = this.playerVehicle.weightTransfer;
+        if (Math.abs(wt.rollAngle) > 0.035 && Math.random() < 0.08) {
+          this.audioManager.playCurb();
+          this.p1Camera.addTrauma(0.06);
         }
       }
 
@@ -680,6 +758,72 @@ export class GameManager {
       this.menuUI.renderMainMenu();
       this.isRacing = false;
     }, 800);
+  }
+
+  public restartRace(): void {
+    if (!this.isRacing || !this.playerVehicle) return;
+    this.countdownRemaining = 3.2;
+    this.isPaused = false;
+    this.hud.hidePauseModal();
+
+    const spawnWp = this.waypoints[0];
+    const tangent = spawnWp.tangent ?? new THREE.Vector3(0, 0, 1);
+    const normal = spawnWp.normal ?? new THREE.Vector3(1, 0, 0);
+    const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
+
+    const p1Spawn = spawnWp.point.clone()
+      .addScaledVector(tangent, -6.0)
+      .addScaledVector(normal, 2.8);
+    p1Spawn.y += 0.45;
+    this.playerVehicle.resetPosition(p1Spawn, spawnQuat);
+    this.playerVehicle.currentLap = 1;
+    this.playerVehicle.currentLapTime = 0;
+    this.playerVehicle.currentCheckpointIndex = 0;
+    this.playerVehicle.driftScore = 0;
+    this.playerVehicle.raceFinished = false;
+    this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
+
+    if (this.p2Vehicle) {
+      const p2Spawn = spawnWp.point.clone()
+        .addScaledVector(tangent, -6.0)
+        .addScaledVector(normal, -2.8);
+      p2Spawn.y += 0.45;
+      this.p2Vehicle.resetPosition(p2Spawn, spawnQuat);
+      this.p2Vehicle.currentLap = 1;
+      this.p2Vehicle.currentLapTime = 0;
+      this.p2Vehicle.currentCheckpointIndex = 0;
+      this.p2Vehicle.driftScore = 0;
+      this.p2Vehicle.raceFinished = false;
+      this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
+    }
+
+    for (let i = 0; i < this.aiBots.length; i++) {
+      const isRight = (i % 2 !== 0);
+      const distBack = 12.0 + i * 8.0;
+      const sideOffset = isRight ? 2.8 : -2.8;
+      const aiSpawn = spawnWp.point.clone()
+        .addScaledVector(tangent, -distBack)
+        .addScaledVector(normal, sideOffset);
+      aiSpawn.y += 0.45;
+      this.aiBots[i].vehicle.resetPosition(aiSpawn, spawnQuat);
+      this.aiBots[i].vehicle.currentLap = 1;
+      this.aiBots[i].vehicle.currentLapTime = 0;
+      this.aiBots[i].vehicle.currentCheckpointIndex = 0;
+      this.aiBots[i].vehicle.raceFinished = false;
+
+      let closestWpIdx = 0;
+      let minWpDist = Infinity;
+      for (let w = 0; w < this.waypoints.length; w++) {
+        const d = aiSpawn.distanceTo(this.waypoints[w].point);
+        if (d < minWpDist) {
+          minWpDist = d;
+          closestWpIdx = w;
+        }
+      }
+      this.aiBots[i].setTargetIndex(closestWpIdx);
+    }
+
+    this.audioManager.startEngines();
   }
 
   private onWindowResize(): void {

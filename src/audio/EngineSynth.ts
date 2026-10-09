@@ -16,10 +16,22 @@ export class EngineSynth {
   private filter: BiquadFilterNode;
   private waveShaper: WaveShaperNode;
 
+  // Transmission Dogbox Gear Whine
+  private oscGearWhine: OscillatorNode | null = null;
+  private gearWhineGain: GainNode;
+
   // Tire Squeal Generator
   private tireNoiseNode: AudioBufferSourceNode | null = null;
   private tireFilter: BiquadFilterNode;
   private tireGain: GainNode;
+
+  // Curb Rumble Strip Synthesizer
+  private oscCurb: OscillatorNode | null = null;
+  private curbGain: GainNode;
+
+  // Previous throttle for BOV detection
+  private prevThrottle = 0;
+  private lastBovTime = 0;
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
@@ -53,6 +65,16 @@ export class EngineSynth {
     this.waveShaper.connect(this.filter);
     this.filter.connect(this.masterGain);
     this.masterGain.connect(ctx.destination);
+
+    // Straight-Cut Transmission Gear Whine Bus
+    this.gearWhineGain = ctx.createGain();
+    this.gearWhineGain.gain.value = 0.0;
+    this.gearWhineGain.connect(this.masterGain);
+
+    // Curb Rumble Strip Bus
+    this.curbGain = ctx.createGain();
+    this.curbGain.gain.value = 0.0;
+    this.curbGain.connect(this.masterGain);
 
     // Tire Squeal Procedural Chain
     this.tireFilter = ctx.createBiquadFilter();
@@ -120,6 +142,13 @@ export class EngineSynth {
     this.tireNoiseNode.loop = true;
     this.tireNoiseNode.connect(this.tireFilter);
     this.tireNoiseNode.start(t);
+
+    // 5. Straight-cut transmission gear whine oscillator
+    this.oscGearWhine = this.ctx.createOscillator();
+    this.oscGearWhine.type = 'sine';
+    this.oscGearWhine.frequency.setValueAtTime(320, t);
+    this.oscGearWhine.connect(this.gearWhineGain);
+    this.oscGearWhine.start(t);
   }
 
   /**
@@ -152,6 +181,22 @@ export class EngineSynth {
     const sawGainVal = 0.22 + throttle * 0.28 + (rpm / 7500) * 0.2;
     this.oscSawGain.gain.setTargetAtTime(sawGainVal, t, 0.05);
 
+    // Transmission straight-cut gear whine
+    if (this.oscGearWhine) {
+      const gearFreq = 260 + speedKmh * 11.4;
+      this.oscGearWhine.frequency.setTargetAtTime(gearFreq, t, 0.04);
+      const whineVol = Math.min(0.12, (speedKmh / 160.0) * 0.08 * (0.35 + throttle * 0.65));
+      this.gearWhineGain.gain.setTargetAtTime(whineVol, t, 0.05);
+    }
+
+    // Auto-detect sudden throttle lift-off at high RPM for Turbo BOV flutter!
+    const now = performance.now();
+    if (this.prevThrottle > 0.65 && throttle < 0.15 && rpm > 4200 && now - this.lastBovTime > 750) {
+      this.lastBovTime = now;
+      this.playTurboBov();
+    }
+    this.prevThrottle = throttle;
+
     // Tire Squeal Synthesis (active during oversteer drifts or hard lockups)
     const absSlip = Math.abs(slipAngle);
     if (absSlip > 0.18 && speedKmh > 20) {
@@ -162,6 +207,110 @@ export class EngineSynth {
     } else {
       this.tireGain.gain.setTargetAtTime(0.0, t, 0.08);
     }
+  }
+
+  /**
+   * Procedural Turbo Blow-Off Valve (BOV "pshh-t-t-t-t" wastegate flutter)
+   */
+  public playTurboBov(): void {
+    if (!this.isRunning) return;
+    const t = this.ctx.currentTime;
+
+    // Noise burst through high-Q resonant bandpass
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.45);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const out = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      // Modulate amplitude with 22Hz flutter
+      const flutter = Math.sin((i / this.ctx.sampleRate) * Math.PI * 2 * 22) * 0.5 + 0.5;
+      out[i] = (Math.random() * 2 - 1) * flutter;
+    }
+
+    const bovSource = this.ctx.createBufferSource();
+    bovSource.buffer = noiseBuffer;
+
+    const bovFilter = this.ctx.createBiquadFilter();
+    bovFilter.type = 'bandpass';
+    bovFilter.frequency.setValueAtTime(3200, t);
+    bovFilter.frequency.exponentialRampToValueAtTime(1400, t + 0.4);
+    bovFilter.Q.value = 5.5;
+
+    const bovGain = this.ctx.createGain();
+    bovGain.gain.setValueAtTime(0.32, t);
+    bovGain.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+
+    bovSource.connect(bovFilter);
+    bovFilter.connect(bovGain);
+    bovGain.connect(this.masterGain);
+
+    bovSource.start(t);
+  }
+
+  /**
+   * Procedural exhaust backfire pop (overrun unburnt fuel crackle)
+   */
+  public playBackfirePop(): void {
+    if (!this.isRunning) return;
+    const t = this.ctx.currentTime;
+
+    // Sub thump
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(110, t);
+    osc.frequency.exponentialRampToValueAtTime(35, t + 0.08);
+
+    // Crackle noise
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.09);
+    const buf = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const out = buf.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      out[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buf;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 600;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.42, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+
+    osc.connect(gain);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    noise.start(t);
+    osc.stop(t + 0.1);
+  }
+
+  /**
+   * Procedural curb strike rumble (driving over 3D beveled kerbs)
+   */
+  public playCurbRumble(): void {
+    if (!this.isRunning) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(55, t);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 160;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + 0.13);
   }
 
   public playCrashSound(intensity: number): void {
@@ -195,12 +344,15 @@ export class EngineSynth {
       this.oscSaw1?.disconnect();
       this.oscSaw2?.stop();
       this.oscSaw2?.disconnect();
+      this.oscGearWhine?.stop();
+      this.oscGearWhine?.disconnect();
       this.tireNoiseNode?.stop();
       this.tireNoiseNode?.disconnect();
     } catch (_) {}
     this.oscSub = null;
     this.oscSaw1 = null;
     this.oscSaw2 = null;
+    this.oscGearWhine = null;
     this.tireNoiseNode = null;
     this.isRunning = false;
   }

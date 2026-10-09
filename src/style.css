@@ -453,6 +453,235 @@ canvas {
   font-weight: 800;
 }
 
+/* Minimap & Pause Wrap */
+.minimap-wrap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-pause-icon {
+  pointer-events: auto;
+  cursor: pointer;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.15s ease;
+}
+
+.btn-pause-icon:hover {
+  transform: scale(1.08);
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(30, 41, 59, 0.85);
+}
+
+/* 7-Stage Shift Lights Row */
+.shift-lights-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.shift-led {
+  width: 22px;
+  height: 8px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: all 0.08s ease;
+}
+
+.shift-led.led-green.active {
+  background: #22c55e;
+  box-shadow: 0 0 10px #22c55e, 0 0 20px rgba(34, 197, 94, 0.6);
+}
+
+.shift-led.led-yellow.active {
+  background: #eab308;
+  box-shadow: 0 0 10px #eab308, 0 0 20px rgba(234, 179, 8, 0.6);
+}
+
+.shift-led.led-orange.active {
+  background: #f97316;
+  box-shadow: 0 0 10px #f97316, 0 0 20px rgba(249, 115, 22, 0.6);
+}
+
+.shift-led.led-red.active {
+  background: #ef4444;
+  box-shadow: 0 0 12px #ef4444, 0 0 24px rgba(239, 68, 68, 0.8);
+}
+
+.shift-led.flashing {
+  animation: limiterFlash 0.08s infinite alternate;
+}
+
+@keyframes limiterFlash {
+  from { background: #ef4444; box-shadow: 0 0 16px #ef4444; }
+  to { background: #ffffff; box-shadow: 0 0 24px #ffffff; }
+}
+
+/* Controls Hint Pill in Bottom Bar */
+.controls-pill {
+  border-radius: 999px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.ctrl-unit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ctrl-unit kbd {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-main);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* In-Game Pause Modal */
+.hud-pause-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 18, 0.75);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.pause-dialog {
+  width: 520px;
+  max-width: 90vw;
+  border-radius: 24px;
+  padding: 32px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pause-header h2 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 900;
+  color: #fbbf24;
+  letter-spacing: 1px;
+}
+
+.pause-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
+.pause-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.pause-settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pause-setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-title-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.hud-slider {
+  width: 100%;
+  accent-color: #fbbf24;
+  cursor: pointer;
+}
+
+.btn-group-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-family: var(--font-tech);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-main);
+}
+
+.toggle-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.5);
+}
+
+.btn-danger {
+  width: 100%;
+  padding: 12px;
+  background: rgba(220, 38, 38, 0.2);
+  border: 1px solid rgba(220, 38, 38, 0.5);
+  border-radius: 12px;
+  color: #f87171;
+  font-family: var(--font-tech);
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover {
+  background: rgba(220, 38, 38, 0.4);
+  color: #ffffff;
+}
+
 /* Split-screen P2 Cluster */
 .hud-p2-cluster {
   position: absolute;

@@ -1,3 +1,4 @@
+import { AudioManager } from '../audio/AudioManager';
 import { EvolutionStore } from '../economy/EvolutionStore';
 import { GameMode } from '../game/Types';
 import { InputManager } from '../controls/InputManager';
@@ -90,21 +91,31 @@ export class MenuUI {
     const btnGarage = this.container.querySelector('#btn-garage') as HTMLButtonElement;
     const btnGyro = this.container.querySelector('#btn-gyro-perm') as HTMLButtonElement;
 
+    const audio = AudioManager.getInstance();
+
+    [btnQuick, btnSplit, btnMulti, btnGarage].forEach((b) => {
+      b?.addEventListener('mouseenter', () => audio.playUiHover());
+    });
+
     btnQuick?.addEventListener('click', () => {
+      audio.playUiClick();
       this.hide();
       this.callbacks.onStartGame('quick-race');
     });
 
     btnSplit?.addEventListener('click', () => {
+      audio.playUiClick();
       this.hide();
       this.callbacks.onStartGame('split-screen');
     });
 
     btnMulti?.addEventListener('click', () => {
+      audio.playUiClick();
       this.callbacks.onOpenMultiplayer();
     });
 
     btnGarage?.addEventListener('click', () => {
+      audio.playUiClick();
       this.renderGarageModal();
     });
 

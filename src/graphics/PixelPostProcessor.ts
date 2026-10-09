@@ -201,6 +201,10 @@ export class PixelPostProcessor {
     this.postMaterial.uniforms.uSpeedFactor.value = speedFactor;
   }
 
+  public setBloomIntensity(val: number): void {
+    this.postMaterial.uniforms.uBloomIntensity.value = val;
+  }
+
   public setPixelScale(scale: number): void {
     this.pixelScale = Math.max(1, scale);
     const size = new THREE.Vector2();
