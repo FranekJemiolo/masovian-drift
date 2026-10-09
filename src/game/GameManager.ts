@@ -238,6 +238,7 @@ export class GameManager {
       currentCar.damage
     );
     this.allVehicles.push(this.playerVehicle);
+    this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
 
     // 2. Handle Game Modes
     if (mode === 'quick-race') {

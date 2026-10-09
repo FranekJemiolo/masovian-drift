@@ -53,9 +53,11 @@ export class EnvironmentGenerator {
       const wp = waypoints[wpIdx];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
-      // Distance from center of track: at least track width/2 + 5m clearance up to 140m into forest
+      // Distance from center of track: wider clearance on starting straight
+      const isStartStraight = wpIdx < 8 || wpIdx > wpCount - 8;
+      const minClearance = isStartStraight ? (wp.width * 0.5 + 16.0) : (wp.width * 0.5 + 5.5);
       const side = Math.random() < 0.5 ? -1 : 1;
-      const distFromTrack = (wp.width * 0.5 + 4.5) + Math.random() * 120.0;
+      const distFromTrack = minClearance + Math.random() * 120.0;
       const alongTrackOffset = (Math.random() - 0.5) * 18.0;
 
       const posX = wp.point.x + normal.x * distFromTrack * side + (wp.tangent ? wp.tangent.x * alongTrackOffset : 0);

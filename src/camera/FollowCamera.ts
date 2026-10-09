@@ -27,6 +27,15 @@ export class FollowCamera {
     return this.mode;
   }
 
+  public snapToTarget(targetPos: THREE.Vector3, targetQuat: THREE.Quaternion): void {
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(targetQuat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(targetQuat);
+    this.currentPosition.copy(targetPos).addScaledVector(forward, -7.2).addScaledVector(up, 2.6);
+    this.currentLookTarget.copy(targetPos).addScaledVector(forward, 9.0).addScaledVector(up, 1.2);
+    this.camera.position.copy(this.currentPosition);
+    this.camera.lookAt(this.currentLookTarget);
+  }
+
   public addTrauma(amount: number): void {
     this.shakeIntensity = Math.min(1.0, this.shakeIntensity + amount);
   }

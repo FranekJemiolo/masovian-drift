@@ -161,36 +161,38 @@ export class TrackMeshBuilder {
     terrainMesh.receiveShadow = true;
     trackGroup.add(terrainMesh);
 
-    // 3. Start/Finish Gantry Arch
+    // 3. Start/Finish Gantry Arch (Positioned ahead of starting grid)
     const startWp = waypoints[0];
     const gantry = new THREE.Group();
-    gantry.position.copy(startWp.point);
+    const gantryPos = startWp.point.clone();
     if (startWp.tangent) {
+      gantryPos.addScaledVector(startWp.tangent, 18.0);
       gantry.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), startWp.tangent);
     }
+    gantry.position.copy(gantryPos);
 
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x222226, metalness: 0.8, roughness: 0.3 });
     const bannerMat = new THREE.MeshStandardMaterial({ color: 0xd92b2b, roughness: 0.5 });
     const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
 
-    // Left & Right truss pillars
-    const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.8, 7.5, 0.8), metalMat);
-    pLeft.position.set(-8.5, 3.75, 0);
+    // Left & Right truss pillars (Wide clearance 12m)
+    const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.9, 8.5, 0.9), metalMat);
+    pLeft.position.set(-11.5, 4.25, 0);
     pLeft.castShadow = true;
     gantry.add(pLeft);
 
-    const pRight = new THREE.Mesh(new THREE.BoxGeometry(0.8, 7.5, 0.8), metalMat);
-    pRight.position.set(8.5, 3.75, 0);
+    const pRight = new THREE.Mesh(new THREE.BoxGeometry(0.9, 8.5, 0.9), metalMat);
+    pRight.position.set(11.5, 4.25, 0);
     pRight.castShadow = true;
     gantry.add(pRight);
 
     // Cross beam & Banner
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(18, 0.8, 0.8), metalMat);
-    beam.position.set(0, 7.1, 0);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(24, 0.9, 0.9), metalMat);
+    beam.position.set(0, 8.1, 0);
     gantry.add(beam);
 
-    const banner = new THREE.Mesh(new THREE.BoxGeometry(14, 1.8, 0.3), bannerMat);
-    banner.position.set(0, 6.0, 0);
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(18, 2.0, 0.3), bannerMat);
+    banner.position.set(0, 6.8, 0);
     gantry.add(banner);
 
     // Start lights (5 round lights)
