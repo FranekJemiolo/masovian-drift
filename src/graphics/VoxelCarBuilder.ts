@@ -230,6 +230,26 @@ export class VoxelCarBuilder {
     addBox(0.3, 0.3, 0.04, -0.5, 0.55, 1.80, chromeMat);
     addBox(0.3, 0.3, 0.04, 0.5, 0.55, 1.80, chromeMat);
 
+    // Volumetric Headlight Dust Cones (cinematic AAA atmospheric beams, G3 / G4)
+    const coneGeo = new THREE.CylinderGeometry(0.12, 1.35, 16.0, 10, 1, true);
+    coneGeo.rotateX(Math.PI / 2);
+    coneGeo.translate(0, 0, 8.0);
+    const coneMat = new THREE.MeshBasicMaterial({
+      color: 0xfffae0,
+      transparent: true,
+      opacity: isPlayer ? 0.16 : 0.10,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const leftBeam = new THREE.Mesh(coneGeo, coneMat);
+    leftBeam.position.set(-0.5, 0.55, 1.84);
+    bodyGroup.add(leftBeam);
+
+    const rightBeam = new THREE.Mesh(coneGeo, coneMat);
+    rightBeam.position.set(0.5, 0.55, 1.84);
+    bodyGroup.add(rightBeam);
+
     // Front indicators / rally pods
     addBox(0.22, 0.08, 0.08, -0.52, 0.36, 1.95, indicatorMat);
     addBox(0.22, 0.08, 0.08, 0.52, 0.36, 1.95, indicatorMat);

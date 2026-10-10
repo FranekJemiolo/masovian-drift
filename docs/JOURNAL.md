@@ -176,11 +176,52 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 - `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
 - `tests/smoke-suite.mjs`: **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
 
+### 2026-10-10 — Authentic Regional Masovian Geography, Physical Corner Banking, Volumetric Headlight Beams & SOTA Racing AI
+
+**Implementations**:
+- **Authentic Regional Masovian Geography & Topography (`src/physics/TrackWaypoints.ts`, `src/graphics/TrackMeshBuilder.ts`, `src/physics/PhysicsWorld.ts`)**:
+  - Remodeled track spline nodes and terrain elevations based on authentic Otwock / Józefów / Świder regional topography:
+    - Inland parabolic dune ridges (*wydmy śródlądowe*) climbing up through Józefów pine groves ($y = +2.2\text{m} \dots +2.6\text{m}$).
+    - River valley descent towards the meandering Świder river ($y = +0.1\text{m} \dots +0.4\text{m}$) with hairpin corner at the water's edge.
+    - Level, flat start/finish straight ($y = 0.0\text{m}$) preserving deterministic sprint baselines.
+  - Calculated dynamic corner banking: $\theta = \text{clamp}(-d\text{Curv} \times 2.6, -0.075, 0.075\text{ rad}) \approx 4.3^\circ$ applied to roadbed, markings, and raised kerbs.
+  - Aligned physical Rapier 3D cuboid colliders to the visual road roll banking using `quat.multiply(axisAngle(z, banking))`, ensuring zero gap between raycast suspension and road colliders.
+  - Overhauled terrain heightfield and palette with the serpentine Świder river trench ($x_{\text{river}}(z) = 235 + \sin(z \cdot 0.016) \cdot 45 - (z + 40) \cdot 0.22$), wide inner-bend sandy shoals (*piaszczyste łachy* at $y \approx -0.5\text{m} \dots 0.0\text{m}$), steep outer bluffs (*podcięte skarpy* at $y \approx +2.5\text{m}$), and dune ridges. Added regional terrain vertex colors (`pineNeedleCol`, `riverSandCol`, `riverDampSandCol`, `duneSandCol`).
+  - Expanded river water mesh to $480 \times 360\text{m}$ at $(230, -0.62, -50)$.
+- **AAA Voxel Graphics & Volumetric Headlight Beams (`src/graphics/VoxelCarBuilder.ts`, `src/physics/VehiclePhysics.ts`)**:
+  - Added dual forward volumetric headlight dust beam cones (`CylinderGeometry(0.12, 1.35, 16.0)` with `AdditiveBlending`, `depthWrite: false`, and soft opacity) projecting forward on player and AI cars.
+  - Boosted round headlight lens emissive intensity to 2.4.
+  - Upgraded ventilated steel brake rotor thermal glow to shift from incandescent red-orange to hot orange (`heat > 0.6 ? 0xffaa00 : 0xff3d00`) with boosted emissive intensity up to $4.8$.
+- **State-of-the-Art Racing AI Behavior (`src/ai/PurePursuitAI.ts`)**:
+  - Implemented **Frenet Frame Multi-Candidate Trajectory Evaluation**: Evaluates 3 distinct lateral candidates:
+    - $c_{\text{racing}}$: Optimal racing line clipping apex based on upcoming curvature $\kappa$.
+    - $c_{\text{defend}}$: Defensive inside line hugging track margin to block trailing cars.
+    - $c_{\text{overtake}}$: Alternating lane switchback when blocked by car ahead.
+    - Cost function: $J(c) = w_{\text{curv}} \Delta d_{\text{look}} + w_{\text{coll}} P_{\text{coll}} + w_{\text{bubble}} P_{\text{bubble}} + w_{\text{bound}} P_{\text{bound}} + \text{bonus}_{\text{draft/pass}}$.
+  - Implemented **Kamm's Friction Circle & Pacejka-Aware Predictive Braking**: Dynamically computes physical corner limit $v_{\text{corner}} = \sqrt{\mu g R / (1 - \text{banking}\cdot\text{sign})}$, calculates deceleration lookahead up to 12 waypoints (55m), and modulates trail-braking via Kamm's circle ($\text{grip}_{\text{long}} = \sqrt{1 - \text{steer}^2 \cdot 0.75}$) to prevent understeer plow.
+  - Implemented **Tactical Slipstream Drafting & 3D Safety Bubbles**: AI detects opponent wake in the longitudinal draft tunnel ($2\text{m} < \Delta s < 16\text{m}, |\Delta d| < 1.6\text{m}$), builds speed down straights, pulls out to make late-braking passes, and respects 3D safety bubbles.
+- **Updated High-Resolution Screenshots (`docs/screenshots/`)**:
+  - Generated fresh 1280x720 captures in `docs/screenshots/`:
+    - `menu.png`: Showroom voxel Boxer with reflective polished floor and Polish cyber-retro UI.
+    - `track_start.png`: Starting grid featuring volumetric dust headlight cones, dune ridges, grandstands, and Polish/Mazovian banners.
+    - `gameplay_drift.png`: High-speed power slide with incandescent glowing brake rotors, tire smoke particles, and dynamic camera tilt.
+
+**Automated verification sweep results**:
+- `tests/physics-regression.mjs`: **100% PASSED** across all 4 benchmarks:
+  - 0–100 km/h acceleration sprint: **6.72s** (Gear 2, 5881 RPM)
+  - 100–0 km/h braking distance: **23.9m** (1.59s)
+  - Skidpad lateral adhesion: sustained peak **1.33G** (slip angle 2.6°)
+  - Reset hygiene: clean 0 km/h, 0 rad steer, 0 linvel, 0 angvel
+- `tests/unit-tests.mjs`: **100% PASSED** (StateSync 76-byte binary protocol roundtrip, EvolutionStore economy & repairs, 140 waypoint geometry invariants with orthogonal unit tangents and normals).
+- `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
+- `tests/smoke-suite.mjs`: **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
 | Stabilise (P0) | V1 V2 M1 M2 M3 U1 U2 A1 P1 P3 P7 G1 | `[x]` done |
 | Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
 | Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 A2–A7 A9 M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M12 P4 P8 P11 U1–U12 V3 C4 C6 | `[x]` done |
+| Regional & SOTA AI | Regional Geography (Świder & Dunes), Physical Banking, Headlight Volumetrics, Frenet Multi-Candidate AI, Kamm Trail Braking | `[x]` done |
 
 

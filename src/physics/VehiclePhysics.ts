@@ -734,9 +734,9 @@ export class VehiclePhysics {
     if (this.visual.brakeRotorMaterials && this.visual.brakeRotorMaterials.length > 0) {
       const heat = this.brakeRotorHeat;
       for (const mat of this.visual.brakeRotorMaterials) {
-        if (heat > 0.06) {
-          mat.emissive.setHex(0xff3d00); // Incandescent red-orange glow
-          mat.emissiveIntensity = heat * 3.4;
+        if (heat > 0.05) {
+          mat.emissive.setHex(heat > 0.6 ? 0xffaa00 : 0xff3d00); // Incandescent red-orange shifting to bright orange
+          mat.emissiveIntensity = heat * 4.8;
         } else {
           mat.emissiveIntensity = 0.0;
         }

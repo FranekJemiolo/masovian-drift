@@ -45,9 +45,12 @@ export class PhysicsWorld {
       );
       const segmentBody = this.world.createRigidBody(segmentDesc);
 
-      // Orient segment towards next waypoint
+      // Orient segment towards next waypoint and apply physical corner banking roll
       const dir = nextWp.point.clone().sub(wp.point).normalize();
       const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+      if (wp.banking) {
+        quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), wp.banking));
+      }
       segmentBody.setRotation(new RAPIER.Quaternion(quat.x, quat.y, quat.z, quat.w), true);
 
       // Friction depends on surface type

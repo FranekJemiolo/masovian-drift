@@ -59,14 +59,18 @@ export class TrackMeshBuilder {
       if (wp.surface === 'sand') baseColor = sandColor;
 
       const yRoad = pt.y + ROAD_ELEVATION;
+      const bankOffsetLeft = Math.sin(wp.banking) * (-halfWidth);
+      const bankOffsetRight = Math.sin(wp.banking) * (halfWidth);
+      const yLeft = yRoad + bankOffsetLeft;
+      const yRight = yRoad + bankOffsetRight;
 
       // 4 Main Road Cross-Section Points:
       const pLeft = pt.clone().addScaledVector(normal, -halfWidth);
       const pRight = pt.clone().addScaledVector(normal, halfWidth);
 
       // --- 1. Roadbed Geometry ---
-      roadVertices.push(pLeft.x, yRoad, pLeft.z);
-      roadVertices.push(pRight.x, yRoad, pRight.z);
+      roadVertices.push(pLeft.x, yLeft, pLeft.z);
+      roadVertices.push(pRight.x, yRight, pRight.z);
 
       roadColors.push(baseColor.r, baseColor.g, baseColor.b);
       roadColors.push(baseColor.r, baseColor.g, baseColor.b);
@@ -89,14 +93,16 @@ export class TrackMeshBuilder {
       const mCenterL = pt.clone().addScaledVector(normal, -lineThickness * 0.5);
       const mCenterR = pt.clone().addScaledVector(normal, lineThickness * 0.5);
 
-      const yMark = yRoad + 0.025; // Sits slightly above road surface
+      const yMarkLeft = yLeft + 0.025;
+      const yMarkRight = yRight + 0.025;
+      const yMarkCenter = yRoad + 0.025; // Centerline follows road spine
 
-      markVertices.push(mLeftOut.x, yMark, mLeftOut.z);
-      markVertices.push(mLeftIn.x, yMark, mLeftIn.z);
-      markVertices.push(mRightIn.x, yMark, mRightIn.z);
-      markVertices.push(mRightOut.x, yMark, mRightOut.z);
-      markVertices.push(mCenterL.x, yMark, mCenterL.z);
-      markVertices.push(mCenterR.x, yMark, mCenterR.z);
+      markVertices.push(mLeftOut.x, yMarkLeft, mLeftOut.z);
+      markVertices.push(mLeftIn.x, yMarkLeft, mLeftIn.z);
+      markVertices.push(mRightIn.x, yMarkRight, mRightIn.z);
+      markVertices.push(mRightOut.x, yMarkRight, mRightOut.z);
+      markVertices.push(mCenterL.x, yMarkCenter, mCenterL.z);
+      markVertices.push(mCenterR.x, yMarkCenter, mCenterR.z);
 
       const edgeColor = (wp.surface === 'sand') ? yellowMarking : whiteMarking;
       for (let k = 0; k < 4; k++) {
@@ -129,13 +135,16 @@ export class TrackMeshBuilder {
       const sLeftBase = pt.clone().addScaledVector(normal, -(halfWidth + curbWidth + 1.8));
       const sRightBase = pt.clone().addScaledVector(normal, halfWidth + curbWidth + 1.8);
 
+      const yCurbLeft = yLeft + curbHeight;
+      const yCurbRight = yRight + curbHeight;
+
       // L inner, L top, L base, R inner, R top, R base
-      curbVertices.push(pLeft.x, yRoad, pLeft.z);
-      curbVertices.push(cLeftOuter.x, yRoad + curbHeight, cLeftOuter.z);
+      curbVertices.push(pLeft.x, yLeft, pLeft.z);
+      curbVertices.push(cLeftOuter.x, yCurbLeft, cLeftOuter.z);
       curbVertices.push(sLeftBase.x, pt.y - 0.05, sLeftBase.z);
 
-      curbVertices.push(pRight.x, yRoad, pRight.z);
-      curbVertices.push(cRightOuter.x, yRoad + curbHeight, cRightOuter.z);
+      curbVertices.push(pRight.x, yRight, pRight.z);
+      curbVertices.push(cRightOuter.x, yCurbRight, cRightOuter.z);
       curbVertices.push(sRightBase.x, pt.y - 0.05, sRightBase.z);
 
       curbColors.push(curColor.r, curColor.g, curColor.b);
@@ -248,7 +257,10 @@ export class TrackMeshBuilder {
 
     const grassCol = new THREE.Color(0x4f703e); // Lush Mazovian pine forest floor
     const grassLightCol = new THREE.Color(0x5d8349); // Meadow highlights
-    const riverSandCol = new THREE.Color(0xdfaf78); // Sandy beach
+    const pineNeedleCol = new THREE.Color(0x2f4325); // Deep Scots pine understory
+    const riverSandCol = new THREE.Color(0xdfaf78); // Golden Świder river sand
+    const riverDampSandCol = new THREE.Color(0xb0824b); // Moist shoreline sand
+    const duneSandCol = new THREE.Color(0xe5d09f); // Inland parabolic dune sand
 
     for (let i = 0; i < pos.count; i++) {
       const vx = pos.getX(i);
@@ -267,23 +279,70 @@ export class TrackMeshBuilder {
         }
       }
 
-      // Natural rolling hills and riverbanks
-      let h = Math.sin(vx * 0.012) * Math.cos(vz * 0.012) * 2.2 +
-              Math.sin(vx * 0.024 + vz * 0.018) * 1.1 - 0.2;
+      // Authentic Masovian Topography:
+      // 1. Base rolling glacial plain
+      let h = Math.sin(vx * 0.012) * Math.cos(vz * 0.012) * 1.8 +
+              Math.sin(vx * 0.022 + vz * 0.016) * 0.9;
 
-      // CARVE TRACK BED: if near track, suppress height below the road!
-      if (minTrackDist < 24.0) {
-        const blend = minTrackDist / 24.0;
+      // 2. Inland sand dunes (Wydmy Otwockie/Józefowskie) in northern & eastern pine forests
+      if (vz > 120.0 || (vx > 60.0 && vz < -160.0)) {
+        const duneRidge = (Math.sin(vx * 0.018 + 0.8) * 1.5 + Math.cos(vz * 0.015) * 1.6);
+        h += Math.max(0, duneRidge);
+      }
+
+      // 3. Serpentine Świder River Valley Trench & Asymmetric Banks (Podcięte Skarpy & Piaszczyste Łachy)
+      const riverCenterlineX = 235.0 + Math.sin(vz * 0.016) * 45.0 - (vz + 40.0) * 0.22;
+      const distToRiverCenter = Math.abs(vx - riverCenterlineX);
+      const inRiverCorridor = Math.abs(vz) < 260.0 && distToRiverCenter < 80.0;
+
+      let isRiverBed = false;
+      let isSandyShoal = false;
+      let isCutbank = false;
+
+      if (inRiverCorridor) {
+        const riverBedWidth = 32.0;
+        if (distToRiverCenter < riverBedWidth) {
+          // River channel depression down into water table
+          const normDist = distToRiverCenter / riverBedWidth;
+          const riverH = -1.15 + normDist * normDist * 0.65;
+          h = Math.min(h, riverH);
+          isRiverBed = true;
+        } else if (vx < riverCenterlineX && distToRiverCenter < 70.0) {
+          // Inner meander bend: expansive sandy shoals (piaszczyste łachy)
+          const shoalBlend = (distToRiverCenter - riverBedWidth) / 38.0;
+          const shoalH = -0.50 + shoalBlend * 0.65;
+          h = Math.min(h, shoalH);
+          isSandyShoal = true;
+        } else if (vx >= riverCenterlineX && distToRiverCenter < 65.0) {
+          // Outer meander bend: steep undercut sandy bluff (skarpa wydmowa)
+          const cutbankBlend = (distToRiverCenter - riverBedWidth) / 33.0;
+          h = Math.max(h, 0.4 + cutbankBlend * 2.2);
+          isCutbank = true;
+        }
+      }
+
+      // CARVE TRACK BED: near road, smoothly carve terrain below roadbed
+      if (minTrackDist < 26.0) {
+        const blend = minTrackDist / 26.0;
         h = Math.min(h, closestWpY - 0.22) * (1.0 - blend) + h * blend;
       }
 
       pos.setY(i, h);
 
-      // Rich ground color variation
-      let groundC = ((vx + vz) % 15 < 7) ? grassCol : grassLightCol;
-      if (closestSurface === 'sand' && minTrackDist < 50.0) {
+      // Authentic regional terrain coloration
+      let groundC = ((vx + vz) % 18 < 9) ? pineNeedleCol : grassCol;
+      if (closestSurface === 'sand' && minTrackDist < 55.0) {
         groundC = riverSandCol;
+      } else if (isRiverBed) {
+        groundC = riverDampSandCol;
+      } else if (isSandyShoal) {
+        groundC = ((vx + vz) % 6 < 3) ? riverSandCol : duneSandCol;
+      } else if (isCutbank || (h > 2.8 && minTrackDist > 40.0)) {
+        groundC = duneSandCol;
+      } else if (h > 1.2) {
+        groundC = grassLightCol;
       }
+
       terrainColors.push(groundC.r, groundC.g, groundC.b);
     }
     terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(terrainColors, 3));
@@ -291,7 +350,7 @@ export class TrackMeshBuilder {
 
     const terrainMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.9,
+      roughness: 0.88,
       flatShading: true,
     });
     const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
@@ -598,7 +657,7 @@ export class TrackMeshBuilder {
     }
 
     // --- 11. Shimmering Świder River Water Body (GPU Gerstner Waves & Fresnel, G6/P2) ---
-    const waterGeo = new THREE.PlaneGeometry(380, 280, 64, 64);
+    const waterGeo = new THREE.PlaneGeometry(480, 360, 72, 72);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -683,7 +742,7 @@ export class TrackMeshBuilder {
       depthWrite: true,
     });
     const riverMesh = new THREE.Mesh(waterGeo, waterMat);
-    riverMesh.position.set(240, -0.65, -30);
+    riverMesh.position.set(230, -0.62, -50);
     trackGroup.add(riverMesh);
 
     // 12. Wind-Animated Shoulder Grass InstancedMesh (G5)

@@ -48,18 +48,21 @@ async function captureScreenshots() {
 
     // 3. Gameplay Drift Screenshot
     console.log('[SCREENSHOTS] Driving & drifting for gameplay screenshot...');
+    await page.evaluate(() => {
+      window._gameManager.countdownRemaining = 0;
+    });
     await page.keyboard.down('KeyW');
-    await page.waitForTimeout(2000); // Build up speed
+    await page.waitForTimeout(2800); // Accelerate up to speed
     
-    // Initiate drift flick with steer + handbrake
-    await page.keyboard.down('KeyA');
+    // Initiate power drift flick with steer + handbrake
+    await page.keyboard.down('KeyD');
     await page.keyboard.down('Space');
     await page.waitForTimeout(500);
     await page.keyboard.up('Space');
     // Counter-steer into drift
-    await page.keyboard.up('KeyA');
-    await page.keyboard.down('KeyD');
-    await page.waitForTimeout(800);
+    await page.keyboard.up('KeyD');
+    await page.keyboard.down('KeyA');
+    await page.waitForTimeout(900);
 
     const driftPath = path.join(SCREENSHOT_DIR, 'gameplay_drift.png');
     await page.screenshot({ path: driftPath });

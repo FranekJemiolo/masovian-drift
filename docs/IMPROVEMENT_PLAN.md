@@ -26,7 +26,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | M3 | **Restart correctness.** Comprehensive `reset()` on `VehiclePhysics`, `PurePursuitAI`, and `ParticleFX` clearing tyre/rotor heat, drift combos, skidmarks, and smoke. | P0 | S | `[x]` done |
 | M4 | **Fixed-step determinism.** Seeded PRNG (`src/utils/PRNG.ts`) replacing Math.random in physics, AI, and environment. | P1 | S | `[x]` done |
 | M5 | **Network model.** Snapshot interpolation with jitter buffer, lag compensation. | P1 | L | `[x]` done (`SnapshotJitterBuffer` in `StateSync.ts`) |
-| M6 | **AI quality.** Racing line, braking-zone lookahead, overtaking offsets, recovery when stuck. | P1 | L | `[x]` done |
+| M6 | **AI quality.** Frenet frame multi-candidate trajectory evaluation, Kamm friction circle trail-braking, slipstream drafting, stuck recovery. | P1 | L | `[x]` done |
 | M7 | **Reset/recovery.** Auto-respawn at last checkpoint when flipped or off-track, manual K key. | P1 | S | `[x]` done |
 | M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[x]` done |
 | M9 | **Drivetrain realism.** Boxer torque curve plateau, clutch launch control, rev-limiter cut. | P2 | M | `[x]` done |
@@ -40,9 +40,9 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 |----|------|-----|-----|--------|
 | G1 | **Split-screen post-processing.** Render both viewports through post-processing pipeline with scissor (`renderToViewport`). | P0 | M | `[x]` done |
 | G2 | **Bloom HDR buffer.** HalfFloat render target + quadratic soft-knee threshold and 12-tap multi-scale Gaussian blur. | P1 | M | `[x]` done |
-| G3 | **Lighting & Shadows.** Procedural sky IBL, contact AO, soft cascaded shadows. | P1 | L | `[x]` done |
-| G4 | **Car shading.** MeshPhysicalMaterial clearcoat paint, tinted glass reflections, contact shadow. | P1 | L | `[x]` done |
-| G5 | **Terrain & Shoulder Foliage.** Splat shader, 1400 wind-animated shoulder grass instances (GPU ShaderMaterial). | P1 | L | `[x]` done |
+| G3 | **Lighting & Shadows.** Procedural sky IBL, contact AO, soft cascaded shadows, volumetric dust headlight cones. | P1 | L | `[x]` done |
+| G4 | **Car shading.** MeshPhysicalMaterial clearcoat paint, tinted glass reflections, incandescent rotor glow, dual spot beams. | P1 | L | `[x]` done |
+| G5 | **Terrain & Regional Geography.** Meandering Świder river trench, sandy shoals, dune bluffs, 4.3° physical banking, 1400 wind grass instances. | P1 | L | `[x]` done |
 | G6 | **Water.** Vertex shader wave displacement with Fresnel and foam. | P1 | M | `[x]` done |
 | G7 | **Sky/atmosphere.** Day/Sunset/Night presets, sun disc bloom, skydome IBL. | P2 | M | `[x]` done |
 | G8 | **Particles.** Surface-tinted smoke (asphalt/gravel/sand/grass), additive kerb sparks. | P2 | M | `[x]` done |
