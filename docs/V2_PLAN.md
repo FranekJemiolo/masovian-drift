@@ -6,6 +6,10 @@
 
 By analyzing the state of the art in **Teardown**, **Forza Horizon 5**, **Need for Speed: Unbound**, **Initial D: Arcade Stage**, **Trackmania**, and **CarX Drift Racing Online**, this document outlines the concrete architectural changes, mathematical models, and implementation steps required to execute the V2 transformation.
 
+This master blueprint is supported by two dedicated, in-depth technical plans:
+- [**Graphics Improvement Plan** (`docs/GRAPHICS_IMPROVEMENT_PLAN.md`)](file:///Users/franek/personal_workspace/masovian-drift/docs/GRAPHICS_IMPROVEMENT_PLAN.md): Detailed WebGPU render passes, Radiance Cascades Screen-Space Indirect GI, Screen-Space Reflections (SSR), physically based atmospheric scattering, and stylized cel-shaded VFX.
+- [**Gameplay Improvement Plan** (`docs/GAMEPLAY_IMPROVEMENT_PLAN.md`)](file:///Users/franek/personal_workspace/masovian-drift/docs/GAMEPLAY_IMPROVEMENT_PLAN.md): Advanced vehicle dynamics, 3-zone thermal tire degradation, clutch-kick impulses, gutter-hooking (*Mizo Otoshi*), Formula Drift 100-point judging, 10-second temporal rewind, and Trackmania micro-sector split telemetry.
+
 ---
 
 ## 2. Comparative Matrix: Current Engine vs. AAA Benchmarks
