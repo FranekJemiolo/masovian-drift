@@ -15,6 +15,8 @@ export interface TrackMeshResult {
 }
 
 export class TrackMeshBuilder {
+  public static readonly ROAD_ELEVATION = 0.40; // Firmly elevated above terrain!
+
   public static buildTrack(waypoints: Waypoint[]): TrackMeshResult {
     const trackGroup = new THREE.Group();
     const count = waypoints.length;
@@ -46,7 +48,7 @@ export class TrackMeshBuilder {
     const whiteKerb = new THREE.Color(0xf8fafc);
     const rubberMark = new THREE.Color(0x22242a);
 
-    const ROAD_ELEVATION = 0.40; // Firmly elevated above terrain!
+    const ROAD_ELEVATION = TrackMeshBuilder.ROAD_ELEVATION;
 
     for (let i = 0; i <= count; i++) {
       const wp = waypoints[i % count];
@@ -590,11 +592,13 @@ export class TrackMeshBuilder {
         rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
       }
       rail.castShadow = true;
+      rail.receiveShadow = true;
       trackGroup.add(rail);
 
       // Post
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.2, 6), barrierMat);
       post.position.set(pos.x, wp.point.y + ROAD_ELEVATION + 0.2, pos.z);
+      post.receiveShadow = true;
       trackGroup.add(post);
 
       // Sponsor board on every 4th segment
@@ -604,6 +608,8 @@ export class TrackMeshBuilder {
         if (wp.tangent) {
           board.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
         }
+        board.castShadow = true;
+        board.receiveShadow = true;
         trackGroup.add(board);
       }
     }
@@ -627,6 +633,7 @@ export class TrackMeshBuilder {
         bMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
       }
       bMesh.castShadow = true;
+      bMesh.receiveShadow = true;
       trackGroup.add(bMesh);
 
       // Stripe indicator
@@ -649,6 +656,7 @@ export class TrackMeshBuilder {
       const bale = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.4), hayMat);
       bale.position.set(hPos.x, wp.point.y + ROAD_ELEVATION + 0.55, hPos.z);
       bale.castShadow = true;
+      bale.receiveShadow = true;
       trackGroup.add(bale);
     }
 
@@ -869,7 +877,7 @@ export class TrackMeshBuilder {
     const checkpoints: { position: THREE.Vector3; index: number; radius: number }[] = [];
     for (let i = 0; i < count; i += checkpointStep) {
       checkpoints.push({
-        position: waypoints[i].point.clone(),
+        position: waypoints[i].point.clone().add(new THREE.Vector3(0, TrackMeshBuilder.ROAD_ELEVATION, 0)),
         index: checkpoints.length,
         radius: waypoints[i].width * 0.9,
       });

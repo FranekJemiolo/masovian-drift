@@ -174,8 +174,8 @@ export class GameManager {
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
     this.sunLight.shadow.camera.bottom = -d;
-    this.sunLight.shadow.bias = -0.0006;
-    this.sunLight.shadow.normalBias = 0.02; // Eliminates shadow acne on voxel steps
+    this.sunLight.shadow.bias = -0.0001;
+    this.sunLight.shadow.normalBias = 0.035; // Eliminates shadow acne on voxel steps
     this.scene.add(this.sunLight);
 
     // Procedural atmospheric skydome, golden haze, and dual-tone voxel clouds (IBL enabled)
@@ -354,7 +354,7 @@ export class GameManager {
     const spawnPos = spawnWp.point.clone()
       .addScaledVector(tangent, -6.0)
       .addScaledVector(normal, 2.8);
-    spawnPos.y += 0.45;
+    spawnPos.y += TrackMeshBuilder.ROAD_ELEVATION;
 
     const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
@@ -436,7 +436,7 @@ export class GameManager {
     const spawnPos = spawnWp.point.clone()
       .addScaledVector(tangent, -6.0)
       .addScaledVector(normal, 2.8);
-    spawnPos.y += 0.45;
+    spawnPos.y += TrackMeshBuilder.ROAD_ELEVATION;
 
     const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
@@ -480,7 +480,7 @@ export class GameManager {
         const aiSpawn = spawnWp.point.clone()
           .addScaledVector(tangent, -distBack)
           .addScaledVector(normal, sideOffset);
-        aiSpawn.y += 0.45;
+        aiSpawn.y += TrackMeshBuilder.ROAD_ELEVATION;
 
         const aiVehicle = new VehiclePhysics(
           `ai-${i}`,
@@ -635,7 +635,7 @@ export class GameManager {
     if (wp.tangent) {
       quat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
     }
-    this.playerVehicle.resetPosition(wp.point.clone().add(new THREE.Vector3(0, 0.85, 0)), quat);
+    this.playerVehicle.resetPosition(wp.point.clone().add(new THREE.Vector3(0, TrackMeshBuilder.ROAD_ELEVATION, 0)), quat);
   }
 
   public togglePhotoMode(): void {
@@ -907,6 +907,7 @@ export class GameManager {
       const snappedZ = Math.floor(p.z / worldUnitsPerTexel) * worldUnitsPerTexel;
       this.sunLight.target.position.set(snappedX, p.y, snappedZ);
       this.sunLight.position.set(snappedX - 65, p.y + 115, snappedZ - 55);
+      this.sunLight.updateMatrixWorld();
       this.sunLight.target.updateMatrixWorld();
 
       // Dynamic Environment animation (rotating wind turbines)
@@ -1165,7 +1166,8 @@ export class GameManager {
       veh.offTrackTimer = 0;
     }
 
-    if (veh.flipTimer > 2.0 || veh.offTrackTimer > 3.8) {
+    // Auto-recover if fallen off map, flipped upside down, or stranded far off track
+    if (veh.position.y < -2.5 || veh.flipTimer > 2.0 || veh.offTrackTimer > 8.0) {
       this.respawnVehicleAtCheckpoint(veh);
     }
   }
@@ -1187,7 +1189,7 @@ export class GameManager {
     if (wp && wp.tangent) {
       spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
     }
-    veh.resetPosition(cp.position, spawnQuat);
+    veh.resetPosition(cp.position.clone(), spawnQuat);
   }
 
   private handleRaceFinish(): void {

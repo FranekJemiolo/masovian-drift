@@ -233,6 +233,7 @@ export class EnvironmentGenerator {
     });
     const roofInstanced = new THREE.InstancedMesh(roofGeo, roofMat, villaCount);
     roofInstanced.castShadow = true;
+    roofInstanced.receiveShadow = true;
 
     // Villa Openwork Carved Veranda / Porch ("Lalki" architectural woodwork)
     const verandaGeo = new THREE.BoxGeometry(14, 4.5, 4.2);
@@ -244,6 +245,7 @@ export class EnvironmentGenerator {
     });
     const verandaInstanced = new THREE.InstancedMesh(verandaGeo, verandaMat, villaCount);
     verandaInstanced.castShadow = true;
+    verandaInstanced.receiveShadow = true;
 
     // Red Brick Chimneys
     const chimneyGeo = new THREE.BoxGeometry(1.2, 5.2, 1.2);
@@ -255,17 +257,19 @@ export class EnvironmentGenerator {
     });
     const chimneyInstanced = new THREE.InstancedMesh(chimneyGeo, chimneyMat, villaCount);
     chimneyInstanced.castShadow = true;
+    chimneyInstanced.receiveShadow = true;
 
-    // Glowing Warm Windows (Amber interior lights)
-    const windowGeo = new THREE.BoxGeometry(14.2, 2.2, 12.2);
+    // Glowing Warm Windows (Amber interior lights, flush with timber walls)
+    const windowGeo = new THREE.BoxGeometry(13.6, 1.8, 11.6);
     windowGeo.translate(0, 4.2, 0);
     const windowMat = new THREE.MeshStandardMaterial({
       color: 0xfef08a,
       emissive: 0xeab308,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.45,
       roughness: 0.3,
     });
     const windowInstanced = new THREE.InstancedMesh(windowGeo, windowMat, villaCount);
+    windowInstanced.receiveShadow = true;
 
     const villaLocations = [
       { wpIdx: 6, dist: 35, side: 1, rot: 0.3 },     // Gurewicz Sanatorium villa
@@ -443,6 +447,7 @@ export class EnvironmentGenerator {
     });
     const fenceInstanced = new THREE.InstancedMesh(fenceSectionGeo, fenceMat, fenceCount);
     fenceInstanced.castShadow = true;
+    fenceInstanced.receiveShadow = true;
 
     let placedFences = 0;
     for (let k = 4; k < wpCount - 8 && placedFences < fenceCount; k += 2) {

@@ -79,8 +79,8 @@ export class VehiclePhysics {
   private readonly suspensionMaxLen = 0.76;
   private readonly springStiffnessFront = 28000;
   private readonly springStiffnessRear = 38000;
-  private readonly damperCoeffFront = 2200;
-  private readonly damperCoeffRear = 2600;
+  private readonly damperCoeffFront = 3800;
+  private readonly damperCoeffRear = 4600;
 
   private readonly wheelOffsets = [
     new THREE.Vector3(-0.76, 0.32, 1.05),  // FL
@@ -180,7 +180,7 @@ export class VehiclePhysics {
   ): void {
     this.physicsWorld = world;
     const rbDesc = RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(spawnPos.x, spawnPos.y + 0.45, spawnPos.z)
+      .setTranslation(spawnPos.x, spawnPos.y + 0.20, spawnPos.z)
       .setRotation(new RAPIER.Quaternion(spawnQuat.x, spawnQuat.y, spawnQuat.z, spawnQuat.w))
       .setLinearDamping(0.04)
       .setAngularDamping(0.4)
@@ -859,7 +859,7 @@ export class VehiclePhysics {
 
   public resetPosition(spawnPos: THREE.Vector3, spawnQuat: THREE.Quaternion): void {
     this.rigidBody.setTranslation(
-      new RAPIER.Vector3(spawnPos.x, spawnPos.y + 0.5, spawnPos.z),
+      new RAPIER.Vector3(spawnPos.x, spawnPos.y + 0.20, spawnPos.z),
       true
     );
     this.rigidBody.setRotation(

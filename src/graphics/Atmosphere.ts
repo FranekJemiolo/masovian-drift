@@ -78,7 +78,7 @@ export class Atmosphere {
     });
 
     const instancedClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudCount);
-    instancedClouds.castShadow = true;
+    instancedClouds.castShadow = false;
     instancedClouds.receiveShadow = false;
 
     const dummy = new THREE.Object3D();

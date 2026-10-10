@@ -2,6 +2,38 @@
 
 Newest entries first. Plan reference: [V2_PLAN.md](./V2_PLAN.md), [GRAPHICS_IMPROVEMENT_PLAN.md](./GRAPHICS_IMPROVEMENT_PLAN.md), and [GAMEPLAY_IMPROVEMENT_PLAN.md](./GAMEPLAY_IMPROVEMENT_PLAN.md).
 
+## 2026-10-10 — Lighting Bleed Elimination, Road Elevation Collider Alignment & Full-Circuit E2E Verification
+
+**Bug Fixes & Graphics Refinements**:
+- **Lighting Bleed & Post-Processing Shaders (`src/graphics/PixelPostProcessor.ts`, `src/graphics/Atmosphere.ts`, `src/graphics/EnvironmentGenerator.ts`)**:
+  - Eliminated screen-space pseudo-SSR bleed loop that was sampling sky/sun diffuse color in upper view space and smearing it over foreground vehicles, fences, and timber walls.
+  - Removed arbitrary cyan tint flare injection on highlights.
+  - Upgraded depth buffer texture precision to `THREE.UnsignedIntType` (24-bit depth precision) to prevent Z-fighting and depth quantization artifacts.
+  - Disabled `castShadow` on instanced volumetric cumulus clouds to eliminate roaming black shadow artifacts across terrain.
+  - Tuned sunlight shadow map bias (`bias = -0.0001`, `normalBias = 0.035`) and ensured world matrix updates follow target vehicle.
+  - Set `receiveShadow = true` on guardrails, posts, sponsor boards, brake marker boards, hay bales, villa roofs, verandas, and fences.
+  - Inset interior glowing window box geometry to prevent clipping through exterior timber walls.
+- **Physics World & Road Collider Alignment (`src/graphics/TrackMeshBuilder.ts`, `src/physics/PhysicsWorld.ts`, `src/physics/VehiclePhysics.ts`)**:
+  - Aligned physics road colliders with visual road mesh by exporting `TrackMeshBuilder.ROAD_ELEVATION = 0.40m` and positioning Rapier segment colliders at `midPoint.y + ROAD_ELEVATION - roadDepth * 0.5 + 0.02`.
+  - Expanded road collider half-width by `+3.2m` and depth to `0.80m` to cover road asphalt, kerbs, and shoulders seamlessly.
+  - Added 4 world perimeter boundary wall colliders ($x = \pm 780\text{m}, z = \pm 780\text{m}$, height 40m) to strictly prevent vehicles from flying off the map edges.
+  - Tuned vehicle suspension damping coefficients (`damperCoeffFront = 3800`, `damperCoeffRear = 4600`) and rigid body spawn translation height (`spawnPos.y + 0.20m`) for critically damped, bounce-free road contact.
+- **Comprehensive E2E Full Circuit Audit (`tests/full-circuit-e2e.mjs`)**:
+  - Created end-to-end circuit audit suite traversing all 140 track waypoints at 60Hz physics steps.
+  - Verified 100% waypoint support, 0 vehicle sinkage, 0 vehicle rollover, and clean checkpoint manual respawn (`KeyK`).
+  - Captured 6 live landmark screenshots across the circuit in `docs/screenshots/`:
+    1. Start/Finish Main Straight (`circuit_1_start.png`)
+    2. Turn 1 Dune Bluff (`circuit_2_turn1_bluff.png`)
+    3. Świdermajer Villas Chicane (`circuit_3_villa_chicane.png`)
+    4. Świder Riverbank Hairpin (`circuit_4_river_hairpin.png`)
+    5. Back Straight Pine Terrace (`circuit_5_back_straight.png`)
+    6. Veranda S-Bends Technical Section (`circuit_6_veranda_sbends.png`)
+- **Automated Verification Matrix**:
+  - `tests/full-circuit-e2e.mjs`: PASSED (0 console errors, 0 page errors, 140 waypoints verified, 6 screenshots captured).
+  - `npm test` (`tests/smoke-suite.mjs`): All 7 sections PASSED with 0 errors.
+  - `tests/unit-tests.mjs`: All 13 unit tests PASSED.
+  - `npm run build`: Production bundle built cleanly with zero compilation errors.
+
 ## 2026-10-10 — Graphics, UI, UX, HUD & Visual Effects Refinement with Performance Budgeting
 
 **Refinements & Optimizations**:

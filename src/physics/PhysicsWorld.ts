@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { Waypoint } from './TrackWaypoints';
+import { TrackMeshBuilder } from '../graphics/TrackMeshBuilder';
 
 export class PhysicsWorld {
   public world!: RAPIER.World;
@@ -23,15 +24,31 @@ export class PhysicsWorld {
     if (!this.initialized) return;
 
     // 1. Flat base ground collider
-    const groundBodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.2, 0);
+    const groundBodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0);
     const groundBody = this.world.createRigidBody(groundBodyDesc);
-    const groundCollider = RAPIER.ColliderDesc.cuboid(800, 0.2, 800)
+    const groundCollider = RAPIER.ColliderDesc.cuboid(850, 0.5, 850)
       .setFriction(0.85)
       .setRestitution(0.05);
     this.world.createCollider(groundCollider, groundBody);
 
-    // 2. Road surface collider segments along waypoints
+    // 2. Perimeter Boundary Barriers (prevent car from ever falling off the world)
+    const wallH = 40.0;
+    const mapBounds = 780.0;
+    const northWall = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, wallH * 0.5, mapBounds));
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(850, wallH * 0.5, 10), northWall);
+
+    const southWall = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, wallH * 0.5, -mapBounds));
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(850, wallH * 0.5, 10), southWall);
+
+    const eastWall = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(mapBounds, wallH * 0.5, 0));
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(10, wallH * 0.5, 850), eastWall);
+
+    const westWall = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(-mapBounds, wallH * 0.5, 0));
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(10, wallH * 0.5, 850), westWall);
+
+    // 3. Road surface collider segments along waypoints (Synchronized with visual ROAD_ELEVATION)
     const wpCount = waypoints.length;
+    const roadDepth = 0.80; // Solid depth extending down to avoid underside snagging
     for (let i = 0; i < wpCount; i++) {
       const wp = waypoints[i];
       const nextWp = waypoints[(i + 1) % wpCount];
@@ -40,7 +57,7 @@ export class PhysicsWorld {
 
       const segmentDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
         midPoint.x,
-        midPoint.y + 0.02,
+        midPoint.y + TrackMeshBuilder.ROAD_ELEVATION - roadDepth * 0.5 + 0.02,
         midPoint.z
       );
       const segmentBody = this.world.createRigidBody(segmentDesc);
@@ -58,7 +75,9 @@ export class PhysicsWorld {
       if (wp.surface === 'gravel') friction = 0.75;
       if (wp.surface === 'sand') friction = 0.45; // Slippery Mazovian sand!
 
-      const colDesc = RAPIER.ColliderDesc.cuboid(wp.width * 0.5, 0.02, segmentLen * 0.5 + 0.1)
+      // Extended width (+3.2m per side) covers asphalt, kerbs, and gravel shoulders!
+      const totalHalfWidth = wp.width * 0.5 + 3.2;
+      const colDesc = RAPIER.ColliderDesc.cuboid(totalHalfWidth, roadDepth * 0.5, segmentLen * 0.5 + 0.25)
         .setFriction(friction)
         .setRestitution(0.02);
       this.world.createCollider(colDesc, segmentBody);

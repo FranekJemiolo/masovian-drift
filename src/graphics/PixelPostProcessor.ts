@@ -45,7 +45,7 @@ export class PixelPostProcessor {
     this.height = Math.max(1, Math.floor(size.y / this.pixelScale));
 
     this.depthTexture = new THREE.DepthTexture(this.width, this.height);
-    this.depthTexture.type = THREE.UnsignedShortType;
+    this.depthTexture.type = THREE.UnsignedIntType;
 
     this.renderTarget = new THREE.WebGLRenderTarget(this.width, this.height, {
       minFilter: THREE.LinearFilter,
@@ -115,8 +115,8 @@ export class PixelPostProcessor {
 
         // Photographic HDR Soft-Knee Bloom (G2)
         vec3 bloom = vec3(0.0);
-        float bloomThresh = 0.70;
-        float knee = bloomThresh * 0.5;
+        float bloomThresh = 0.82;
+        float knee = 0.15;
 
         // 12-Tap Multi-Scale Kernel (tight specular core + wide atmospheric halo)
         vec2 bOffsets[12];
@@ -147,28 +147,6 @@ export class PixelPostProcessor {
         color += bloom * uBloomIntensity;
 
         float centerDepth = linearizeDepth(texture2D(tDepth, vUv).r);
-
-        // Screen-Space Reflections (SSR) on wet road surfaces & puddles (Section 5.2)
-        if (vUv.y < 0.62 && centerDepth > 0.001 && centerDepth < 0.85) {
-          float groundFactor = clamp((0.62 - vUv.y) * 3.5, 0.0, 1.0);
-          vec3 ssrColor = vec3(0.0);
-          float ssrWeight = 0.0;
-          for (int s = 1; s <= 5; s++) {
-            vec2 rUv = vUv + vec2(0.0, float(s) * 0.038);
-            if (rUv.y > 0.98) break;
-            float rDepth = linearizeDepth(texture2D(tDepth, rUv).r);
-            if (rDepth < centerDepth + 0.02 && rDepth > 0.0005) {
-              vec3 hitColor = texture2D(tDiffuse, rUv).rgb;
-              ssrColor += hitColor * (1.0 / float(s));
-              ssrWeight += 1.0 / float(s);
-            }
-          }
-          if (ssrWeight > 0.0) {
-            ssrColor /= ssrWeight;
-            float fresnel = pow(1.0 - vUv.y, 2.2) * 0.42 * groundFactor;
-            color = mix(color, color + ssrColor * uSSRIntensity, fresnel);
-          }
-        }
 
         // Voxel Cone Tracing / Screen-Space Contact Ambient Occlusion (VCT AO)
         vec2 aoOffsets[4];
@@ -214,11 +192,6 @@ export class PixelPostProcessor {
 
         // Silhouette edge shading
         vec3 finalColor = mix(satColor, satColor * 0.54, edgeFactor * 0.35);
-
-        // Anamorphic horizontal flare on specular highlights
-        if (bloom.r + bloom.g + bloom.b > 0.75) {
-          finalColor += vec3(0.08, 0.22, 0.45) * (bloom.b * 0.4);
-        }
 
         // High-Speed Directional Radial Streak Motion Blur
         if (uSpeedFactor > 0.12) {
