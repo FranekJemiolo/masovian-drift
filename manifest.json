@@ -1,0 +1,19 @@
+{
+  "name": "Voxel Boxer: Masovian Drift",
+  "short_name": "MasovianDrift",
+  "description": "AAA client-side WebGPU/WebGL voxel racing simulator with dynamic weight-transfer physics and serverless P2P multiplayer.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "racing", "simulation"]
+}

@@ -9,7 +9,8 @@
     <meta name="description" content="Voxel Boxer: Masovian Drift - High-performance client-side WebGL voxel racing simulator with dynamic weight-transfer physics and serverless P2P multiplayer." />
     <title>Voxel Boxer: Masovian Drift</title>
     <link rel="icon" type="image/svg+xml" href="/masovian-drift/favicon.svg" />
-    <script type="module" crossorigin src="/masovian-drift/assets/index-B9cWROsU.js"></script>
+    <link rel="manifest" href="manifest.json" />
+    <script type="module" crossorigin src="/masovian-drift/assets/index-Bjzb1QHx.js"></script>
     <link rel="modulepreload" crossorigin href="/masovian-drift/assets/vendor-three-D9t7u2TR.js">
     <link rel="modulepreload" crossorigin href="/masovian-drift/assets/vendor-net-qr-BAbwVoTA.js">
     <link rel="modulepreload" crossorigin href="/masovian-drift/assets/vendor-rapier-OnF19VgH.js">
@@ -27,5 +28,12 @@
       </div>
     </div>
     <div id="app"></div>
+    <script>
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>
