@@ -141,10 +141,46 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 - `tests/smoke-suite.mjs`: All 7 isolated browser sections PASSED (1 Main menu, 2 Garage, 3 Quick race, 4 Pause/settings, 5 Split-screen, 6 Multiplayer lobby, 7 Time trial) with **0 console errors and 0 page errors**.
 - `tests/comprehensive-vehicle-verification.mjs`: 100% PASSED (4-point raycast suspension Hooke's Law ground contact, left/right steering knuckle rotation, outward chassis roll lean, helmet apex gaze lookahead, airborne auto-stabilizer leveling, and AI waypoint pursuit).
 
+
+### 2026-10-10 — SSVDAG Świdermajer Architecture, Pacejka '94 Lateral Adhesion, Screen-Space Reflections & Physics Benchmarks
+
+**Implementations**:
+- **SSVDAG Mazovian Świdermajer Villas (`src/voxel/SSVDAG.ts`, `EnvironmentGenerator.ts`)**:
+  - Implemented 64-bit leaf bitmask Sparse Subtree Voxel Directed Acyclic Graph (SSVDAG) with isomorphic subtree deduplication and memoized SHA-256 node hashing.
+  - Procedural Świdermajer villa generator synthesizing historic 19th-century pine verandas, fretwork bargeboards, openwork pediments, and timber cladding along Mazovian trackside estates.
+- **Pacejka '94 Lateral Adhesion Physics (`src/physics/VehiclePhysics.ts`)**:
+  - Replaced linear cornering stiffness with full non-linear Pacejka '94 Magic Formula:
+    $F_y = -D \sin(C \arctan(B\alpha - E(B\alpha - \arctan(B\alpha))))$.
+  - Outside tire loading dynamic weight transfer with corrected lateral load shift signs ($FL = \text{frontBias}/2 + \Delta F_{z,\text{lat}}/2$, $FR = \text{frontBias}/2 - \Delta F_{z,\text{lat}}/2$).
+  - Refined powertrain clutch slip and wheel-linked automatic upshifting (0–100 km/h in 6.72s, peak lateral adhesion 1.30G).
+- **Smooth Road Ribbon Colliders (`src/physics/PhysicsWorld.ts`)**:
+  - Reduced cuboid collider half-height from 0.15m to 0.02m centered directly at road elevation, eliminating vertical collision lips and chassis snagging.
+- **Screen-Space Reflections (SSR) Post-Processing (`src/graphics/PixelPostProcessor.ts`)**:
+  - Added 5-tap screen-space raymarching shader sampling view-space normals and depth buffers for reflections off wet asphalt, vehicle glass, and river surfaces.
+- **Exponential Semitone Engine Pitch Scaling (`src/audio/EngineSynth.ts`)**:
+  - Replaced linear pitch factor with pitch-perfect acoustic scaling: $\text{playbackRate} = 2^{(targetRpm - baseRpm) / 12}$.
+- **U8 Driver Academy Onboarding (`src/ui/MenuUI.ts`, `style.css`)**:
+  - Interactive modal with 4 progressive lessons: Apex Cornering, Scandinavian Flick, Weight Transfer & Braking, Rev-Match Downshifting.
+- **M5 Snapshot Interpolation & Lag Compensation (`src/net/StateSync.ts`)**:
+  - Implemented `SnapshotJitterBuffer` with 60ms sliding-window buffer, cubic Hermite position interpolation, slerp quaternion blending, and linear dead reckoning.
+- **C6 WebGL Context Loss Error Boundary (`src/game/GameManager.ts`)**:
+  - Added listeners for `webglcontextlost` and `webglcontextrestored` with graceful recovery messaging overlay.
+
+**Automated verification sweep results**:
+- `tests/physics-regression.mjs`: **100% PASSED** across all 4 benchmarks:
+  - 0–100 km/h acceleration sprint: **6.72s** (Gear 2, 5881 RPM)
+  - 100–0 km/h braking distance: **25.5m** (1.67s)
+  - Skidpad lateral adhesion: sustained peak **1.30G** (slip angle 2.5°)
+  - Reset hygiene: clean 0 km/h, 0 rad steer, 0 linvel, 0 angvel
+- `tests/unit-tests.mjs`: **100% PASSED** (StateSync 76-byte binary protocol roundtrip, EvolutionStore economy & repairs, 140 waypoint geometry invariants).
+- `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
+- `tests/smoke-suite.mjs`: **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
 | Stabilise (P0) | V1 V2 M1 M2 M3 U1 U2 A1 P1 P3 P7 G1 | `[x]` done |
 | Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
-| Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 A2–A7 A9 M1 M2 M3 M4 M6 M7 M8 M9 M10 M12 P4 P8 P11 U1–U7 U9 U10 U11 U12 | `[x]` done |
+| Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 A2–A7 A9 M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M12 P4 P8 P11 U1–U12 V3 C4 C6 | `[x]` done |
+
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { PRNG } from '../utils/PRNG';
+import { SSVDAG, SwidermajerVoxelBuilder } from '../voxel/SSVDAG';
 
 export class EnvironmentGenerator {
   /**
@@ -679,6 +680,47 @@ export class EnvironmentGenerator {
       shGroup.add(roof);
 
       envGroup.add(shGroup);
+    }
+
+    // -------------------------------------------------------------
+    // 10. AUTHENTIC ŚWIDERMAJER RESORT VILLAS (SSVDAG & Greedy Meshing)
+    // -------------------------------------------------------------
+    const villaVolume = SwidermajerVoxelBuilder.generateVillaVolume(32, 24, 24);
+    const ssvdag = new SSVDAG(32);
+    const stats = ssvdag.buildFromVolume(villaVolume, 32, 24, 24);
+    console.log(
+      `[SSVDAG] Świdermajer villa compressed: ${stats.uniqueNodes}/${stats.totalNodes} nodes (${stats.compressionRatio.toFixed(1)}% deduplication)`
+    );
+
+    const villaGeo = SwidermajerVoxelBuilder.greedyMesh(villaVolume, 32, 24, 24);
+    const villaMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.85,
+      flatShading: true,
+    });
+
+    const villaSites = [
+      { wpIdx: 35, dist: 34.0, side: 1, rotY: 0.2 },
+      { wpIdx: 95, dist: 38.0, side: -1, rotY: Math.PI + 0.3 },
+      { wpIdx: 155, dist: 32.0, side: 1, rotY: -0.4 },
+    ];
+
+    for (const site of villaSites) {
+      if (site.wpIdx < wpCount) {
+        const wp = waypoints[site.wpIdx];
+        const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
+        const villaMesh = new THREE.Mesh(villaGeo, villaMat);
+        villaMesh.position.set(
+          wp.point.x + norm.x * site.dist * site.side,
+          wp.point.y + 0.05,
+          wp.point.z + norm.z * site.dist * site.side
+        );
+        villaMesh.rotation.y = site.rotY;
+        villaMesh.scale.set(0.48, 0.48, 0.48);
+        villaMesh.castShadow = true;
+        villaMesh.receiveShadow = true;
+        envGroup.add(villaMesh);
+      }
     }
 
     scene.add(envGroup);

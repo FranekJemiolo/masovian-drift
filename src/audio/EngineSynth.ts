@@ -58,6 +58,14 @@ export class EngineSynth {
   // Static cached noise buffers (A3: Buffer reuse & pooling)
   private static cachedWhiteNoise: AudioBuffer | null = null;
   private static cachedPinkNoise: AudioBuffer | null = null;
+
+  /**
+   * Calculates exponential playback rate across semitones (Section 9):
+   * playbackRate(targetSemitone, baseSemitone) = 2^((target - base) / 12)
+   */
+  public static calculatePlaybackRate(targetSemitone: number, baseSemitone: number = 0): number {
+    return Math.pow(2.0, (targetSemitone - baseSemitone) / 12.0);
+  }
   private static cachedBovNoise: AudioBuffer | null = null;
   private static cachedBackfireNoise: AudioBuffer | null = null;
 
@@ -357,10 +365,15 @@ export class EngineSynth {
     const sawGainVal = (0.22 + throttle * 0.28 * raspMultiplier + (rpm / 7500) * 0.2) * limiterCut;
     this.oscSawGain.gain.setTargetAtTime(sawGainVal, t, 0.04);
 
-    // Intake air induction roar under high throttle load
+    // Intake air induction roar under high throttle load (exponential semitone pitch shift)
     const intakeGainVal = Math.min(0.25, throttle * 0.22 * (rpm / 6500));
     this.intakeGain.gain.setTargetAtTime(intakeGainVal, t, 0.05);
     this.intakeFilter.frequency.setTargetAtTime(450 + (rpm / 7000) * 800, t, 0.05);
+    if (this.intakeNoiseNode) {
+      const intakeSemitones = (rpm / 7200) * 12.0; // Shift up to 1 octave at redline
+      const rate = EngineSynth.calculatePlaybackRate(intakeSemitones, 0);
+      this.intakeNoiseNode.playbackRate.setTargetAtTime(rate, t, 0.05);
+    }
 
     // Transmission straight-cut gear whine
     if (this.oscGearWhine) {
@@ -398,6 +411,12 @@ export class EngineSynth {
 
       this.tireGain.gain.setTargetAtTime(screechGain, t, 0.03);
       this.tireFilter.frequency.setTargetAtTime(screechPitch, t, 0.03);
+
+      if (this.tireNoiseNode) {
+        const tireSemitones = Math.min(8.0, (speedKmh / 120.0) * 6.0);
+        const tireRate = EngineSynth.calculatePlaybackRate(tireSemitones, 0);
+        this.tireNoiseNode.playbackRate.setTargetAtTime(tireRate, t, 0.04);
+      }
     } else {
       this.tireGain.gain.setTargetAtTime(0.0, t, 0.08);
     }

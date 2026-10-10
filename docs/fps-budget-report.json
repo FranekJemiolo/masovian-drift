@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-10-10T09:10:14.027Z",
+  "profiles": [
+    {
+      "profile": "Desktop (1080p Standard)",
+      "totalFrames": 120,
+      "avgMs": 1003.21,
+      "p50Ms": 928.3,
+      "p95Ms": 1587.1,
+      "p99Ms": 2269.6,
+      "effectiveFps": 1
+    },
+    {
+      "profile": "Mobile (Throttled 4x CPU)",
+      "totalFrames": 120,
+      "avgMs": 912.91,
+      "p50Ms": 849.1,
+      "p95Ms": 1416.9,
+      "p99Ms": 2312.3,
+      "effectiveFps": 1.1
+    }
+  ],
+  "budgetThresholds": {
+    "desktopMaxP99Ms": 45,
+    "mobileMaxP99Ms": 65
+  },
+  "passed": false
+}

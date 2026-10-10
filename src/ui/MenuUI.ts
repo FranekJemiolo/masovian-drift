@@ -68,6 +68,9 @@ export class MenuUI {
             <button id="btn-garage" class="btn-secondary">
               <span class="btn-icon">🔧</span> EVOLUTION GARAGE & TUNING
             </button>
+            <button id="btn-tutorial" class="btn-secondary">
+              <span class="btn-icon">🎓</span> DRIVER ACADEMY (DRIFT & VOXEL GUIDE)
+            </button>
             <button id="btn-menu-settings" class="btn-secondary">
               <span class="btn-icon">⚙️</span> SETTINGS & ACCESSIBILITY
             </button>
@@ -100,10 +103,11 @@ export class MenuUI {
     const btnGarage = this.container.querySelector('#btn-garage') as HTMLButtonElement;
     const btnSettings = this.container.querySelector('#btn-menu-settings') as HTMLButtonElement;
     const btnGyro = this.container.querySelector('#btn-gyro-perm') as HTMLButtonElement;
+    const btnTutorial = this.container.querySelector('#btn-tutorial') as HTMLButtonElement;
 
     const audio = AudioManager.getInstance();
 
-    [btnQuick, btnTimeTrial, btnSplit, btnMulti, btnGarage, btnSettings].forEach((b) => {
+    [btnQuick, btnTimeTrial, btnSplit, btnMulti, btnGarage, btnSettings, btnTutorial].forEach((b) => {
       b?.addEventListener('mouseenter', () => audio.playUiHover());
     });
 
@@ -133,6 +137,11 @@ export class MenuUI {
     btnGarage?.addEventListener('click', () => {
       audio.playUiClick();
       this.renderGarageModal();
+    });
+
+    btnTutorial?.addEventListener('click', () => {
+      audio.playUiClick();
+      this.renderTutorialModal();
     });
 
     btnSettings?.addEventListener('click', () => {
@@ -703,6 +712,159 @@ export class MenuUI {
       e.preventDefault();
       input.touchHandbrake = false;
     }, { passive: false });
+  }
+
+  /**
+   * Onboarding: Driver Academy & Drift School Tutorial (U8)
+   */
+  public renderTutorialModal(): void {
+    const existing = document.querySelector('#modal-tutorial');
+    if (existing) existing.remove();
+
+    const audio = AudioManager.getInstance();
+    const modal = document.createElement('div');
+    modal.id = 'modal-tutorial';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card tutorial-card">
+        <div class="modal-header">
+          <h2>🎓 DRIVER ACADEMY & DRIFT SCHOOL</h2>
+          <button id="btn-close-tutorial" class="btn-close">✕</button>
+        </div>
+
+        <div class="tutorial-tabs">
+          <button id="tab-tut-controls" class="tab-btn active">1. CONTROLS</button>
+          <button id="tab-tut-boxer" class="tab-btn">2. FLAT-6 POWERBAND</button>
+          <button id="tab-tut-drift" class="tab-btn">3. PACEJKA '94 DRIFT</button>
+          <button id="tab-tut-voxels" class="tab-btn">4. ŚWIDERMAJER & VOXELS</button>
+        </div>
+
+        <!-- Tab 1: Controls -->
+        <div id="pane-tut-controls" class="tutorial-pane">
+          <div class="tutorial-hero-box">
+            <h3>RESPONSIVE VEHICLE INPUTS</h3>
+            <p>Master driving across PC, Gamepad, and Mobile devices with zero input latency.</p>
+          </div>
+          <div class="tutorial-grid">
+            <div class="tut-chip">
+              <strong>⌨️ KEYBOARD</strong>
+              <ul>
+                <li><kbd>W</kbd> or <kbd>▲</kbd> : Throttle / Progressive Acceleration</li>
+                <li><kbd>S</kbd> or <kbd>▼</kbd> : 60/40 Split Brakes (Hold to Reverse)</li>
+                <li><kbd>A</kbd> / <kbd>D</kbd> or <kbd>◀</kbd> / <kbd>▶</kbd> : Steer Knuckle</li>
+                <li><kbd>SPACE</kbd> : Handbrake (Instant Traction Break)</li>
+                <li><kbd>C</kbd> : Toggle Chase & 360° Orbit Photo Camera</li>
+                <li><kbd>R</kbd> : Manual Restart Grid</li>
+                <li><kbd>K</kbd> : Recover from Roll / Flip</li>
+                <li><kbd>ESC</kbd> / <kbd>P</kbd> : Pause & Telemetry</li>
+              </ul>
+            </div>
+            <div class="tut-chip">
+              <strong>🎮 GAMEPAD & 📱 GYROSCOPE</strong>
+              <ul>
+                <li><strong>Triggers (RT/LT)</strong>: Progressive analog throttle & braking</li>
+                <li><strong>Left Stick</strong>: Smooth steering with speed-sensitive ratio</li>
+                <li><strong>Dual-Motor Rumble</strong>: Kerb vibration, wheelspin, bottoming-out</li>
+                <li><strong>Mobile Gyroscope</strong>: Tilt phone left/right (Gamma angle) as virtual steering wheel!</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Boxer Powertrain -->
+        <div id="pane-tut-boxer" class="tutorial-pane" style="display: none;">
+          <div class="tutorial-hero-box">
+            <h3>AUTHENTIC FLAT-6 BOXER POWERTRAIN</h3>
+            <p>Rear-engine weight bias (40% Front / 60% Rear) creates the legendary pendulum dynamics.</p>
+          </div>
+          <div class="tutorial-grid">
+            <div class="tut-chip">
+              <strong>⚡ TORQUE CURVE PLATEAU</strong>
+              <p>The boxer engine features a distinct torque plateau between <strong>2,200 and 5,800 RPM</strong>. Upshift at <strong>6,800 RPM</strong> for optimal acceleration. Hitting 7,180 RPM engages the sharp rev-limiter ignition cut.</p>
+            </div>
+            <div class="tut-chip">
+              <strong>⚖️ DYNAMIC WEIGHT TRANSFER</strong>
+              <p>Under hard acceleration, mass transfers rearward (+15% rear bias) boosting traction. Hard trail-braking violently throws weight forward, unloading the rear axle for initiation into tight hairpin turns!</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Drift Physics -->
+        <div id="pane-tut-drift" class="tutorial-pane" style="display: none;">
+          <div class="tutorial-hero-box">
+            <h3>PACEJKA '94 LATERAL TIRE DYNAMICS</h3>
+            <p>Lateral tire cornering force follows the industry-standard Pacejka Magic Formula.</p>
+          </div>
+          <div class="tutorial-grid">
+            <div class="tut-chip">
+              <strong>🌀 INITIATING DRIFTS</strong>
+              <ol>
+                <li>Approach corner at 60+ km/h.</li>
+                <li>Turn in and tap <kbd>SPACE</kbd> or lift off throttle (Trail-Brake).</li>
+                <li>When rear slip angle exceeds <strong>8.5° (0.15 rad)</strong>, drift mode activates.</li>
+                <li>Counter-steer into the slide while modulating throttle!</li>
+              </ol>
+            </div>
+            <div class="tut-chip">
+              <strong>🚀 VECTOR REDIRECTION</strong>
+              <p>During sustained drifts, lateral momentum is continuously redirected into forward thrust via vector redirection, pulling the vehicle through high-speed Mazovian curves!</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Voxel Scenery -->
+        <div id="pane-tut-voxels" class="tutorial-pane" style="display: none;">
+          <div class="tutorial-hero-box">
+            <h3>ŚWIDERMAJER ARCHITECTURE & SSVDAG</h3>
+            <p>Historic Mazovian wooden resort villas rendered using Symmetry-Aware Sparse Voxel DAGs.</p>
+          </div>
+          <div class="tutorial-grid">
+            <div class="tut-chip">
+              <strong>🌲 HISTORIC ŚWIDERMAJER STYLE</strong>
+              <p>Created by Michał Elwiro Andriolli along the Warsaw-Otwock railway line in the late 19th century, featuring carved pine woodwork, openwork verandas ("lalki"), and decorative fretwork eaves.</p>
+            </div>
+            <div class="tut-chip">
+              <strong>⚡ SSVDAG VOXEL COMPRESSION</strong>
+              <p>By detecting bilateral reflective symmetries across X, Y, and Z axes, the SSVDAG engine compresses the complex wooden architecture by up to <strong>50%</strong> compared to traditional voxel trees!</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-start-from-tutorial" class="btn-primary">START RACING NOW</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeBtn = modal.querySelector('#btn-close-tutorial');
+    const startBtn = modal.querySelector('#btn-start-from-tutorial');
+    const close = () => {
+      audio.playUiClick();
+      modal.remove();
+    };
+    closeBtn?.addEventListener('click', close);
+    startBtn?.addEventListener('click', () => {
+      close();
+      this.hide();
+      this.callbacks.onStartGame('quick-race');
+    });
+
+    // Tab switching
+    const tabs = ['controls', 'boxer', 'drift', 'voxels'];
+    tabs.forEach((tabKey) => {
+      const btn = modal.querySelector(`#tab-tut-${tabKey}`) as HTMLButtonElement;
+      btn?.addEventListener('click', () => {
+        audio.playUiClick();
+        tabs.forEach((t) => {
+          const b = modal.querySelector(`#tab-tut-${t}`);
+          const p = modal.querySelector(`#pane-tut-${t}`) as HTMLElement;
+          b?.classList.toggle('active', t === tabKey);
+          if (p) p.style.display = t === tabKey ? 'block' : 'none';
+        });
+      });
+    });
   }
 
   public show(): void {

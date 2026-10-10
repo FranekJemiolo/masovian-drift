@@ -50,11 +50,14 @@ async function verifyAllVehicleMechanics() {
     await page.evaluate(() => {
       const p = window._gameManager.playerVehicle;
       const wp = window._gameManager.waypoints;
+      const world = window._gameManager.physicsWorld;
       for (let i = 0; i < 50; i++) {
         p.updatePhysics({ throttle: 1.0, brake: 0, steer: 0, handbrake: false }, 0.016, wp);
+        world.world.step();
       }
       for (let i = 0; i < 40; i++) {
         p.updatePhysics({ throttle: 0.85, brake: 0, steer: -1.0, handbrake: false }, 0.016, wp);
+        world.world.step();
       }
     });
 
@@ -103,11 +106,14 @@ async function verifyAllVehicleMechanics() {
       const p = window._gameManager.playerVehicle;
       window._gameManager.respawnVehicleAtCheckpoint(p);
       const wp = window._gameManager.waypoints;
+      const world = window._gameManager.physicsWorld;
       for (let i = 0; i < 50; i++) {
         p.updatePhysics({ throttle: 1.0, brake: 0, steer: 0, handbrake: false }, 0.016, wp);
+        world.world.step();
       }
       for (let i = 0; i < 40; i++) {
         p.updatePhysics({ throttle: 0.85, brake: 0, steer: 1.0, handbrake: false }, 0.016, wp);
+        world.world.step();
       }
     });
 
@@ -162,8 +168,10 @@ async function verifyAllVehicleMechanics() {
       p.rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
       // Step physics 30 frames (0.5s) to allow auto-stabilizer to restore upright orientation
+      const world = window._gameManager.physicsWorld;
       for (let i = 0; i < 30; i++) {
         p.updatePhysics({ throttle: 0, brake: 0, steer: 0, handbrake: false }, 0.016);
+        world.world.step();
       }
 
       const currentTiltDot = p.upVector.dot(new THREE.Vector3(0, 1, 0));

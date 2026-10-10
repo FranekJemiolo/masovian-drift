@@ -119,6 +119,31 @@ export class GameManager {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(this.renderer.domElement);
 
+    // WebGL Context Loss & Recovery Error Boundary (C6)
+    this.renderer.domElement.addEventListener('webglcontextlost', (event) => {
+      event.preventDefault();
+      console.warn('[WebGL] Context lost! Pausing simulation.');
+      this.isPaused = true;
+      const existing = document.querySelector('#webgl-context-lost-overlay');
+      if (existing) return;
+      const overlay = document.createElement('div');
+      overlay.id = 'webgl-context-lost-overlay';
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-card">
+          <h2>⚠️ GRAPHICS CONTEXT RESET</h2>
+          <p style="margin: 14px 0; color: #cbd5e1; font-size: 13px;">WebGL encountered a GPU reset or driver context interruption. Simulation paused.</p>
+          <button id="btn-reload-context" class="btn-primary" onclick="location.reload()">RELOAD ENGINE</button>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+    });
+
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => {
+      console.info('[WebGL] Context restored! Reloading pipelines.');
+      location.reload();
+    });
+
     // 2. Setup Lighting & Atmosphere (Warm golden sun, rich bounce light)
     const hemiLight = new THREE.HemisphereLight(0xbfdbfe, 0x4d7c0f, 0.85);
     this.scene.add(hemiLight);
@@ -976,7 +1001,7 @@ export class GameManager {
     veh.flipTimer = 0;
     veh.offTrackTimer = 0;
     const cpCount = this.checkpoints.length;
-    const prevCpIdx = (veh.currentCheckpointIndex - 1 + cpCount) % cpCount;
+    const prevCpIdx = veh.currentCheckpointIndex === 0 ? 0 : (veh.currentCheckpointIndex - 1 + cpCount) % cpCount;
     const cp = this.checkpoints[prevCpIdx];
 
     const wpIdx = Math.min(

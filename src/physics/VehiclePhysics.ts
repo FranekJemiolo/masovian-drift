@@ -109,6 +109,7 @@ export class VehiclePhysics {
 
   // Collision damage accumulator
   private lastVelocity = new THREE.Vector3();
+  public spawnGraceTimer = 1.0;
 
   constructor(
     id: string,
@@ -169,6 +170,32 @@ export class VehiclePhysics {
   }
 
   /**
+   * Evaluates the Pacejka '94 Magic Formula for lateral tire force (Section 7.2):
+   * Fy = D * sin(C * arctan(B * alpha - E * (B * alpha - arctan(B * alpha))))
+   * where:
+   *   alpha: tire slip angle (radians)
+   *   normalLoadN: vertical load Fz on the tire (Newtons)
+   *   surfaceGrip: friction coefficient (asphalt, gravel, sand)
+   *   mu: peak friction coefficient
+   */
+  public static pacejka94LateralForce(
+    alpha: number,
+    normalLoadN: number,
+    surfaceGrip: number = 1.0,
+    mu: number = 1.15
+  ): number {
+    const B = 10.0; // Stiffness factor
+    const C = 1.65; // Shape factor
+    const D = mu * surfaceGrip * Math.max(100.0, normalLoadN); // Peak friction force
+    const E = -0.85; // Curvature factor
+
+    const B_alpha = B * alpha;
+    const inside = B_alpha - E * (B_alpha - Math.atan(B_alpha));
+    // Opposes slip angle direction
+    return -D * Math.sin(C * Math.atan(inside));
+  }
+
+  /**
    * Fixed physics step update (60 Hz)
    */
   public updatePhysics(inputs: VehicleInputs, dt: number, waypoints?: Waypoint[]): void {
@@ -194,11 +221,15 @@ export class VehiclePhysics {
     const lateralSpeed = this.velocity.dot(right);
     this.speedKmh = Math.abs(forwardSpeed) * 3.6;
 
-    // Detect impact shock & accumulate damage
+    // Detect impact shock & accumulate damage (horizontal only, with spawn grace period)
+    if (this.spawnGraceTimer > 0) {
+      this.spawnGraceTimer -= dt;
+    }
     const accelVector = VehiclePhysics._vAccel.copy(this.velocity).sub(this.lastVelocity).divideScalar(dt);
-    const impactG = accelVector.length() / 9.81;
-    if (impactG > 12.0) {
-      const damageAmount = Math.min(0.25, (impactG - 12.0) * 0.015);
+    const horizAccel = Math.hypot(accelVector.x, accelVector.z);
+    const impactG = horizAccel / 9.81;
+    if (this.spawnGraceTimer <= 0 && impactG > 14.0) {
+      const damageAmount = Math.min(0.25, (impactG - 14.0) * 0.015);
       this.damage.bodyDamage = Math.min(1.0, this.damage.bodyDamage + damageAmount);
       // Aerodynamic penalty increases with body crumpling
       this.damage.aerodynamicDragPenalty = 1.0 + this.damage.bodyDamage * 1.1; // up to 2.1x drag!
@@ -209,7 +240,7 @@ export class VehiclePhysics {
         -0.045,
         0.045
       );
-      this.justCrashed = Math.min(1.0, (impactG - 12.0) / 18.0);
+      this.justCrashed = Math.min(1.0, (impactG - 14.0) / 18.0);
     } else {
       this.justCrashed = 0;
     }
@@ -478,22 +509,24 @@ export class VehiclePhysics {
     const maxCombinedGrip = (frontMaxGrip + rearMaxGrip);
     const clampedLatForce = THREE.MathUtils.clamp(latCancelForce, -maxCombinedGrip, maxCombinedGrip);
 
-    // Front lateral cornering force
+    // Front lateral cornering force via Pacejka '94 Magic Formula (Section 7.2)
     const frontSlipAngle = this.slipAngle - this.steerAngle;
-    const frontCorneringStiffness = 45000.0;
-    const frontLateralForce = -THREE.MathUtils.clamp(
-      frontSlipAngle * frontCorneringStiffness,
-      -frontMaxGrip,
-      frontMaxGrip
+    const frontPacejka = VehiclePhysics.pacejka94LateralForce(
+      frontSlipAngle,
+      frontNormalN,
+      surfaceGrip,
+      this.isDrifting ? 0.88 : 1.18
     );
+    const frontLateralForce = THREE.MathUtils.clamp(frontPacejka, -frontMaxGrip, frontMaxGrip);
 
-    // Rear lateral force
-    const rearCorneringStiffness = 48000.0;
-    const rearLateralForce = -THREE.MathUtils.clamp(
-      this.slipAngle * rearCorneringStiffness,
-      -rearMaxGrip,
-      rearMaxGrip
+    // Rear lateral cornering force via Pacejka '94 Magic Formula (Section 7.2)
+    const rearPacejka = VehiclePhysics.pacejka94LateralForce(
+      this.slipAngle,
+      rearNormalN,
+      surfaceGrip,
+      this.isDrifting ? 0.75 : 1.25
     );
+    const rearLateralForce = THREE.MathUtils.clamp(rearPacejka, -rearMaxGrip, rearMaxGrip);
 
     // Detect Drift state
     const driftThreshold = 0.15; // ~8.5 degrees
@@ -551,14 +584,18 @@ export class VehiclePhysics {
     // High speeds: Dynamic yaw torque from tire slip difference + direct steering moment
     const dynamicYawTorque = (frontLateralForce * (this.wheelbase * 0.58)) - (rearLateralForce * (this.wheelbase * 0.42));
     const directSteerTorque = this.steerAngle * Math.sign(forwardSpeed || 1) * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
-    const highSpeedYawTorque = dynamicYawTorque * 3.8 + directSteerTorque;
+    const highSpeedYawTorque = dynamicYawTorque + directSteerTorque;
 
     // Compute yaw impulse and apply along local vehicle UP axis
     const currentYawRate = this.angularVelocity.y;
     const kinematicYawImpulse = (targetAckermannYawRate - currentYawRate) * (this.specs.mass * 1.6) * lowSpeedBlend;
     const dynamicYawImpulse = (highSpeedYawTorque - currentYawRate * 1800.0) * (1.0 - lowSpeedBlend) * dt;
 
-    const totalYawImpulse = kinematicYawImpulse + dynamicYawImpulse;
+    const totalYawImpulse = THREE.MathUtils.clamp(
+      kinematicYawImpulse + dynamicYawImpulse,
+      -this.specs.mass * 3.5,
+      this.specs.mass * 3.5
+    );
     const yawImpulseWorld = up.clone().multiplyScalar(totalYawImpulse);
     this.rigidBody.applyTorqueImpulse(
       new RAPIER.Vector3(yawImpulseWorld.x, yawImpulseWorld.y, yawImpulseWorld.z),
@@ -587,21 +624,21 @@ export class VehiclePhysics {
     const wheelRps = Math.abs(forwardSpeed) / (2 * Math.PI * wheelRadius);
     const finalDrive = this.specs.finalDrive;
 
-    // Automatic gear shifting
+    // Automatic gear shifting based on true drivetrain wheel load
     if (forwardSpeed < -1.0) {
       this.currentGear = -1; // Reverse
     } else {
       if (this.currentGear <= 0) this.currentGear = 1;
 
       const currentGearRatio = this.specs.gearRatios[this.currentGear];
-      const targetRpm = wheelRps * currentGearRatio * finalDrive * 60;
+      const wheelLinkedRpm = wheelRps * currentGearRatio * finalDrive * 60;
 
-      // Upshift at 6800 RPM
-      if (this.rpm > 6800 && this.currentGear < 5) {
+      // Upshift at redline plateau (6500 RPM wheel-linked)
+      if (wheelLinkedRpm > 6500 && this.currentGear < 5) {
         this.currentGear++;
       }
       // Downshift when dropping below 2600 RPM
-      else if (this.rpm < 2600 && this.currentGear > 1) {
+      else if (wheelLinkedRpm < 2600 && this.currentGear > 1) {
         this.currentGear--;
       }
     }
@@ -613,10 +650,13 @@ export class VehiclePhysics {
     // dRPM / dt = (Torque - Load) / I_flywheel
     // Lighter flywheel = faster rev response!
     const flywheelInertia = this.specs.flywheelInertia;
+
+    // Clutch slip model: allows high launch revs off the line, locks up smoothly above 18 km/h
+    const clutchSlip = Math.max(0, 1.0 - this.speedKmh / 18.0);
     let targetRpm = Math.max(this.specs.idleRpm, wheelLinkedRpm);
 
     if (inputs.throttle > 0) {
-      targetRpm += inputs.throttle * 2400.0;
+      targetRpm += inputs.throttle * 2400.0 * clutchSlip;
     }
 
     targetRpm = Math.min(this.specs.maxRpm, targetRpm);
@@ -761,6 +801,12 @@ export class VehiclePhysics {
     this.weightTransfer.rearBias = 0.60;
     this.weightTransfer.rollAngle = 0;
     this.weightTransfer.pitchAngle = 0;
+
+    // Reset damage and spawn grace timer
+    this.damage.bodyDamage = 0.0;
+    this.damage.aerodynamicDragPenalty = 1.0;
+    this.damage.steeringAlignmentOffset = 0.0;
+    this.spawnGraceTimer = 1.0;
 
     // Reset visual rotations and emissives
     this.visual.bodyMesh.rotation.set(0, 0, 0);

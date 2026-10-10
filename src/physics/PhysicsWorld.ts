@@ -40,7 +40,7 @@ export class PhysicsWorld {
 
       const segmentDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
         midPoint.x,
-        midPoint.y + 0.25,
+        midPoint.y + 0.02,
         midPoint.z
       );
       const segmentBody = this.world.createRigidBody(segmentDesc);
@@ -55,7 +55,7 @@ export class PhysicsWorld {
       if (wp.surface === 'gravel') friction = 0.75;
       if (wp.surface === 'sand') friction = 0.45; // Slippery Mazovian sand!
 
-      const colDesc = RAPIER.ColliderDesc.cuboid(wp.width * 0.5, 0.15, segmentLen * 0.5 + 0.5)
+      const colDesc = RAPIER.ColliderDesc.cuboid(wp.width * 0.5, 0.02, segmentLen * 0.5 + 0.1)
         .setFriction(friction)
         .setRestitution(0.02);
       this.world.createCollider(colDesc, segmentBody);
@@ -93,10 +93,11 @@ export class PhysicsWorld {
   /**
    * Deterministic fixed timestep update loop with strict max substep clamping (P8)
    */
-  public step(delta: number, onFixedStep?: (dt: number) => void): void {
+  public step(delta: number = 1 / 60, onFixedStep?: (dt: number) => void): void {
     if (!this.initialized) return;
 
-    this.accumulator += Math.min(delta, 0.1); // Clamp frame delta
+    const safeDelta = Number.isFinite(delta) && delta > 0 ? Math.min(delta, 0.1) : this.fixedTimeStep;
+    this.accumulator += safeDelta;
     let steps = 0;
     const maxSubSteps = 4; // Prevent spiral of death on tab unfocus or GPU spikes
 

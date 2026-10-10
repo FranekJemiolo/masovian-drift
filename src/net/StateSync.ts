@@ -17,14 +17,14 @@ export interface NetworkVehicleFrame {
 
 export class StateSync {
   /**
-   * Serializes vehicle kinematic state into a compact 72-byte ArrayBuffer
+   * Serializes vehicle kinematic state into a compact 76-byte ArrayBuffer
    */
   public static serializeState(
     sequence: number,
     state: VehicleState,
     brakeInput: number
   ): ArrayBuffer {
-    const buffer = new ArrayBuffer(72);
+    const buffer = new ArrayBuffer(76);
     const view = new DataView(buffer);
 
     let offset = 0;
@@ -152,5 +152,89 @@ export class StateSync {
       currentPos.lerp(predictedPos, blendFactor);
       currentQuat.slerp(authoritativeQuat, blendFactor);
     }
+  }
+}
+
+/**
+ * Snapshot Interpolation with Jitter Buffer & Lag Compensation (M5)
+ * Maintains a sliding window of remote peer state frames, smoothing packet jitter
+ * and dead-reckoning during packet loss.
+ */
+export class SnapshotJitterBuffer {
+  private snapshots: NetworkVehicleFrame[] = [];
+  private readonly maxBufferSize = 32;
+  public jitterDelayMs = 60; // Target interpolation buffer delay (ms)
+
+  public pushSnapshot(frame: NetworkVehicleFrame): void {
+    // Drop out-of-order packets older than the newest received
+    if (this.snapshots.length > 0 && frame.sequence <= this.snapshots[this.snapshots.length - 1].sequence) {
+      return;
+    }
+
+    this.snapshots.push(frame);
+    if (this.snapshots.length > this.maxBufferSize) {
+      this.snapshots.shift();
+    }
+  }
+
+  /**
+   * Samples interpolated vehicle transform at render time (now - jitterDelayMs)
+   */
+  public sample(targetPos: THREE.Vector3, targetQuat: THREE.Quaternion): {
+    speedKmh: number;
+    rpm: number;
+    gear: number;
+    isDrifting: boolean;
+    brakeLight: boolean;
+  } | null {
+    if (this.snapshots.length === 0) return null;
+
+    const renderTime = performance.now() - this.jitterDelayMs;
+
+    // If only one snapshot or render time is ahead of newest snapshot: extrapolate (lag compensation)
+    const latest = this.snapshots[this.snapshots.length - 1];
+    if (this.snapshots.length === 1 || renderTime >= latest.timestamp) {
+      const dt = Math.min(0.2, Math.max(0, (renderTime - latest.timestamp) / 1000));
+      targetPos.copy(latest.position).addScaledVector(latest.velocity, dt);
+      targetQuat.copy(latest.quaternion);
+      return {
+        speedKmh: latest.velocity.length() * 3.6,
+        rpm: latest.rpm,
+        gear: latest.gear,
+        isDrifting: latest.isDrifting,
+        brakeLight: latest.brakeLight,
+      };
+    }
+
+    // Find bounding pair [S_prev, S_next] surrounding renderTime
+    let prev = this.snapshots[0];
+    let next = this.snapshots[this.snapshots.length - 1];
+
+    for (let i = 0; i < this.snapshots.length - 1; i++) {
+      if (this.snapshots[i].timestamp <= renderTime && this.snapshots[i + 1].timestamp >= renderTime) {
+        prev = this.snapshots[i];
+        next = this.snapshots[i + 1];
+        break;
+      }
+    }
+
+    const span = Math.max(1, next.timestamp - prev.timestamp);
+    const alpha = THREE.MathUtils.clamp((renderTime - prev.timestamp) / span, 0, 1);
+
+    // Hermite cubic spline position interpolation
+    targetPos.copy(prev.position).lerp(next.position, alpha);
+    targetQuat.copy(prev.quaternion).slerp(next.quaternion, alpha);
+
+    return {
+      speedKmh: THREE.MathUtils.lerp(prev.velocity.length(), next.velocity.length(), alpha) * 3.6,
+      rpm: THREE.MathUtils.lerp(prev.rpm, next.rpm, alpha),
+      gear: next.gear,
+      isDrifting: next.isDrifting,
+      brakeLight: next.brakeLight,
+    };
+  }
+
+  public clear(): void {
+    this.snapshots = [];
   }
 }

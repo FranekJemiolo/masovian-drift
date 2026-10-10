@@ -72,6 +72,8 @@ export class PixelPostProcessor {
       uniform float uSpeedFactor;
       uniform float uTime;
       uniform float uBloomIntensity;
+      uniform float uSSRIntensity;
+      uniform float uAOIntensity;
       varying vec2 vUv;
 
       float linearizeDepth(float depth) {
@@ -136,6 +138,47 @@ export class PixelPostProcessor {
         }
         color += bloom * uBloomIntensity;
 
+        float centerDepth = linearizeDepth(texture2D(tDepth, vUv).r);
+
+        // Screen-Space Reflections (SSR) on wet road surfaces & puddles (Section 5.2)
+        if (vUv.y < 0.62 && centerDepth > 0.001 && centerDepth < 0.85) {
+          float groundFactor = clamp((0.62 - vUv.y) * 3.5, 0.0, 1.0);
+          vec3 ssrColor = vec3(0.0);
+          float ssrWeight = 0.0;
+          for (int s = 1; s <= 5; s++) {
+            vec2 rUv = vUv + vec2(0.0, float(s) * 0.038);
+            if (rUv.y > 0.98) break;
+            float rDepth = linearizeDepth(texture2D(tDepth, rUv).r);
+            if (rDepth < centerDepth + 0.02 && rDepth > 0.0005) {
+              vec3 hitColor = texture2D(tDiffuse, rUv).rgb;
+              ssrColor += hitColor * (1.0 / float(s));
+              ssrWeight += 1.0 / float(s);
+            }
+          }
+          if (ssrWeight > 0.0) {
+            ssrColor /= ssrWeight;
+            float fresnel = pow(1.0 - vUv.y, 2.2) * 0.42 * groundFactor;
+            color = mix(color, color + ssrColor * uSSRIntensity, fresnel);
+          }
+        }
+
+        // Voxel Cone Tracing / Screen-Space Contact Ambient Occlusion (VCT AO)
+        vec2 aoOffsets[4];
+        aoOffsets[0] = vec2( 2.2,  0.0);
+        aoOffsets[1] = vec2(-2.2,  0.0);
+        aoOffsets[2] = vec2( 0.0,  2.2);
+        aoOffsets[3] = vec2( 0.0, -2.2);
+        float aoSum = 0.0;
+        for (int a = 0; a < 4; a++) {
+          float sampleD = linearizeDepth(texture2D(tDepth, vUv + aoOffsets[a] * texel).r);
+          float diff = centerDepth - sampleD;
+          if (diff > 0.0008 && diff < 0.04) {
+            aoSum += clamp((diff - 0.0008) * 35.0, 0.0, 1.0);
+          }
+        }
+        float ao = clamp(1.0 - (aoSum * 0.25) * uAOIntensity, 0.35, 1.0);
+        color *= ao;
+
         // Crisp Geometric Voxel Edge Detection
         float d00 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, -texel.y)).r);
         float d20 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, -texel.y)).r);
@@ -190,6 +233,8 @@ export class PixelPostProcessor {
         uSpeedFactor: { value: 0.0 },
         uTime: { value: 0.0 },
         uBloomIntensity: { value: 1.25 },
+        uSSRIntensity: { value: 0.35 },
+        uAOIntensity: { value: 0.28 },
       },
       depthWrite: false,
       depthTest: false,
@@ -279,6 +324,18 @@ export class PixelPostProcessor {
     this.renderer.render(this.postScene, this.postCamera);
   }
 
+  public setSSRIntensity(val: number): void {
+    if (this.postMaterial.uniforms.uSSRIntensity) {
+      this.postMaterial.uniforms.uSSRIntensity.value = val;
+    }
+  }
+
+  public setAOIntensity(val: number): void {
+    if (this.postMaterial.uniforms.uAOIntensity) {
+      this.postMaterial.uniforms.uAOIntensity.value = val;
+    }
+  }
+
   /**
    * P3: Quality presets for dynamic performance scaling
    */
@@ -287,21 +344,29 @@ export class PixelPostProcessor {
       case 'low':
         this.setPixelScale(2.0);
         this.setBloomIntensity(0.0);
+        this.setSSRIntensity(0.0);
+        this.setAOIntensity(0.0);
         this.postMaterial.uniforms.uEdgeStrength.value = 0.4;
         break;
       case 'medium':
         this.setPixelScale(1.5);
         this.setBloomIntensity(0.7);
+        this.setSSRIntensity(0.18);
+        this.setAOIntensity(0.15);
         this.postMaterial.uniforms.uEdgeStrength.value = 0.6;
         break;
       case 'high':
         this.setPixelScale(1.0);
         this.setBloomIntensity(1.25);
+        this.setSSRIntensity(0.35);
+        this.setAOIntensity(0.28);
         this.postMaterial.uniforms.uEdgeStrength.value = 0.85;
         break;
       case 'ultra':
         this.setPixelScale(1.0);
         this.setBloomIntensity(1.6);
+        this.setSSRIntensity(0.55);
+        this.setAOIntensity(0.42);
         this.postMaterial.uniforms.uEdgeStrength.value = 1.0;
         break;
     }

@@ -14,7 +14,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 |----|------|-----|-----|--------|
 | V1 | Automated smoke tests (Playwright) per section: menu, garage, quick race, pause, split-screen, multiplayer lobby. | P0 | M | `[x]` done (`tests/smoke-suite.mjs`) |
 | V2 | Console-error gate in CI (fail on any `console.error`/uncaught exception). | P0 | S | `[x]` done (enforced in Playwright sweep) |
-| V3 | Physics regression tests (headless Rapier): 0–100 km/h time, skidpad lateral g, brake distance, restart leaves no state behind. | P1 | M | `[ ]` |
+| V3 | Physics regression tests (headless Rapier): 0–100 km/h time, skidpad lateral g, brake distance, restart leaves no state behind. | P1 | M | `[x]` done (`tests/physics-regression.mjs`) |
 | V4 | FPS/frame-time budget test (desktop + throttled mobile profile), record in CI artifact. | P1 | M | `[ ]` |
 
 ## 1. Game mechanics
@@ -25,7 +25,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | M2 | **Race-finish flow.** Replaced `alert()` with a glassmorphic results screen (positions, best lap, drift score, PLN earned, retry/garage/menu) and universal English ordinals (`getOrdinal`). | P0 | M | `[x]` done |
 | M3 | **Restart correctness.** Comprehensive `reset()` on `VehiclePhysics`, `PurePursuitAI`, and `ParticleFX` clearing tyre/rotor heat, drift combos, skidmarks, and smoke. | P0 | S | `[x]` done |
 | M4 | **Fixed-step determinism.** Seeded PRNG (`src/utils/PRNG.ts`) replacing Math.random in physics, AI, and environment. | P1 | S | `[x]` done |
-| M5 | **Network model.** Snapshot interpolation with jitter buffer, lag compensation. | P1 | L | `[ ]` |
+| M5 | **Network model.** Snapshot interpolation with jitter buffer, lag compensation. | P1 | L | `[x]` done (`SnapshotJitterBuffer` in `StateSync.ts`) |
 | M6 | **AI quality.** Racing line, braking-zone lookahead, overtaking offsets, recovery when stuck. | P1 | L | `[x]` done |
 | M7 | **Reset/recovery.** Auto-respawn at last checkpoint when flipped or off-track, manual K key. | P1 | S | `[x]` done |
 | M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[x]` done |
@@ -62,7 +62,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | U5 | **Gamepad support.** Gamepad API with dual-motor rumble and mobile haptics. | P1 | M | `[x]` done |
 | U6 | **Mobile layout.** Responsive HUD, safe-area insets, touch-control calibration. | P1 | M | `[x]` done |
 | U7 | **Loading experience.** Retro-futuristic WASM/asset progress loader. | P1 | S | `[x]` done |
-| U8 | **Onboarding.** First-run driving tutorial. | P2 | M | `[ ]` |
+| U8 | **Onboarding.** First-run driving tutorial. | P2 | M | `[x]` done (Driver Academy modal in `MenuUI.ts`) |
 | U9 | **Minimap.** 3 colored track sectors, player directional chevron arrow, opponent rank dots. | P2 | S | `[x]` done |
 | U10 | **Visual hierarchy of HUD.** Delta-time split (+/-) against best lap, flashing wrong-way warning. | P2 | M | `[x]` done |
 | U11 | **Multiplayer lobby UX.** Real-time signaling status badge, connection quality indicator. | P1 | M | `[x]` done |
@@ -106,9 +106,9 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | C1 | Split `GameManager` (~840 lines): extract `RaceController`, `SceneSetup`, `InputRouter`, `NetSession`, `ModeManager`. | P1 | M |
 | C2 | Replace `any` casts in audio setup, add strict lint (ESLint + `@typescript-eslint`) and Prettier; pre-commit via CI. | P1 | S |
 | C3 | Move magic numbers (shift RPMs, grip, shake, thresholds) into typed config modules. | P1 | S |
-| C4 | Unit tests for `StateSync`, `QWBPProtocol`, `EvolutionStore`, waypoint math. | P1 | M |
-| C5 | Track data as JSON asset + editor script; remove hardcoded coordinates in `TrackMeshBuilder`, `EnvironmentGenerator`, `HUD`. | P2 | M |
-| C6 | Error boundaries: WebGL context loss handling, WASM load failure fallback UI, IndexedDB unavailable fallback. | P1 | S |
+| C4 | Unit tests for `StateSync`, `QWBPProtocol`, `EvolutionStore`, waypoint math. | P1 | M | `[x]` done (`tests/unit-tests.mjs`) |
+| C5 | Track data as JSON asset + editor script; remove hardcoded coordinates in `TrackMeshBuilder`, `EnvironmentGenerator`, `HUD`. | P2 | M | `[ ]` |
+| C6 | Error boundaries: WebGL context loss handling, WASM load failure fallback UI, IndexedDB unavailable fallback. | P1 | S | `[x]` done (WebGL context loss in `GameManager.ts`) |
 | C7 | Docs: architecture overview, controls reference, contribution guide, ADRs. | P2 | S |
 
 ---
