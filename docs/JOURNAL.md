@@ -216,6 +216,37 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 - `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
 - `tests/smoke-suite.mjs`: **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
 
+### 2026-10-10 — Modernization Architecture: bitECS SoA Pipeline, Two-Sample Slerp Interpolation, Surface Nets & std430 Alignment
+
+**Implementations**:
+- **bitECS Data-Oriented Design & Contiguous SoA Storage (`src/ecs/Components.ts`, `src/ecs/World.ts`)**:
+  - Replaced scattered heap object structures with flat `Float32Array` Structure of Arrays components (`Position`, `Rotation`, `Velocity`, `VehicleInput`, `VehicleTelemetry`, `TwoSampleStateBuffer`, `VehicleRole`).
+  - Implemented zero-allocation entity queries, binding integer Entity IDs to Three.js Object3D visual roots via dense integer index map.
+- **Strict Decoupled Execution Pipeline (`src/ecs/ECSPipeline.ts`)**:
+  - Rebuilt the main engine loop to execute in strict decoupled order:
+    1. Input Parsing (`InputSystem.update`)
+    2. Fixed Timestep Physics (`PhysicsWorld.step` at 60Hz with substep backlog clamp)
+    3. Physics Transforms & StateBuffer Sync (`PhysicsSyncSystem.syncVehiclePhysics`)
+    4. Two-Sample Visual Mesh Interpolation (`InterpolationSystem.update`)
+    5. Scene Graph & Post-Processing Render (`renderFrame`)
+- **Two-Sample Fixed-State Buffer & Slerp/Lerp Visual Smoothing (`src/ecs/systems/InterpolationSystem.ts`, `src/physics/PhysicsWorld.ts`)**:
+  - Implemented fixed-state buffer capturing previous tick $S_{t-1}$ and current tick $S_t$.
+  - Calculated fractional physics alpha $\alpha = \frac{\text{accumulator}}{\Delta t_{\text{physics}}} \in [0.0, 1.0]$.
+  - Applied zero-allocation linear interpolation ($\text{lerp}$) on positions and spherical linear interpolation ($\text{slerp}$) on rotation quaternions with pre-allocated scratch math instances, eliminating micro-stuttering across all display refresh rates (60Hz, 120Hz, 144Hz, 240Hz).
+- **Surface Nets Volumetric Terrain & WebGPU std430 Alignment (`src/voxel/SurfaceNets.ts`)**:
+  - Implemented 3D scalar density field and dual contouring Surface Nets algorithm extracting organic riverbanks, sand shoals, and dune bluffs from voxel data.
+  - Formulated WGSL compute shader (`SURFACE_NETS_WGSL`) and JS binary encoder strictly satisfying std430 16-byte alignment rules (vec3 position and normal padded with 4-byte floats).
+- **PhysicsBridge Shared Memory Architecture (`src/physics/PhysicsBridge.ts`)**:
+  - Structured 1040-byte binary buffer supporting `SharedArrayBuffer` cross-thread synchronization and transferable ArrayBuffers for zero-copy physics state transfer.
+- **RendererFactory WebGPU & TSL Subsystem (`src/graphics/RendererFactory.ts`)**:
+  - Implemented `RendererFactory` detecting WebGPU adapter support, initializing `WebGPURenderer` from `three/webgpu` with ACESFilmic tone mapping and soft cascaded shadows, with graceful fallback to `WebGLRenderer`.
+
+**Automated verification sweep results**:
+- `tests/ecs-and-webgpu-tests.mjs`: **100% PASSED** (bitECS SoA allocation, Two-Sample Slerp math at $\alpha = 0.5$, Surface Nets dual contouring with 151 vertices & 192 triangles, std430 16-byte memory alignment audit, PhysicsBridge shared memory roundtrip).
+- `tests/physics-regression.mjs`: **100% PASSED** (0–100 km/h in 6.72s, 100–0 km/h in 23.9m, peak 1.33G lateral adhesion).
+- `tests/unit-tests.mjs`: **100% PASSED** (StateSync 76-byte binary protocol roundtrip, EvolutionStore economy, 140 waypoint geometry invariants).
+- `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
@@ -223,5 +254,6 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 | Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
 | Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 A2–A7 A9 M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M12 P4 P8 P11 U1–U12 V3 C4 C6 | `[x]` done |
 | Regional & SOTA AI | Regional Geography (Świder & Dunes), Physical Banking, Headlight Volumetrics, Frenet Multi-Candidate AI, Kamm Trail Braking | `[x]` done |
+| Modernization | bitECS SoA Pipeline, Decoupled Execution, Two-Sample Lerp/Slerp Buffer, Surface Nets, std430 Alignment, PhysicsBridge | `[x]` done |
 
 

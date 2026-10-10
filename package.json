@@ -12,6 +12,7 @@
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
     "@zxing/library": "^0.21.3",
+    "bitecs": "^0.4.0",
     "pako": "^2.1.0",
     "qrcode": "^1.5.4",
     "three": "^0.174.0"

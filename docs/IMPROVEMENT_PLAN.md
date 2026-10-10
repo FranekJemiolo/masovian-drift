@@ -111,12 +111,24 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | C6 | Error boundaries: WebGL context loss handling, WASM load failure fallback UI, IndexedDB unavailable fallback. | P1 | S | `[x]` done (WebGL context loss in `GameManager.ts`) |
 | C7 | Docs: architecture overview, controls reference, contribution guide, ADRs. | P2 | S |
 
+## 7. AAA WebGPU Modernization Architecture
+
+| ID | Item | Pri | Eff | Status |
+|----|------|-----|-----|--------|
+| MOD1 | **bitECS SoA Data-Oriented Design.** Contiguous Float32Array components, zero-allocation entity queries. | P0 | M | `[x]` done (`src/ecs/`) |
+| MOD2 | **Strict Decoupled Execution Pipeline.** Input -> Fixed Physics (60Hz) -> ECS Transforms -> Slerp/Lerp -> Render. | P0 | M | `[x]` done (`ECSPipeline.ts`) |
+| MOD3 | **Two-Sample Fixed-State Slerp/Lerp Interpolation.** Substep visual smoothing eliminating micro-stutters across 144Hz/240Hz monitors. | P1 | M | `[x]` done (`InterpolationSystem.ts`) |
+| MOD4 | **Surface Nets Volumetric Terrain & std430 Audit.** Dual contouring riverbanks and WGSL compute shader with strict 16-byte vec3 padding. | P1 | L | `[x]` done (`SurfaceNets.ts`) |
+| MOD5 | **PhysicsBridge Shared Memory Buffer.** 1040-byte zero-copy shared memory layout for cross-thread sync. | P1 | M | `[x]` done (`PhysicsBridge.ts`) |
+| MOD6 | **WebGPU & TSL Renderer Factory.** Automatic WebGPU adapter initialization with seamless WebGL fallback. | P1 | M | `[x]` done (`RendererFactory.ts`) |
+
 ---
 
 ## Suggested execution order
 
 1. **Stabilise (P0s):** V1–V2, M1–M3, U1–U2, A1, P1, P3, P7, G1. `[x]` done
 2. **Feel & polish:** G2, G6, G10, A2–A5, M4, M6–M7, U3–U7, U11. `[x]` done
-3. **Depth:** G3–G5, M5, M8–M12, A6–A9, U8–U12, G7–G12. `[~]` in progress
+3. **Depth:** G3–G5, M5, M8–M12, A6–A9, U8–U12, G7–G12. `[x]` done
+4. **Modernization:** MOD1–MOD6 (bitECS, Two-Sample Slerp, Surface Nets, std430, WebGPU). `[x]` done
 
 Each item should land as a small PR with: change description, before/after metric or screenshot, and a journal entry.

@@ -19,6 +19,8 @@ import { HUD } from '../ui/HUD';
 import { MenuUI } from '../ui/MenuUI';
 import { GameMode, VehicleState } from './Types';
 import { PRNG } from '../utils/PRNG';
+import { ECSWorldManager } from '../ecs/World';
+import { ECSPipeline } from '../ecs/ECSPipeline';
 
 interface GhostSample {
   time: number;
@@ -379,6 +381,10 @@ export class GameManager {
     this.aiBots = [];
     this.p2Vehicle = null;
 
+    // Reset bitECS World and entity mesh mappings
+    const ecs = ECSWorldManager.getInstance();
+    ecs.clear();
+
     if (this.ghostVisual) {
       this.scene.remove(this.ghostVisual);
       this.ghostVisual = null;
@@ -420,6 +426,9 @@ export class GameManager {
     );
     this.allVehicles.push(this.playerVehicle);
     this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
+
+    // Register Player Entity into bitECS
+    ecs.createVehicleEntity('player', p1Visual.root, spawnPos, spawnQuat);
 
     // Era-specific exhaust profile (A9)
     this.audioManager.setPlayerExhaustProfile(
@@ -471,6 +480,7 @@ export class GameManager {
         aiController.setTargetIndex(closestWpIdx);
         this.aiBots.push(aiController);
         this.allVehicles.push(aiVehicle);
+        ecs.createVehicleEntity('ai', aiVisual.root, aiSpawn, spawnQuat);
       }
       this.audioManager.startEngines();
       this.audioManager.startMusic();
@@ -513,6 +523,7 @@ export class GameManager {
         false
       );
       this.allVehicles.push(this.p2Vehicle);
+      ecs.createVehicleEntity('p2', p2Visual.root, p2Spawn, spawnQuat);
       this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
       this.audioManager.startSplitScreenEngines();
       this.audioManager.startMusic();
@@ -539,6 +550,7 @@ export class GameManager {
         false
       );
       this.allVehicles.push(this.p2Vehicle);
+      ecs.createVehicleEntity('peer', remoteVisual.root, remoteSpawn, spawnQuat);
       this.audioManager.startEngines();
       this.audioManager.startMusic();
     }
@@ -645,89 +657,56 @@ export class GameManager {
         this.hud.hideCountdown();
       }
 
-      // 1. Step Deterministic Rapier3D Physics
-      this.physicsWorld.step(delta, (dt) => {
-        // Player 1 inputs
-        let p1Inputs = this.inputManager.getPlayerInputs();
-        if (isCountingDown) {
-          p1Inputs = { throttle: 0.35, brake: 1.0, steer: p1Inputs.steer, handbrake: true };
-        }
-        this.playerVehicle.updatePhysics(p1Inputs, dt, this.waypoints);
-
-        // Player 2 inputs (if in Split-Screen)
-        if (this.currentMode === 'split-screen' && this.p2Vehicle) {
-          let p2Inputs = this.inputManager.getPlayer2Inputs();
+      // 1. Strict Decoupled Execution Pipeline: Input -> Physics -> ECS Transforms -> Lerp/Slerp Interpolation
+      ECSPipeline.executeFrame(
+        this.inputManager,
+        this.physicsWorld,
+        this.allVehicles,
+        isCountingDown,
+        delta,
+        (dt) => {
+          // Player 1 inputs
+          let p1Inputs = this.inputManager.getPlayerInputs();
           if (isCountingDown) {
-            p2Inputs = { throttle: 0.35, brake: 1.0, steer: p2Inputs.steer, handbrake: true };
+            p1Inputs = { throttle: 0.35, brake: 1.0, steer: p1Inputs.steer, handbrake: true };
           }
-          this.p2Vehicle.updatePhysics(p2Inputs, dt, this.waypoints);
-        }
+          this.playerVehicle.updatePhysics(p1Inputs, dt, this.waypoints);
 
-        // AI Opponents (Pure Pursuit)
-        for (const bot of this.aiBots) {
-          let botInputs = bot.update(dt, this.allVehicles);
-          if (isCountingDown) {
-            botInputs = { throttle: 0.25, brake: 1.0, steer: 0, handbrake: true };
+          // Player 2 inputs (if in Split-Screen)
+          if (this.currentMode === 'split-screen' && this.p2Vehicle) {
+            let p2Inputs = this.inputManager.getPlayer2Inputs();
+            if (isCountingDown) {
+              p2Inputs = { throttle: 0.35, brake: 1.0, steer: p2Inputs.steer, handbrake: true };
+            }
+            this.p2Vehicle.updatePhysics(p2Inputs, dt, this.waypoints);
           }
-          bot.vehicle.updatePhysics(botInputs, dt, this.waypoints);
-        }
 
-        // Track checkpoints & lap progression (M7 auto-recovery)
-        if (!isCountingDown) {
-          // Time Trial Ghost Telemetry Recording & Replay (M8)
-          if (this.currentMode === 'time-trial') {
-            this.ghostSampleTimer += dt;
-            if (this.ghostSampleTimer >= 0.05) {
-              this.ghostSampleTimer = 0;
-              const p = this.playerVehicle.position;
-              const q = this.playerVehicle.quaternion;
-              this.currentLapGhostSamples.push({
-                time: this.playerVehicle.currentLapTime,
-                x: p.x, y: p.y, z: p.z,
-                qx: q.x, qy: q.y, qz: q.z, qw: q.w,
-              });
+          // AI Opponents (Pure Pursuit)
+          for (const bot of this.aiBots) {
+            let botInputs = bot.update(dt, this.allVehicles);
+            if (isCountingDown) {
+              botInputs = { throttle: 0.25, brake: 1.0, steer: 0, handbrake: true };
+            }
+            bot.vehicle.updatePhysics(botInputs, dt, this.waypoints);
+          }
+
+          // Track checkpoints & lap progression (M7 auto-recovery)
+          if (!isCountingDown) {
+            // Time Trial Ghost Telemetry Recording & Replay (M8)
+            if (this.currentMode === 'time-trial') {
+              this.updateTimeTrialGhost(dt);
             }
 
-            // Replay ghost car along recorded lap
-            if (this.ghostVisual && this.recordedGhostLap && this.recordedGhostLap.samples.length > 0) {
-              const lapT = this.playerVehicle.currentLapTime;
-              const samples = this.recordedGhostLap.samples;
-              const idx = samples.findIndex((s) => s.time >= lapT);
-              if (idx <= 0) {
-                const s = samples[0];
-                this.ghostVisual.position.set(s.x, s.y, s.z);
-                this.ghostVisual.quaternion.set(s.qx, s.qy, s.qz, s.qw);
-              } else if (idx >= samples.length) {
-                const s = samples[samples.length - 1];
-                this.ghostVisual.position.set(s.x, s.y, s.z);
-                this.ghostVisual.quaternion.set(s.qx, s.qy, s.qz, s.qw);
-              } else {
-                const s0 = samples[idx - 1];
-                const s1 = samples[idx];
-                const dtSegment = Math.max(0.001, s1.time - s0.time);
-                const alpha = Math.max(0, Math.min(1, (lapT - s0.time) / dtSegment));
-                this.ghostVisual.position.set(
-                  s0.x + (s1.x - s0.x) * alpha,
-                  s0.y + (s1.y - s0.y) * alpha,
-                  s0.z + (s1.z - s0.z) * alpha
-                );
-                const q0 = new THREE.Quaternion(s0.qx, s0.qy, s0.qz, s0.qw);
-                const q1 = new THREE.Quaternion(s1.qx, s1.qy, s1.qz, s1.qw);
-                q0.slerp(q1, alpha);
-                this.ghostVisual.quaternion.copy(q0);
-              }
+            this.updateRaceProgression(dt);
+            for (const v of this.allVehicles) {
+              this.checkVehicleRecovery(v, dt);
+            }
+            if (this.inputManager.isKeyJustPressed('KeyK')) {
+              this.respawnVehicleAtCheckpoint(this.playerVehicle);
             }
           }
-
-          this.updateRaceProgression(dt);
-          for (const v of this.allVehicles) {
-            this.checkVehicleRecovery(v, dt);
-          }
-          if (this.inputManager.isKeyJustPressed('KeyK')) {
-            this.respawnVehicleAtCheckpoint(this.playerVehicle);
-          }
         }
-      });
+      );
 
       // 2. Audio Synthesizer Update & 3D Spatial Listener Tracking (A4, A5)
       this.audioManager.updatePlayerEngine(
@@ -908,6 +887,52 @@ export class GameManager {
       // Single Screen Mode (with Pixel-Art Post-Processor)
       this.renderer.setViewport(0, 0, width, height);
       this.postProcessor.render(this.p1Camera.camera);
+    }
+  }
+
+  private updateTimeTrialGhost(dt: number): void {
+    if (!this.playerVehicle) return;
+
+    this.ghostSampleTimer += dt;
+    if (this.ghostSampleTimer >= 0.05) {
+      this.ghostSampleTimer = 0;
+      const p = this.playerVehicle.position;
+      const q = this.playerVehicle.quaternion;
+      this.currentLapGhostSamples.push({
+        time: this.playerVehicle.currentLapTime,
+        x: p.x, y: p.y, z: p.z,
+        qx: q.x, qy: q.y, qz: q.z, qw: q.w,
+      });
+    }
+
+    // Replay ghost car along recorded lap
+    if (this.ghostVisual && this.recordedGhostLap && this.recordedGhostLap.samples.length > 0) {
+      const lapT = this.playerVehicle.currentLapTime;
+      const samples = this.recordedGhostLap.samples;
+      const idx = samples.findIndex((s) => s.time >= lapT);
+      if (idx <= 0) {
+        const s = samples[0];
+        this.ghostVisual.position.set(s.x, s.y, s.z);
+        this.ghostVisual.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+      } else if (idx >= samples.length) {
+        const s = samples[samples.length - 1];
+        this.ghostVisual.position.set(s.x, s.y, s.z);
+        this.ghostVisual.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+      } else {
+        const s0 = samples[idx - 1];
+        const s1 = samples[idx];
+        const dtSegment = Math.max(0.001, s1.time - s0.time);
+        const alpha = Math.max(0, Math.min(1, (lapT - s0.time) / dtSegment));
+        this.ghostVisual.position.set(
+          s0.x + (s1.x - s0.x) * alpha,
+          s0.y + (s1.y - s0.y) * alpha,
+          s0.z + (s1.z - s0.z) * alpha
+        );
+        const q0 = new THREE.Quaternion(s0.qx, s0.qy, s0.qz, s0.qw);
+        const q1 = new THREE.Quaternion(s1.qx, s1.qy, s1.qz, s1.qw);
+        q0.slerp(q1, alpha);
+        this.ghostVisual.quaternion.copy(q0);
+      }
     }
   }
 

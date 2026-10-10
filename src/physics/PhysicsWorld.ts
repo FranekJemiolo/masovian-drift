@@ -118,4 +118,12 @@ export class PhysicsWorld {
       this.accumulator = 0;
     }
   }
+
+  /**
+   * Returns fractional interpolation alpha in [0.0, 1.0] representing
+   * progress between previous and current physics ticks.
+   */
+  public getInterpolationAlpha(): number {
+    return Math.max(0.0, Math.min(1.0, this.accumulator / this.fixedTimeStep));
+  }
 }
