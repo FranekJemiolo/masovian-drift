@@ -448,7 +448,9 @@ export class VehiclePhysics {
         torqueCurveFactor *= 0.1;
       }
 
-      const engineTorque = peakTorqueNm * torqueCurveFactor;
+      // Engine power output degradation tied to body/mechanical damage (M10)
+      const engineHealthFactor = Math.max(0.68, 1.0 - this.damage.bodyDamage * 0.32);
+      const engineTorque = peakTorqueNm * torqueCurveFactor * engineHealthFactor;
       const wheelTorque = engineTorque * gearRatio * this.specs.finalDrive * inputs.throttle;
       const tireRadius = 0.32;
       driveForceN = (wheelTorque / tireRadius);
@@ -633,6 +635,18 @@ export class VehiclePhysics {
     // Apply visual chassis pitch (squat / dive) and roll (outward centrifugal lean)
     this.visual.bodyMesh.rotation.x = -this.weightTransfer.pitchAngle * 0.6;
     this.visual.bodyMesh.rotation.z = -this.weightTransfer.rollAngle * 0.7;
+
+    // Visual damage model (M10): body deformation and asymmetrical crumple tilt
+    if (this.damage.bodyDamage > 0.05) {
+      const crumpleTilt = Math.min(0.045, this.damage.bodyDamage * 0.045);
+      const crumpleYaw = Math.min(0.02, this.damage.bodyDamage * 0.02);
+      this.visual.bodyMesh.rotation.z += (this.damage.steeringAlignmentOffset >= 0 ? 1 : -1) * crumpleTilt;
+      this.visual.bodyMesh.rotation.y = (this.damage.steeringAlignmentOffset >= 0 ? -1 : 1) * crumpleYaw;
+      this.visual.bodyMesh.position.y = -Math.min(0.03, this.damage.bodyDamage * 0.025);
+    } else {
+      this.visual.bodyMesh.rotation.y = 0;
+      this.visual.bodyMesh.position.y = 0;
+    }
 
     // Steer front wheels cleanly around vertical Y axis (isolated steering knuckle)
     this.visual.wheelFL.rotation.y = this.steerAngle;

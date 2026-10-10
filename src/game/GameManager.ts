@@ -747,10 +747,13 @@ export class GameManager {
       this.atmosphere.update(delta, this.playerVehicle.position);
       this.particleFX.update(delta, this.allVehicles);
 
-      // Dynamic Focused Directional Shadow following the player
+      // Dynamic Focused Directional Shadow with Texel Grid Snapping (P4: eliminates shadow jitter)
       const p = this.playerVehicle.position;
-      this.sunLight.target.position.set(p.x, p.y, p.z);
-      this.sunLight.position.set(p.x - 65, p.y + 115, p.z - 55);
+      const worldUnitsPerTexel = 150.0 / 2048.0;
+      const snappedX = Math.floor(p.x / worldUnitsPerTexel) * worldUnitsPerTexel;
+      const snappedZ = Math.floor(p.z / worldUnitsPerTexel) * worldUnitsPerTexel;
+      this.sunLight.target.position.set(snappedX, p.y, snappedZ);
+      this.sunLight.position.set(snappedX - 65, p.y + 115, snappedZ - 55);
       this.sunLight.target.updateMatrixWorld();
 
       // Dynamic Environment animation (rotating wind turbines)

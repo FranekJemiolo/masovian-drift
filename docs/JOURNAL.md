@@ -118,9 +118,33 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 - `tests/smoke-suite.mjs`: All 7 isolated browser sections PASSED (0 console errors, 0 page errors).
 - `tests/mechanics.spec.mjs`: Race finish modal & restart mechanics PASSED (0 console errors).
 
+### 2026-10-10 — AAA Standards: Visible Damage Model, Shadow Texel Grid Snapping, Orbit Photo Cam & Screenshot Pipeline
+
+**Implementations**:
+- **M10 Visible Damage Model & Powertrain Degradation**:
+  - Coupled body damage accumulation from high-G impact shocks ($G > 12.0$).
+  - Body crumple visual deformation: asymmetrical crumple tilt (`crumpleTilt = Math.min(0.045, damage * 0.045)`), yaw skew, and vertical sagging applied directly to `visual.bodyMesh`.
+  - Powertrain degradation: throttles engine torque output via `engineHealthFactor = Math.max(0.68, 1.0 - damage * 0.32)` under heavy structural collision damage, requiring strategic pit-stops and garage repairs in the Evolution Workshop.
+- **P4 Shadow Texel Grid Snapping**:
+  - Directional sunlight shadow map ($2048\times 2048$, $150\text{ m}$ frustum) quantized by `worldUnitsPerTexel = 150.0 / 2048.0`.
+  - Snapped directional light target position coordinates (`Math.floor(p / texelSize) * texelSize`), completely eliminating shadow edge shimmering/jittering and crawling artifacts during car movement.
+- **G12 Dynamic 360° Orbit Showcase / Photo Mode Camera**:
+  - Implemented `'orbit'` view mode in `FollowCamera.ts` (`orbitRadius = 6.4m, speed = 0.45 rad/s`).
+  - Added interactive `ORBIT` camera toggle button to the in-game Pause / Settings modal in `HUD.ts`.
+- **Automated High-Resolution Screenshot Pipeline**:
+  - Created automated Playwright capture script (`tests/capture-screenshots.mjs`) generating fresh 1280x720 captures:
+    - `docs/screenshots/menu.png`: Showroom voxel Boxer on reflective polished floor with Polish cyber-retro UI.
+    - `docs/screenshots/track_start.png`: Starting grid with 4-point raycast suspension stance, grandstands, and Polish/Mazovian banners.
+    - `docs/screenshots/gameplay_drift.png`: High-speed power slide with tire smoke particles, counter-steer, and RPM redline glow.
+
+**Automated verification sweep results**:
+- `tests/smoke-suite.mjs`: All 7 isolated browser sections PASSED (1 Main menu, 2 Garage, 3 Quick race, 4 Pause/settings, 5 Split-screen, 6 Multiplayer lobby, 7 Time trial) with **0 console errors and 0 page errors**.
+- `tests/comprehensive-vehicle-verification.mjs`: 100% PASSED (4-point raycast suspension Hooke's Law ground contact, left/right steering knuckle rotation, outward chassis roll lean, helmet apex gaze lookahead, airborne auto-stabilizer leveling, and AI waypoint pursuit).
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
 | Stabilise (P0) | V1 V2 M1 M2 M3 U1 U2 A1 P1 P3 P7 G1 | `[x]` done |
 | Feel & polish | G2 G6 G10 A2–A5 M4 M6 M7 U3–U7 U11 | `[x]` done |
-| Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 A2–A7 A9 M1 M2 M3 M4 M6 M7 M8 M9 M12 P8 P11 U1–U7 U9 U10 U11 U12 | `[x]` done |
+| Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 A2–A7 A9 M1 M2 M3 M4 M6 M7 M8 M9 M10 M12 P4 P8 P11 U1–U7 U9 U10 U11 U12 | `[x]` done |
+

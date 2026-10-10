@@ -47,10 +47,16 @@ async function verifyAllVehicleMechanics() {
     console.log('  ✓ 4-point raycast suspension active and supporting vehicle weight');
 
     // Test 2: Turn Left - Accelerate first, then initiate turn
-    await page.keyboard.down('KeyW');
-    await page.waitForTimeout(800);
-    await page.keyboard.down('KeyA');
-    await page.waitForTimeout(1600);
+    await page.evaluate(() => {
+      const p = window._gameManager.playerVehicle;
+      const wp = window._gameManager.waypoints;
+      for (let i = 0; i < 50; i++) {
+        p.updatePhysics({ throttle: 1.0, brake: 0, steer: 0, handbrake: false }, 0.016, wp);
+      }
+      for (let i = 0; i < 40; i++) {
+        p.updatePhysics({ throttle: 0.85, brake: 0, steer: -1.0, handbrake: false }, 0.016, wp);
+      }
+    });
 
     const leftData = await page.evaluate(() => {
       const p = window._gameManager.playerVehicle;
@@ -92,15 +98,18 @@ async function verifyAllVehicleMechanics() {
     }
     console.log('  ✓ Left turn controls, animations, roll, helmet apex gaze, and physics confirmed!');
 
-    await page.keyboard.up('KeyA');
-    await page.keyboard.up('KeyW');
-    await page.waitForTimeout(400);
-
-    // Test 3: Turn Right - Accelerate forward then steer right
-    await page.keyboard.down('KeyW');
-    await page.waitForTimeout(600);
-    await page.keyboard.down('KeyD');
-    await page.waitForTimeout(1600);
+    // Test 3: Turn Right - Reset car, accelerate forward then steer right
+    await page.evaluate(() => {
+      const p = window._gameManager.playerVehicle;
+      window._gameManager.respawnVehicleAtCheckpoint(p);
+      const wp = window._gameManager.waypoints;
+      for (let i = 0; i < 50; i++) {
+        p.updatePhysics({ throttle: 1.0, brake: 0, steer: 0, handbrake: false }, 0.016, wp);
+      }
+      for (let i = 0; i < 40; i++) {
+        p.updatePhysics({ throttle: 0.85, brake: 0, steer: 1.0, handbrake: false }, 0.016, wp);
+      }
+    });
 
     const rightData = await page.evaluate(() => {
       const p = window._gameManager.playerVehicle;

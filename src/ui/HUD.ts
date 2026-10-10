@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VehicleState } from '../game/Types';
 import { Waypoint } from '../physics/TrackWaypoints';
+import { CameraViewMode } from '../camera/FollowCamera';
 
 export function getOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -69,7 +70,7 @@ export class HUD {
     onRestart?: () => void;
     onQuit?: () => void;
     onVolumeChange?: (vol: number) => void;
-    onCameraChange?: (mode: 'chase' | 'hood' | 'cinematic') => void;
+    onCameraChange?: (mode: CameraViewMode) => void;
     onPixelScaleChange?: (scale: number) => void;
     onBloomChange?: (val: number) => void;
   } = {};
@@ -266,6 +267,7 @@ export class HUD {
                 <button id="btn-cam-chase" class="toggle-btn active">CHASE</button>
                 <button id="btn-cam-hood" class="toggle-btn">HOOD</button>
                 <button id="btn-cam-cinema" class="toggle-btn">CINEMA</button>
+                <button id="btn-cam-orbit" class="toggle-btn">ORBIT</button>
               </div>
             </div>
 
@@ -439,6 +441,7 @@ export class HUD {
       chase: this.container.querySelector('#btn-cam-chase'),
       hood: this.container.querySelector('#btn-cam-hood'),
       cinema: this.container.querySelector('#btn-cam-cinema'),
+      orbit: this.container.querySelector('#btn-cam-orbit'),
     };
     const setCamActive = (activeKey: string) => {
       Object.entries(camBtns).forEach(([k, btn]) => {
@@ -457,6 +460,10 @@ export class HUD {
     camBtns.cinema?.addEventListener('click', () => {
       setCamActive('cinema');
       this.callbacks.onCameraChange?.('cinematic');
+    });
+    camBtns.orbit?.addEventListener('click', () => {
+      setCamActive('orbit');
+      this.callbacks.onCameraChange?.('orbit');
     });
 
     // Pixel resolution buttons

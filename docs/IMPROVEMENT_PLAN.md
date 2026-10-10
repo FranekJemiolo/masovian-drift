@@ -30,7 +30,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | M7 | **Reset/recovery.** Auto-respawn at last checkpoint when flipped or off-track, manual K key. | P1 | S | `[x]` done |
 | M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[x]` done |
 | M9 | **Drivetrain realism.** Boxer torque curve plateau, clutch launch control, rev-limiter cut. | P2 | M | `[x]` done |
-| M10 | **Damage model.** Visible deformation, performance loss tied to repair shop. | P2 | L | `[ ]` |
+| M10 | **Damage model.** Visible deformation, performance loss tied to repair shop. | P2 | L | `[x]` done |
 | M11 | **Progression/economy balance pass.** Tune prices/rewards; unlock tracks and eras. | P2 | M | `[ ]` |
 | M12 | **Weather & Time of day.** Procedural sky variations (Day Azure, Golden Sunset, Night Rally). | P2 | L | `[x]` done |
 
@@ -49,7 +49,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | G9 | **Motion feel.** Dynamic drift Dutch tilt roll, speed-proportional FOV expansion. | P2 | M | `[x]` done |
 | G10 | **LOD & culling.** Bounding spheres and frustum culling for instanced trackside props. | P1 | M | `[x]` done |
 | G11 | **Trackside life.** Animated jumping spectators, swaying Polish/Mazovian racing flags. | P2 | M | `[x]` done |
-| G12 | **Replay + photo mode.** Free camera and DoF. | P2 | L | `[ ]` |
+| G12 | **Replay + photo mode.** Free camera and DoF (360° dynamic Orbit showcase photo camera). | P2 | L | `[x]` done |
 
 ## 3. UI / UX
 
@@ -89,7 +89,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | P1 | **Per-frame allocations.** Hoisted static scratch `Vector3`/`Quaternion` across physics, AI, FX. | P0 | M | `[x]` done |
 | P2 | **Water CPU animation.** Moved river mesh displacement to vertex shader. | P1 | S | `[x]` done |
 | P3 | **Post-process cost.** Added quality presets (`low`, `medium`, `high`, `ultra`). | P0 | M | `[x]` done |
-| P4 | **Shadows.** Texel grid snapping, caster distance limit. | P1 | S | `[ ]` |
+| P4 | **Shadows.** Texel grid snapping, caster distance limit. | P1 | S | `[x]` done |
 | P5 | **Draw calls/instancing.** Merge static fences, instanced grandstand spectators. | P1 | M | `[ ]` |
 | P6 | **Startup cost.** Spatial grid precomputation for terrain. | P1 | M | `[ ]` |
 | P7 | **Bundle size.** Split 5.4MB chunk into modular vendor chunks (`index.js` = 132 KB). | P0 | S | `[x]` done |

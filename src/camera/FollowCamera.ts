@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type CameraViewMode = 'chase' | 'hood' | 'cinematic';
+export type CameraViewMode = 'chase' | 'hood' | 'cinematic' | 'orbit';
 
 export class FollowCamera {
   public camera: THREE.PerspectiveCamera;
@@ -11,6 +11,7 @@ export class FollowCamera {
   private shakeOffset = new THREE.Vector3();
   private shakeIntensity = 0;
   private currentRoll = 0;
+  private orbitAngle = 0;
 
   constructor(fov: number = 62, aspect: number = 16 / 9) {
     this.camera = new THREE.PerspectiveCamera(fov, aspect, 0.2, 1200);
@@ -24,6 +25,7 @@ export class FollowCamera {
   public cycleMode(): CameraViewMode {
     if (this.mode === 'chase') this.mode = 'hood';
     else if (this.mode === 'hood') this.mode = 'cinematic';
+    else if (this.mode === 'cinematic') this.mode = 'orbit';
     else this.mode = 'chase';
     return this.mode;
   }
@@ -100,7 +102,7 @@ export class FollowCamera {
         .addScaledVector(forward, 25.0)
         .add(new THREE.Vector3(0, 0.75, 0));
 
-    } else {
+    } else if (this.mode === 'cinematic') {
       // Cinematic low side-rear angle
       desiredPos.copy(targetPos)
         .addScaledVector(forward, -5.6)
@@ -110,6 +112,15 @@ export class FollowCamera {
       desiredLook.copy(targetPos)
         .addScaledVector(forward, 6.0)
         .add(new THREE.Vector3(0, 1.0, 0));
+
+    } else {
+      // Dynamic 360-degree Orbit Showcase Cam (G12: Replay / Photo Cam)
+      this.orbitAngle += delta * 0.45;
+      const orbitRadius = 6.4;
+      const ox = Math.sin(this.orbitAngle) * orbitRadius;
+      const oz = Math.cos(this.orbitAngle) * orbitRadius;
+      desiredPos.copy(targetPos).add(new THREE.Vector3(ox, 2.2, oz));
+      desiredLook.copy(targetPos).add(new THREE.Vector3(0, 0.75, 0));
     }
 
     // Initialize on first frame
