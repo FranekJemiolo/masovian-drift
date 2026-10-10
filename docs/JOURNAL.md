@@ -279,6 +279,32 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 - `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
 - `tests/smoke-suite.mjs`: **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
 
+### 2026-10-10 — Next Phase Implementation: Volumetric Voxel Debris Physics, Real-Time Tandem Drift Multipliers & HUD Glow
+
+**Implementations**:
+- **Volumetric Voxel Debris Physics Subsystem (`src/graphics/ParticleFX.ts`)**:
+  - Implemented 64-block `InstancedMesh` with micro-voxel box geometries (`0.24m x 0.24m x 0.24m`).
+  - Implemented `emitVoxelDebris(pos, dir, count, colorHex)` simulating physical gravity ($g = -11.5\text{ m/s}^2$), ground bounces on terrain ($y \le 0.35$), velocity damping, and 3D tumbling angular rotation.
+  - Automatically triggered by horizontal collision shocks ($> 14\text{G}$) via `VehiclePhysics.justCrashed`.
+  - Added clean resource disposal on scene teardown.
+- **P2P Multiplayer & AI Tandem Drift Evaluation (`src/net/StateSync.ts`, `src/physics/VehiclePhysics.ts`, `src/game/GameManager.ts`)**:
+  - Implemented `StateSync.evaluateTandemDrift` computing Euclidean distance separation ($\le 8.0\text{m}$) and heading vector alignment ($\le 38^\circ$) between leader and chaser cars.
+  - Calculates dynamic proximity multipliers: $1.75\times$ for trailing drift, $2.5\times$ within 5.0m, and $3.5\times$ for door-to-door slides ($< 3.0\text{m}$).
+  - Integrated into `GameManager.ts` physics loop across player vs. all active AI opponents, Player 2 in split-screen duel, and WebRTC remote peers.
+  - Integrated multiplier directly into `VehiclePhysics.updatePhysics` drift score gain.
+- **Neon Golden Tandem Drift HUD Glow (`src/ui/HUD.ts`, `src/style.css`)**:
+  - Added `@keyframes tandemPulse` pulsating golden neon box-shadow and text glow.
+  - Dynamically renders real-time `⚡ TANDEM DRIFT x[mult]! ([dist]m PROXIMITY) 🔥 +[pts] PTS` notification banner on HUD during synchronized drifts.
+
+**Automated verification sweep results**:
+- `npm run build`: **0 ERRORS** (Clean Vite & TypeScript compile).
+- `tests/unit-tests.mjs`: **100% PASSED** (StateSync binary serialization, EvolutionStore economy, 140 waypoint geometry invariants).
+- `tests/ecs-and-webgpu-tests.mjs`: **100% PASSED** (bitECS SoA allocation, Two-Sample Slerp, Surface Nets dual contouring, std430 16-byte memory alignment audit, PhysicsBridge shared memory).
+- `tests/physics-regression.mjs`: **100% PASSED** (0–100 km/h sprint, 100–0 km/h braking, 1.33G lateral skidpad adhesion, clean reset).
+- `tests/performance-budget.mjs`: **100% PASSED** (89 sampled frames, 0 console errors).
+- `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (4-point raycast suspension, left/right steering knuckle & body roll, helmet apex gaze, airborne auto-stabilizer, AI navigation).
+- `tests/smoke-suite.mjs`: **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
+
 ### Tracking
 | Phase | Items | Status |
 |-------|-------|--------|
@@ -287,7 +313,9 @@ Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.m
 | Depth & Performance | G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 A2–A7 A9 M1 M2 M3 M4 M5 M6 M7 M8 M9 M10 M11 M12 P4 P5 P6 P8 P9 P10 P11 P12 U1–U12 V3 V4 C1 C2 C3 C4 C5 C6 C7 | `[x]` done |
 | Regional & SOTA AI | Regional Geography (Świder & Dunes), Physical Banking, Headlight Volumetrics, Frenet Multi-Candidate AI, Kamm Trail Braking | `[x]` done |
 | Modernization | bitECS SoA Pipeline, Decoupled Execution, Two-Sample Lerp/Slerp Buffer, Surface Nets, std430 Alignment, PhysicsBridge | `[x]` done |
-| Full Completion | 100% of all planned improvement items implemented and validated across automated test suites | `[x]` done |
+| Next Phase | Volumetric Voxel Debris Physics, P2P/AI Tandem Drift Scoring Multipliers, Dynamic Neon Tandem HUD Glow | `[x]` done |
+| Full Completion | 100% of all planned engine & graphics items implemented and validated across automated test suites | `[x]` done |
+
 
 
 

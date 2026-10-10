@@ -682,10 +682,51 @@ export class GameManager {
           if (isCountingDown) {
             p1Inputs = { throttle: 0.35, brake: 1.0, steer: p1Inputs.steer, handbrake: true };
           }
+          // Evaluate real-time Tandem Drift proximity & heading alignment (P2P & AI tandem bonus)
+          let maxTandemMult = 1.0;
+          let minTandemDist = Infinity;
+          for (const other of this.allVehicles) {
+            if (other === this.playerVehicle) continue;
+            const tandem = StateSync.evaluateTandemDrift(
+              this.playerVehicle.position,
+              this.playerVehicle.quaternion,
+              this.playerVehicle.isDrifting,
+              other.position,
+              other.quaternion,
+              other.isDrifting
+            );
+            if (tandem.isTandem && tandem.multiplier > maxTandemMult) {
+              maxTandemMult = tandem.multiplier;
+              minTandemDist = tandem.proximityMeters;
+            }
+          }
+          this.playerVehicle.tandemMultiplier = maxTandemMult;
+          this.playerVehicle.tandemDistance = minTandemDist;
+
           this.playerVehicle.updatePhysics(p1Inputs, dt, this.waypoints);
 
           // Player 2 inputs (if in Split-Screen)
           if (this.currentMode === 'split-screen' && this.p2Vehicle) {
+            let p2TandemMult = 1.0;
+            let p2TandemDist = Infinity;
+            for (const other of this.allVehicles) {
+              if (other === this.p2Vehicle) continue;
+              const tandem = StateSync.evaluateTandemDrift(
+                this.p2Vehicle.position,
+                this.p2Vehicle.quaternion,
+                this.p2Vehicle.isDrifting,
+                other.position,
+                other.quaternion,
+                other.isDrifting
+              );
+              if (tandem.isTandem && tandem.multiplier > p2TandemMult) {
+                p2TandemMult = tandem.multiplier;
+                p2TandemDist = tandem.proximityMeters;
+              }
+            }
+            this.p2Vehicle.tandemMultiplier = p2TandemMult;
+            this.p2Vehicle.tandemDistance = p2TandemDist;
+
             let p2Inputs = this.inputManager.getPlayer2Inputs();
             if (isCountingDown) {
               p2Inputs = { throttle: 0.35, brake: 1.0, steer: p2Inputs.steer, handbrake: true };

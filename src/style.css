@@ -133,6 +133,23 @@ canvas {
   text-shadow: 0 0 16px #ff3b30, 0 0 30px #f59e0b;
 }
 
+.tandem-glow {
+  border-color: #facc15 !important;
+  box-shadow: 0 0 36px rgba(250, 204, 21, 0.95), inset 0 0 16px rgba(245, 158, 11, 0.5) !important;
+  transform: scale(1.12) !important;
+  animation: tandemPulse 0.35s infinite alternate;
+}
+
+@keyframes tandemPulse {
+  from { box-shadow: 0 0 28px rgba(250, 204, 21, 0.75); }
+  to { box-shadow: 0 0 46px rgba(249, 115, 22, 1.0); }
+}
+
+.tandem-glow .drift-text {
+  color: #fef08a !important;
+  text-shadow: 0 0 22px #facc15, 0 0 40px #f97316 !important;
+}
+
 /* MINIMAP & DRIFT BANNER */
 .minimap-card {
   margin-left: auto;

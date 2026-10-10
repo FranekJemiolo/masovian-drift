@@ -720,10 +720,19 @@ export class HUD {
     if (playerState.isDrifting && playerState.speedKmh > 22) {
       this.driftCardEl.classList.add('drifting-flame');
       this.driftBannerEl.classList.add('active');
-      const driftMultiplier = (1.0 + playerState.speedKmh / 80).toFixed(1);
-      this.driftBannerEl.textContent = `🔥 DRIFT x${driftMultiplier}! +${playerState.driftScore} PTS`;
+
+      if (playerState.tandemMultiplier && playerState.tandemMultiplier > 1.0) {
+        this.driftCardEl.classList.add('tandem-glow');
+        const proxStr = playerState.tandemDistance ? `${playerState.tandemDistance.toFixed(1)}m` : 'DOOR-TO-DOOR';
+        this.driftBannerEl.textContent = `⚡ TANDEM DRIFT x${playerState.tandemMultiplier.toFixed(1)}! (${proxStr}) 🔥 +${playerState.driftScore} PTS`;
+      } else {
+        this.driftCardEl.classList.remove('tandem-glow');
+        const driftMultiplier = (1.0 + playerState.speedKmh / 80).toFixed(1);
+        this.driftBannerEl.textContent = `🔥 DRIFT x${driftMultiplier}! +${playerState.driftScore} PTS`;
+      }
     } else {
       this.driftCardEl.classList.remove('drifting-flame');
+      this.driftCardEl.classList.remove('tandem-glow');
       this.driftBannerEl.classList.remove('active');
     }
 

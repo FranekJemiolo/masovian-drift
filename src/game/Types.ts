@@ -21,6 +21,8 @@ export interface VehicleState {
   driftScore: number;
   isWrongWay?: boolean;
   deltaBestLap?: number;
+  tandemMultiplier?: number;
+  tandemDistance?: number;
   damage: VehicleDamage;
   weightTransfer: WeightTransferState;
   lap: number;

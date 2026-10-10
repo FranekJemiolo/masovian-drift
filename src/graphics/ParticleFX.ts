@@ -30,6 +30,18 @@ interface SkidSegment {
   opacity: number;
 }
 
+interface VoxelDebrisParticle {
+  active: boolean;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  angularVelocity: THREE.Vector3;
+  rotation: THREE.Euler;
+  scale: number;
+  life: number;
+  maxLife: number;
+  color: THREE.Color;
+}
+
 export class ParticleFX {
   private scene: THREE.Scene;
   private rng = new PRNG(9876);
@@ -61,6 +73,13 @@ export class ParticleFX {
   private skidMesh: THREE.InstancedMesh;
   private skidDummy = new THREE.Object3D();
   private nextSkidIdx = 0;
+
+  // 5. Volumetric Voxel Debris (Instanced Blocks)
+  private maxDebris = 64;
+  private debrisParticles: VoxelDebrisParticle[] = [];
+  private debrisMesh: THREE.InstancedMesh;
+  private debrisDummy = new THREE.Object3D();
+  private debrisMat: THREE.MeshStandardMaterial;
 
   // Static scratch vectors for tire positions (P1)
   private static readonly _scratchTireL = new THREE.Vector3();
@@ -177,6 +196,36 @@ export class ParticleFX {
       this.skidMesh.setMatrixAt(i, this.skidDummy.matrix);
     }
     this.skidMesh.instanceMatrix.needsUpdate = true;
+
+    // --- Voxel Debris Blocks ---
+    const debrisGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
+    this.debrisMat = new THREE.MeshStandardMaterial({
+      color: 0x785637,
+      roughness: 0.85,
+      flatShading: true,
+    });
+    this.debrisMesh = new THREE.InstancedMesh(debrisGeo, this.debrisMat, this.maxDebris);
+    this.debrisMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(this.debrisMesh);
+
+    for (let i = 0; i < this.maxDebris; i++) {
+      this.debrisParticles.push({
+        active: false,
+        position: new THREE.Vector3(),
+        velocity: new THREE.Vector3(),
+        angularVelocity: new THREE.Vector3(),
+        rotation: new THREE.Euler(),
+        scale: 0.24,
+        life: 0,
+        maxLife: 1.5,
+        color: new THREE.Color(0x785637),
+      });
+      this.debrisDummy.position.set(0, -999, 0);
+      this.debrisDummy.scale.set(0, 0, 0);
+      this.debrisDummy.updateMatrix();
+      this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+    }
+    this.debrisMesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -287,11 +336,47 @@ export class ParticleFX {
   }
 
   /**
+   * Spawns physical volumetric voxel debris blocks (fences, timber, body parts)
+   */
+  public emitVoxelDebris(pos: THREE.Vector3, dir: THREE.Vector3, count = 8, colorHex?: number): void {
+    for (let c = 0; c < count; c++) {
+      const db = this.debrisParticles.find((d) => !d.active);
+      if (!db) break;
+
+      db.active = true;
+      db.position.copy(pos).add(new THREE.Vector3(
+        (this.rng.next() - 0.5) * 0.45,
+        0.25 + this.rng.next() * 0.35,
+        (this.rng.next() - 0.5) * 0.45
+      ));
+      db.velocity.set(
+        dir.x * 0.35 + (this.rng.next() - 0.5) * 7.5,
+        2.5 + this.rng.next() * 5.0,
+        dir.z * 0.35 + (this.rng.next() - 0.5) * 7.5
+      );
+      db.angularVelocity.set(
+        (this.rng.next() - 0.5) * 14.0,
+        (this.rng.next() - 0.5) * 14.0,
+        (this.rng.next() - 0.5) * 14.0
+      );
+      db.scale = 0.75 + this.rng.next() * 0.5;
+      db.life = 0;
+      db.maxLife = 1.2 + this.rng.next() * 0.9;
+      if (colorHex) db.color.setHex(colorHex);
+    }
+  }
+
+  /**
    * Update particle positions and animation each frame
    */
   public update(delta: number, vehicles: VehiclePhysics[]): void {
-    // 1. Process vehicle smoke / skid emissions
+    // 1. Process vehicle smoke / skid emissions & impact debris
     for (const v of vehicles) {
+      if (v.justCrashed > 0) {
+        this.emitVoxelDebris(v.position, v.velocity, Math.floor(v.justCrashed * 10) + 4);
+        this.emitSparks(v.position, v.velocity, 6);
+      }
+
       const isDrifting = v.isDrifting || Math.abs(v.slipAngle) > 0.16;
       const isSlipping = v.speedKmh > 18 && (isDrifting || v.weightTransfer.rearLeftLoad < 0.1);
 
@@ -387,10 +472,50 @@ export class ParticleFX {
       this.flameMeshR.visible = false;
       this.flameLight.intensity = 0;
     }
+
+    // 5. Animate volumetric voxel debris particles
+    for (let i = 0; i < this.maxDebris; i++) {
+      const db = this.debrisParticles[i];
+      if (!db.active) continue;
+
+      db.life += delta;
+      if (db.life >= db.maxLife) {
+        db.active = false;
+        this.debrisDummy.position.set(0, -999, 0);
+        this.debrisDummy.scale.set(0, 0, 0);
+        this.debrisDummy.updateMatrix();
+        this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+        continue;
+      }
+
+      // Gravity integration
+      db.velocity.y -= 11.5 * delta;
+      db.position.addScaledVector(db.velocity, delta);
+
+      // Floor bounce & friction
+      if (db.position.y < 0.35) {
+        db.position.y = 0.35;
+        db.velocity.y = -db.velocity.y * 0.38;
+        db.velocity.x *= 0.78;
+        db.velocity.z *= 0.78;
+        db.angularVelocity.multiplyScalar(0.75);
+      }
+
+      db.rotation.x += db.angularVelocity.x * delta;
+      db.rotation.y += db.angularVelocity.y * delta;
+      db.rotation.z += db.angularVelocity.z * delta;
+
+      this.debrisDummy.position.copy(db.position);
+      this.debrisDummy.rotation.copy(db.rotation);
+      this.debrisDummy.scale.set(db.scale, db.scale, db.scale);
+      this.debrisDummy.updateMatrix();
+      this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+    }
+    this.debrisMesh.instanceMatrix.needsUpdate = true;
   }
 
   /**
-   * M3: Comprehensive FX restart - removes leftover skidmarks, smoke, sparks, and flames
+   * M3: Comprehensive FX restart - removes leftover skidmarks, smoke, sparks, flames, and debris
    */
   public reset(): void {
     // Clear smoke
@@ -429,5 +554,15 @@ export class ParticleFX {
     this.flameMeshL.visible = false;
     this.flameMeshR.visible = false;
     this.flameLight.intensity = 0;
+
+    // Clear voxel debris
+    for (let i = 0; i < this.maxDebris; i++) {
+      this.debrisParticles[i].active = false;
+      this.debrisDummy.position.set(0, -999, 0);
+      this.debrisDummy.scale.set(0, 0, 0);
+      this.debrisDummy.updateMatrix();
+      this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+    }
+    this.debrisMesh.instanceMatrix.needsUpdate = true;
   }
 }

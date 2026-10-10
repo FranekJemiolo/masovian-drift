@@ -68,6 +68,51 @@ export class StateSync {
   }
 
   /**
+   * Evaluates Tandem Drift proximity, angle alignment, and scoring multiplier
+   * between Leader and Chaser vehicles (P2P multiplayer and AI tandems)
+   */
+  public static evaluateTandemDrift(
+    leaderPos: THREE.Vector3,
+    leaderQuat: THREE.Quaternion,
+    leaderDrifting: boolean,
+    chaserPos: THREE.Vector3,
+    chaserQuat: THREE.Quaternion,
+    chaserDrifting: boolean
+  ): { isTandem: boolean; proximityMeters: number; angleDiffDeg: number; multiplier: number } {
+    if (!leaderDrifting || !chaserDrifting) {
+      return { isTandem: false, proximityMeters: Infinity, angleDiffDeg: 180, multiplier: 1.0 };
+    }
+
+    const dist = leaderPos.distanceTo(chaserPos);
+    if (dist > 8.0) {
+      return { isTandem: false, proximityMeters: dist, angleDiffDeg: 180, multiplier: 1.0 };
+    }
+
+    // Measure heading vector alignment
+    const vFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(leaderQuat);
+    const cFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(chaserQuat);
+    const dot = Math.max(-1, Math.min(1, vFwd.dot(cFwd)));
+    const angleDiffDeg = Math.acos(dot) * (180 / Math.PI);
+
+    // Tandem requires heading alignment within 38 degrees
+    if (angleDiffDeg > 38.0) {
+      return { isTandem: false, proximityMeters: dist, angleDiffDeg, multiplier: 1.0 };
+    }
+
+    // Proximity yields multiplier: door-to-door (<3.0m) = 3.5x, close (<5.0m) = 2.5x, chased = 1.75x
+    let mult = 1.75;
+    if (dist < 3.0) mult = 3.5;
+    else if (dist < 5.0) mult = 2.5;
+
+    return {
+      isTandem: true,
+      proximityMeters: dist,
+      angleDiffDeg,
+      multiplier: mult,
+    };
+  }
+
+  /**
    * Deserializes a 72-byte ArrayBuffer back into NetworkVehicleFrame
    */
   public static deserializeState(buffer: ArrayBuffer): NetworkVehicleFrame {

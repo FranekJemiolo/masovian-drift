@@ -83,6 +83,8 @@ export class VehiclePhysics {
   public bestLapTime = Infinity;
   public raceFinished = false;
   public raceRank = 1;
+  public tandemMultiplier = 1.0;
+  public tandemDistance = Infinity;
 
   // Surface & Kerb geometry tracking (M1)
   public currentSurface: 'asphalt' | 'gravel' | 'sand' | 'kerb' | 'grass' = 'asphalt';
@@ -533,7 +535,7 @@ export class VehiclePhysics {
     if (Math.abs(this.slipAngle) > driftThreshold && this.speedKmh > 22.0) {
       this.isDrifting = true;
       this.driftDuration += dt;
-      const scoreGain = Math.floor(Math.abs(this.slipAngle) * (this.speedKmh / 20) * dt * 250);
+      const scoreGain = Math.floor(Math.abs(this.slipAngle) * (this.speedKmh / 20) * dt * 250 * this.tandemMultiplier);
       this.driftScore += scoreGain;
     } else {
       this.isDrifting = false;
@@ -844,6 +846,8 @@ export class VehiclePhysics {
       driftScore: this.driftScore,
       isWrongWay: this.isWrongWay,
       deltaBestLap: Number.isFinite(this.bestLapTime) ? this.currentLapTime - this.bestLapTime : undefined,
+      tandemMultiplier: this.tandemMultiplier,
+      tandemDistance: Number.isFinite(this.tandemDistance) ? this.tandemDistance : undefined,
       damage: { ...this.damage },
       weightTransfer: { ...this.weightTransfer },
       lap: this.currentLap,
