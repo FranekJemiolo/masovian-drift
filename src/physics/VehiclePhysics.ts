@@ -4,12 +4,14 @@ import { VehicleDamage, VehicleSpecs, VehicleState, WeightTransferState } from '
 import { CarVisualElements } from '../graphics/VoxelCarBuilder';
 import { Waypoint } from './TrackWaypoints';
 import { PRNG } from '../utils/PRNG';
+import { TireThermalModel } from './TireThermalModel';
 
 export interface VehicleInputs {
   throttle: number; // 0.0 to 1.0
   brake: number;    // 0.0 to 1.0
   steer: number;    // -1.0 to 1.0
   handbrake: boolean;
+  clutch?: boolean;
 }
 
 export class VehiclePhysics {
@@ -24,6 +26,20 @@ export class VehiclePhysics {
   public specs: VehicleSpecs;
   public damage: VehicleDamage;
   public justCrashed = 0;
+
+  // 3-Zone Thermal Tire Simulation
+  public tireThermals: TireThermalModel[] = [
+    new TireThermalModel(),
+    new TireThermalModel(),
+    new TireThermalModel(),
+    new TireThermalModel(),
+  ];
+  public justBackfired = false;
+  public clutchKicked = false;
+  public clutchDisengaged = false;
+  private prevClutch = false;
+  private clutchKickImpulseTimer = 0;
+  private lastHighRpmTime = 0;
 
   // Kinematic state
   public position = new THREE.Vector3();
@@ -437,7 +453,7 @@ export class VehiclePhysics {
     const rearNormalN = totalWeightN * dynamicRearBias;
 
     // Tire grip limits (governed by normal force * surface friction)
-    const frontMaxGrip = frontNormalN * surfaceGrip * 1.35;
+    let frontMaxGrip = frontNormalN * surfaceGrip * 1.35;
     let rearMaxGrip = rearNormalN * surfaceGrip * 1.45;
 
     // Handbrake breaks rear traction immediately
@@ -456,9 +472,32 @@ export class VehiclePhysics {
       rearMaxGrip *= 0.65; // Massive lift-off / trail-braking oversteer!
     }
 
+    // Clutch-Kick & Drivetrain Decoupling Mechanics (M1, Initial D / CarX)
+    const isClutch = !!inputs.clutch;
+    if (isClutch) {
+      this.clutchDisengaged = true;
+      if (inputs.throttle > 0.05) {
+        this.rpm = Math.min(this.specs.maxRpm, this.rpm + inputs.throttle * 7500.0 * dt);
+      }
+    } else {
+      if (this.prevClutch && this.rpm > 5000) {
+        this.clutchKicked = true;
+        this.clutchKickImpulseTimer = 0.12;
+      }
+      this.clutchDisengaged = false;
+    }
+    this.prevClutch = isClutch;
+
+    if (this.clutchKickImpulseTimer > 0) {
+      this.clutchKickImpulseTimer -= dt;
+      if (this.clutchKickImpulseTimer <= 0) {
+        this.clutchKicked = false;
+      }
+    }
+
     // Drive Force (RWD rear wheels only, authentic Boxer torque curve - M9)
     let driveForceN = 0;
-    if (inputs.throttle > 0) {
+    if (inputs.throttle > 0 && !this.clutchDisengaged) {
       const gearRatio = this.specs.gearRatios[Math.max(1, this.currentGear)];
 
       // Realistic Flat-6 Boxer Torque Curve (M9)
@@ -488,10 +527,47 @@ export class VehiclePhysics {
       const tireRadius = 0.32;
       driveForceN = (wheelTorque / tireRadius);
 
+      // Clutch-Kick instantaneous torque shock breaks rear tire adhesion
+      if (this.clutchKicked) {
+        driveForceN += 14000.0;
+      }
+
       // Tire traction limit (rear axle)
       if (driveForceN > rearMaxGrip * 1.6) {
         driveForceN = rearMaxGrip * 1.6; // Wheelspin!
       }
+    }
+
+    // 3-Zone Thermal Tire Simulation (Updates FL, FR, RL, RR)
+    const slipSpeed = Math.abs(lateralSpeed);
+    const carSpeedMs = Math.abs(forwardSpeed);
+    const isSliding = Math.abs(this.slipAngle) > 0.12 || this.isDrifting;
+
+    const tFL = this.tireThermals[0].update(frontNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
+    const tFR = this.tireThermals[1].update(frontNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
+    const tRL = this.tireThermals[2].update(rearNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
+    const tRR = this.tireThermals[3].update(rearNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
+
+    frontMaxGrip *= (tFL.gripMultiplier + tFR.gripMultiplier) * 0.5;
+    rearMaxGrip *= (tRL.gripMultiplier + tRR.gripMultiplier) * 0.5;
+
+    // Gutter-Hooking (Mizo Otoshi): concrete drainage canal suction along pine forest curves
+    if (this.isOnKerb && Math.abs(this.slipAngle) > 0.08 && this.speedKmh > 32.0) {
+      const turnDir = Math.sign(this.steerAngle || this.slipAngle);
+      const suctionImpulse = right.clone().multiplyScalar(-turnDir * this.specs.mass * 3.8 * dt);
+      this.rigidBody.applyImpulse({ x: suctionImpulse.x, y: 0, z: suctionImpulse.z }, true);
+    }
+
+    // Exhaust backfire popping on throttle lift or rev-limiter bounces
+    if (this.rpm > 5500) {
+      this.lastHighRpmTime = performance.now();
+    }
+    this.justBackfired = false;
+    if (inputs.throttle < 0.1 && (performance.now() - this.lastHighRpmTime < 180) && this.speedKmh > 30.0) {
+      this.justBackfired = true;
+      this.lastHighRpmTime = 0;
+    } else if (this.rpm >= 7180) {
+      this.justBackfired = Math.random() < 0.28;
     }
 
     // Braking Force (60% front, 40% rear bias)
@@ -848,6 +924,9 @@ export class VehiclePhysics {
       deltaBestLap: Number.isFinite(this.bestLapTime) ? this.currentLapTime - this.bestLapTime : undefined,
       tandemMultiplier: this.tandemMultiplier,
       tandemDistance: Number.isFinite(this.tandemDistance) ? this.tandemDistance : undefined,
+      tireTemps: this.tireThermals.map((t) => Math.round(t.surfaceTemp)),
+      justBackfired: this.justBackfired,
+      clutchKicked: this.clutchKicked,
       damage: { ...this.damage },
       weightTransfer: { ...this.weightTransfer },
       lap: this.currentLap,

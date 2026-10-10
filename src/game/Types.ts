@@ -23,6 +23,9 @@ export interface VehicleState {
   deltaBestLap?: number;
   tandemMultiplier?: number;
   tandemDistance?: number;
+  tireTemps?: number[]; // [FL, FR, RL, RR] in Celsius
+  justBackfired?: boolean;
+  clutchKicked?: boolean;
   damage: VehicleDamage;
   weightTransfer: WeightTransferState;
   lap: number;

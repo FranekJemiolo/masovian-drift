@@ -68,7 +68,19 @@ async function captureScreenshots() {
     await page.screenshot({ path: driftPath });
     console.log(`✓ Saved gameplay drift screenshot to ${driftPath}`);
 
+    // 4. Sector Splits & Tire Thermals Telemetry Screenshot
+    console.log('[SCREENSHOTS] Triggering sector split and clutch kick telemetry shot...');
+    await page.evaluate(() => {
+      window._gameManager.hud.showSectorSplit('⏱️ SECTOR 1: -0.245s (PB PACE)', true);
+    });
+    await page.waitForTimeout(500);
+
+    const telemetryPath = path.join(SCREENSHOT_DIR, 'telemetry_thermals.png');
+    await page.screenshot({ path: telemetryPath });
+    console.log(`✓ Saved telemetry & thermals screenshot to ${telemetryPath}`);
+
     await page.keyboard.up('KeyW');
+    await page.keyboard.up('KeyA');
     await page.keyboard.up('KeyD');
     console.log('✓ All screenshots updated successfully!');
   } catch (err) {

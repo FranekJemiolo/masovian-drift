@@ -105,6 +105,7 @@ export class InputManager {
     let brake = 0;
     let steer = 0;
     let handbrake = false;
+    let clutch = false;
 
     // Keyboard inputs (WASD or Arrow keys)
     if (this.keys['KeyW'] || this.keys['ArrowUp'] || this.keys['w']) throttle = 1.0;
@@ -112,6 +113,7 @@ export class InputManager {
     if (this.keys['KeyA'] || this.keys['ArrowLeft'] || this.keys['a']) steer -= 1.0;
     if (this.keys['KeyD'] || this.keys['ArrowRight'] || this.keys['d']) steer += 1.0;
     if (this.keys['Space'] || this.keys[' ']) handbrake = true;
+    if (this.keys['KeyC'] || this.keys['c']) clutch = true;
 
     // Mobile Gyroscope tilt override
     if (this.gyroActive && Math.abs(this.filteredGamma) > 1.5) {
@@ -141,7 +143,8 @@ export class InputManager {
         }
         if (pad.buttons[14]?.pressed) steer -= 1.0;
         if (pad.buttons[15]?.pressed) steer += 1.0;
-        if (pad.buttons[2]?.pressed || pad.buttons[4]?.pressed) handbrake = true;
+        if (pad.buttons[2]?.pressed) handbrake = true;
+        if (pad.buttons[4]?.pressed) clutch = true; // Left bumper (LB)
       }
     } catch (_) {}
 
@@ -150,6 +153,7 @@ export class InputManager {
       brake: Math.min(1.0, Math.max(0, brake)),
       steer: Math.min(1.0, Math.max(-1.0, steer)),
       handbrake,
+      clutch,
     };
   }
 
@@ -216,5 +220,9 @@ export class InputManager {
   public isKeyJustPressed(code: string): boolean {
     const isPressed = !!this.keys[code];
     return isPressed;
+  }
+
+  public isKeyPressed(code: string): boolean {
+    return !!this.keys[code];
   }
 }

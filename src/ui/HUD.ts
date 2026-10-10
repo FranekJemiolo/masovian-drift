@@ -34,6 +34,7 @@ export class HUD {
   private driftScoreEl!: HTMLElement;
   private driftCardEl!: HTMLElement;
   private driftBannerEl!: HTMLElement;
+  private sectorBannerEl!: HTMLElement;
   private deltaEl!: HTMLElement;
   private wrongWayEl!: HTMLElement;
   private damageEl!: HTMLElement;
@@ -134,6 +135,9 @@ export class HUD {
       <!-- DYNAMIC DRIFT CELEBRATION BANNER -->
       <div id="hud-drift-banner" class="hud-drift-banner">🔥 MASOVIAN DRIFT!</div>
 
+      <!-- SECTOR SPLIT & REWIND BANNER -->
+      <div id="hud-sector-banner" class="hud-drift-banner" style="display: none; top: 18%;"></div>
+
       <!-- WRONG-WAY WARNING BANNER (U10) -->
       <div id="hud-wrong-way" class="hud-wrong-way-banner" style="display: none;">↩ WRONG WAY! ↩</div>
 
@@ -147,7 +151,7 @@ export class HUD {
         <!-- 4-Point Dynamic Weight Transfer Telemetry -->
         <div class="telemetry-card hud-glass">
           <div class="hud-card-header">
-            <span class="hud-label">4-POINT SUSPENSION LOAD</span>
+            <span class="hud-label">4-POINT SUSPENSION LOAD & TIRE THERMALS</span>
             <span id="hud-bias-tag" class="bias-tag">40F / 60R</span>
           </div>
           <div class="chassis-diagram">
@@ -181,11 +185,12 @@ export class HUD {
 
         <!-- Sleek Keyboard & Gamepad Control Helper Pill -->
         <div class="controls-pill hud-glass">
-          <span class="ctrl-unit"><kbd>W</kbd><kbd>S</kbd> Throttle/Brake</span>
+          <span class="ctrl-unit"><kbd>W</kbd><kbd>S</kbd> Gas/Brake</span>
           <span class="ctrl-unit"><kbd>A</kbd><kbd>D</kbd> Steer</span>
           <span class="ctrl-unit"><kbd>SPACE</kbd> Drift</span>
-          <span class="ctrl-unit"><kbd>C</kbd> Camera</span>
-          <span class="ctrl-unit"><kbd>R</kbd> Reset</span>
+          <span class="ctrl-unit"><kbd>C</kbd> Clutch-Kick</span>
+          <span class="ctrl-unit"><kbd>R</kbd> Rewind</span>
+          <span class="ctrl-unit"><kbd>K</kbd> Respawn</span>
           <span class="ctrl-unit"><kbd>ESC</kbd> Pause</span>
         </div>
 
@@ -362,6 +367,7 @@ export class HUD {
     this.driftScoreEl = this.container.querySelector('#hud-drift')!;
     this.driftCardEl = this.container.querySelector('#hud-drift-card')!;
     this.driftBannerEl = this.container.querySelector('#hud-drift-banner')!;
+    this.sectorBannerEl = this.container.querySelector('#hud-sector-banner')!;
     this.deltaEl = this.container.querySelector('#hud-delta')!;
     this.wrongWayEl = this.container.querySelector('#hud-wrong-way')!;
     this.damageEl = this.container.querySelector('#hud-damage-status')!;
@@ -730,6 +736,9 @@ export class HUD {
         const driftMultiplier = (1.0 + playerState.speedKmh / 80).toFixed(1);
         this.driftBannerEl.textContent = `🔥 DRIFT x${driftMultiplier}! +${playerState.driftScore} PTS`;
       }
+    } else if (playerState.clutchKicked) {
+      this.driftBannerEl.classList.add('active');
+      this.driftBannerEl.textContent = `⚡ CLUTCH-KICK! +TORQUE SHOCK`;
     } else {
       this.driftCardEl.classList.remove('drifting-flame');
       this.driftCardEl.classList.remove('tandem-glow');
@@ -743,7 +752,7 @@ export class HUD {
       this.renderMinimap(allVehicles, waypoints);
     }
 
-    // Weight transfer load telemetry
+    // Weight transfer load telemetry & 3-Zone Thermal Tire Coloring
     const wt = playerState.weightTransfer;
     const fPct = Math.round(wt.frontBias * 100);
     const rPct = 100 - fPct;
@@ -758,6 +767,19 @@ export class HUD {
     this.loadFREl.style.height = `${Math.min(100, Math.max(8, wt.frontRightLoad * 220))}%`;
     this.loadRLEl.style.height = `${Math.min(100, Math.max(8, wt.rearLeftLoad * 220))}%`;
     this.loadRREl.style.height = `${Math.min(100, Math.max(8, wt.rearRightLoad * 220))}%`;
+
+    // 3-Zone Thermal Tire Color feedback (FL, FR, RL, RR)
+    if (playerState.tireTemps && playerState.tireTemps.length === 4) {
+      const patchEls = [this.loadFLEl, this.loadFREl, this.loadRLEl, this.loadRREl];
+      for (let i = 0; i < 4; i++) {
+        const t = playerState.tireTemps[i];
+        let color = '#22c55e'; // optimal 55-105°C
+        if (t < 55) color = '#38bdf8'; // cold <55°C
+        else if (t > 118) color = '#ef4444'; // overheated >118°C
+        else if (t > 105) color = '#f59e0b'; // warm 105-118°C
+        patchEls[i].style.backgroundColor = color;
+      }
+    }
 
     // Highlight oversteer / unloaded rear
     if (wt.rearBias < 0.45 && Math.abs(playerState.steer) > 0.05) {
@@ -928,6 +950,29 @@ export class HUD {
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.restore();
+    }
+  }
+
+  public showSectorSplit(text: string, isAhead: boolean): void {
+    if (!this.sectorBannerEl) return;
+    this.sectorBannerEl.textContent = text;
+    this.sectorBannerEl.style.display = 'block';
+    this.sectorBannerEl.style.color = isAhead ? '#22c55e' : '#ef4444';
+    this.sectorBannerEl.style.borderColor = isAhead ? '#22c55e' : '#ef4444';
+    setTimeout(() => {
+      if (this.sectorBannerEl) this.sectorBannerEl.style.display = 'none';
+    }, 2800);
+  }
+
+  public setRewindActive(active: boolean): void {
+    if (!this.sectorBannerEl) return;
+    if (active) {
+      this.sectorBannerEl.textContent = '⏪ REWINDING TEMPORAL BUFFER (RELEASE R TO RESUME)';
+      this.sectorBannerEl.style.display = 'block';
+      this.sectorBannerEl.style.color = '#38bdf8';
+      this.sectorBannerEl.style.borderColor = '#38bdf8';
+    } else {
+      this.sectorBannerEl.style.display = 'none';
     }
   }
 }

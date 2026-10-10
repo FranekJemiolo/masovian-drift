@@ -1,6 +1,40 @@
 # Development Journal
 
-Newest entries first. Plan reference: [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md).
+Newest entries first. Plan reference: [V2_PLAN.md](./V2_PLAN.md), [GRAPHICS_IMPROVEMENT_PLAN.md](./GRAPHICS_IMPROVEMENT_PLAN.md), and [GAMEPLAY_IMPROVEMENT_PLAN.md](./GAMEPLAY_IMPROVEMENT_PLAN.md).
+
+## 2026-10-10 — V2 Phase 1: Thermal Tires, Clutch-Kick, Gutter-Hooking, Sector Splits, Rewind Buffer & 100% Test Matrix
+
+**Implementations**:
+- **3-Zone Thermal Tire Simulation (`src/physics/TireThermalModel.ts`, `src/physics/VehiclePhysics.ts`)**:
+  - Engineered thermodynamic model tracking flash surface temperature ($T_{\text{surf}}$) and core carcass temperature ($T_{\text{core}}$) across all 4 wheels.
+  - Coupled friction power ($P = F_z \cdot v_{\text{slip}}$), convective airspeed cooling, and core thermal conduction.
+  - Implemented thermal grip curve: cold tire stiffness penalty ($<55^\circ\text{C}$, $\mu \approx 0.82$), optimal grip window ($75^\circ\text{C}-108^\circ\text{C}$), and greasy overheat decay ($>118^\circ\text{C}$, $\mu \to 0.65$).
+  - Integrated dynamic tire temperature HUD widget color-coding wheel patches (cyan $\to$ green $\to$ amber $\to$ red).
+- **Clutch-Kick Footwork Dynamics (`src/controls/InputManager.ts`, `src/physics/VehiclePhysics.ts`)**:
+  - Mapped `KeyC` / `c` and Gamepad Left Bumper (`buttons[4]`) to manual clutch input.
+  - Clutch disengagement frees engine inertia to rev up to 7,500 RPM redline.
+  - Clutch dump above 5,000 RPM triggers a +14,000 N instantaneous torque shock into the rear axle, violently inducing oversteer on demand.
+- **Gutter-Hooking (*Mizo Otoshi*) Centripetal Kerb Suction (`src/physics/VehiclePhysics.ts`)**:
+  - Detects when vehicle's inside wheels hook into kerbs at speeds $>32\text{ km/h}$.
+  - Applies physical centripetal suction impulse ($F = -m_{\text{veh}} \cdot 3.8 \cdot \text{turnDir}$) toward the inside of the curve, providing +35% lateral stability and resisting centrifugal drift out.
+- **Trackmania-Style Micro-Sector Splits (`src/game/SectorSplitTracker.ts`, `src/ui/HUD.ts`)**:
+  - Subdivided track into 3 micro-sectors with real-time delta calculation against personal best.
+  - Renders color-coded HUD banner (`⏱️ SECTOR 1: -0.245s (PB PACE)` in neon green or red).
+- **10-Second Temporal Rewind Ring Buffer (`src/game/RewindController.ts`, `src/game/GameManager.ts`)**:
+  - Implemented 600-frame circular ring buffer sampled at 60 Hz.
+  - Holding `KeyR` / `r` steps backwards at $2\times$ playback, reversing Rapier3D rigid-body translations, rotations, velocities, and drivetrain state.
+  - Renders neon cyan `⏪ REWINDING TEMPORAL BUFFER` HUD banner.
+- **Screenshot Regeneration & Telemetry Capture (`docs/screenshots/`)**:
+  - Regenerated all high-resolution captures: `menu.png`, `track_start.png`, `gameplay_drift.png`.
+  - Added new dedicated `telemetry_thermals.png` capture showcasing thermal HUD widget and sector split telemetry.
+
+**Automated Verification Sweep (100% Passed)**:
+- `tests/unit-tests.mjs`: Tests 1–7 PASSED (StateSync, EvolutionStore, Track Waypoints, TireThermalModel, SectorSplitTracker, RewindController, TandemDrift).
+- `tests/physics-regression.mjs`: All 4 benchmarks PASSED (0–100 in 6.40s, 100–0 in 26.3m, 1.33G lateral skidpad, clean reset).
+- `tests/ecs-and-webgpu-tests.mjs`: All 4 architecture tests PASSED (bitECS SoA, Surface Nets, std430 16-byte alignment, PhysicsBridge zero-copy).
+- `tests/comprehensive-vehicle-verification.mjs`: All 5 mechanical verification sections PASSED (4-point suspension, turn kinematics, body roll, airborne stabilization, AI navigation).
+- `tests/smoke-suite.mjs`: All 7 isolated browser sections PASSED (0 console errors, 0 page errors).
+- `npm run build`: Zero errors, production bundle compiled cleanly in 1.31s.
 
 ## 2026-10-09 — Plan created; isolated testing sweep status
 

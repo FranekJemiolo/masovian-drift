@@ -21,6 +21,8 @@ import { GameMode, VehicleState } from './Types';
 import { PRNG } from '../utils/PRNG';
 import { ECSWorldManager } from '../ecs/World';
 import { ECSPipeline } from '../ecs/ECSPipeline';
+import { SectorSplitTracker } from './SectorSplitTracker';
+import { RewindController } from './RewindController';
 
 interface GhostSample {
   time: number;
@@ -62,6 +64,8 @@ export class GameManager {
   private recordedGhostLap: GhostRecording | null = null;
   private currentLapGhostSamples: GhostSample[] = [];
   private ghostSampleTimer = 0;
+  private sectorSplitTracker = new SectorSplitTracker();
+  private rewindController = new RewindController();
 
   // Vehicles
   private playerVehicle!: VehiclePhysics;
@@ -750,6 +754,56 @@ export class GameManager {
               this.updateTimeTrialGhost(dt);
             }
 
+            // Micro-Sector Split Delta Tracking (Trackmania-style)
+            const splitEvent = this.sectorSplitTracker.update(
+              this.playerVehicle.currentCheckpointIndex,
+              this.playerVehicle.currentLapTime
+            );
+            if (splitEvent) {
+              const sign = splitEvent.splitDelta <= 0 ? '-' : '+';
+              const deltaStr = `${sign}${Math.abs(splitEvent.splitDelta).toFixed(3)}s`;
+              this.hud.showSectorSplit(`⏱️ SECTOR ${splitEvent.sectorIndex}: ${deltaStr}`, splitEvent.isAhead);
+            }
+
+            // 10-Second Temporal Rewind Subsystem (KeyR)
+            const isHoldingR = this.inputManager.isKeyPressed('KeyR') || this.inputManager.isKeyPressed('r');
+            if (isHoldingR) {
+              if (!this.rewindController.isRewinding) {
+                this.rewindController.startRewind();
+              }
+              const restored = this.rewindController.stepRewind(2);
+              if (restored) {
+                this.playerVehicle.position.set(restored.position[0], restored.position[1], restored.position[2]);
+                this.playerVehicle.quaternion.set(restored.quaternion[0], restored.quaternion[1], restored.quaternion[2], restored.quaternion[3]);
+                this.playerVehicle.rigidBody.setTranslation({ x: restored.position[0], y: restored.position[1], z: restored.position[2] }, true);
+                this.playerVehicle.rigidBody.setRotation({ x: restored.quaternion[0], y: restored.quaternion[1], z: restored.quaternion[2], w: restored.quaternion[3] }, true);
+                this.playerVehicle.rigidBody.setLinvel({ x: restored.velocity[0], y: restored.velocity[1], z: restored.velocity[2] }, true);
+                this.playerVehicle.rigidBody.setAngvel({ x: restored.angularVelocity[0], y: restored.angularVelocity[1], z: restored.angularVelocity[2] }, true);
+                this.playerVehicle.speedKmh = restored.speedKmh;
+                this.playerVehicle.rpm = restored.rpm;
+                this.hud.setRewindActive(true);
+              }
+            } else {
+              if (this.rewindController.isRewinding) {
+                this.rewindController.stopRewind();
+                this.hud.setRewindActive(false);
+              }
+              this.rewindController.pushFrame({
+                position: [this.playerVehicle.position.x, this.playerVehicle.position.y, this.playerVehicle.position.z],
+                quaternion: [this.playerVehicle.quaternion.x, this.playerVehicle.quaternion.y, this.playerVehicle.quaternion.z, this.playerVehicle.quaternion.w],
+                velocity: [this.playerVehicle.velocity.x, this.playerVehicle.velocity.y, this.playerVehicle.velocity.z],
+                angularVelocity: [this.playerVehicle.angularVelocity.x, this.playerVehicle.angularVelocity.y, this.playerVehicle.angularVelocity.z],
+                speedKmh: this.playerVehicle.speedKmh,
+                rpm: this.playerVehicle.rpm,
+                gear: this.playerVehicle.currentGear,
+                steer: this.playerVehicle.steerAngle,
+                throttle: p1Inputs.throttle,
+                brake: p1Inputs.brake,
+                driftScore: this.playerVehicle.driftScore,
+                slipAngle: this.playerVehicle.slipAngle,
+              });
+            }
+
             this.updateRaceProgression(dt);
             for (const v of this.allVehicles) {
               this.checkVehicleRecovery(v, dt);
@@ -838,9 +892,9 @@ export class GameManager {
         this.playerVehicle.speedKmh
       );
 
-      // Exhaust backfire pop on high RPM throttle lift-off (M4 deterministic PRNG)
-      if (this.playerVehicle.rpm > 6200 && this.inputManager.getPlayerInputs().throttle < 0.1) {
-        if (PRNG.global.chance(0.25)) {
+      // Exhaust backfire pop on high RPM throttle lift-off (M4 deterministic PRNG) or justBackfired
+      if (this.playerVehicle.justBackfired || (this.playerVehicle.rpm > 6200 && this.inputManager.getPlayerInputs().throttle < 0.1)) {
+        if (this.playerVehicle.justBackfired || PRNG.global.chance(0.25)) {
           this.particleFX.triggerBackfire(this.playerVehicle.visual.exhaustPipes, this.playerVehicle.visual.root);
           this.audioManager.playBackfire();
         }

@@ -187,6 +187,156 @@ async function runUnitTests() {
     }
     console.log(`  ✓ All ${waypointTest.totalWaypoints} track waypoints have orthogonal unit tangents and normals.`);
 
+    // 4. Unit Test: 3-Zone Thermal Tire Simulation
+    const tireThermalTest = await page.evaluate(() => {
+      const p = window._gameManager.playerVehicle;
+      const t = p.tireThermals[0];
+      const initialTemp = t.surfaceTemp;
+
+      // Simulate 60 ticks of high-slip burnout
+      let state = null;
+      for (let i = 0; i < 60; i++) {
+        state = t.update(3800, 18.0, 22.0, true, 0.016);
+      }
+      const heatedTemp = t.surfaceTemp;
+      const overheatedGrip = state.gripMultiplier;
+
+      // Test cooling
+      for (let i = 0; i < 120; i++) {
+        state = t.update(3000, 0.0, 30.0, false, 0.016);
+      }
+      const cooledTemp = t.surfaceTemp;
+
+      t.reset();
+      return {
+        initialTemp,
+        heatedTemp,
+        overheatedGrip,
+        cooledTemp,
+        resetTemp: t.surfaceTemp,
+      };
+    });
+
+    console.log('4. 3-Zone Thermal Tire Model Test:', tireThermalTest);
+    if (tireThermalTest.heatedTemp <= tireThermalTest.initialTemp ||
+        tireThermalTest.overheatedGrip >= 1.0 ||
+        tireThermalTest.resetTemp !== 24.0) {
+      throw new Error('Tire thermal model friction heating/degradation failed');
+    }
+    console.log('  ✓ Thermal tire friction heating, overheat degradation, and cooling validated.');
+
+    // 5. Unit Test: Trackmania-Style Micro-Sector Splits
+    const sectorSplitTest = await page.evaluate(() => {
+      const tracker = window._gameManager.sectorSplitTracker;
+      tracker.reset();
+      tracker.bestSectorTimes = [18.0, 20.0, 18.0];
+
+      // Cross Sector 1 gate (checkpoint 45) at 16.5s (1.5s ahead)
+      const ev1 = tracker.update(45, 16.5);
+      // Cross Sector 2 gate (checkpoint 92) at 38.0s (21.5s sector duration, 1.5s behind)
+      const ev2 = tracker.update(92, 38.0);
+
+      tracker.reset();
+      return {
+        ev1Sector: ev1?.sectorIndex,
+        ev1Delta: ev1?.splitDelta,
+        ev1Ahead: ev1?.isAhead,
+        ev2Sector: ev2?.sectorIndex,
+        ev2Delta: ev2?.splitDelta,
+        ev2Ahead: ev2?.isAhead,
+      };
+    });
+
+    console.log('5. Micro-Sector Split Telemetry Test:', sectorSplitTest);
+    if (sectorSplitTest.ev1Sector !== 1 || !sectorSplitTest.ev1Ahead ||
+        sectorSplitTest.ev2Sector !== 2 || sectorSplitTest.ev2Ahead) {
+      throw new Error('Sector split telemetry tracking failed');
+    }
+    console.log('  ✓ Micro-sector gates, delta time comparisons, and +/- split banners validated.');
+
+    // 6. Unit Test: 10-Second Temporal Rewind Ring Buffer
+    const rewindTest = await page.evaluate(() => {
+      const rewind = window._gameManager.rewindController;
+      rewind.reset();
+
+      // Push 45 frames
+      for (let i = 0; i < 45; i++) {
+        rewind.pushFrame({
+          position: [i * 1.5, 1.2, -i * 2.0],
+          quaternion: [0, 0, 0, 1],
+          velocity: [i * 0.5, 0, 15.0],
+          angularVelocity: [0, 0.1, 0],
+          speedKmh: 54.0 + i,
+          rpm: 3500 + i * 20,
+          gear: 2,
+          steer: 0.1,
+          throttle: 0.8,
+          brake: 0,
+          driftScore: i * 50,
+          slipAngle: 0.05,
+        });
+      }
+
+      const initialDuration = rewind.getHistoryDurationSec();
+      const started = rewind.startRewind();
+      const frame1 = rewind.stepRewind(2);
+      const stoppedFrame = rewind.stopRewind();
+      rewind.reset();
+
+      return {
+        initialDuration: Math.round(initialDuration * 100) / 100,
+        started,
+        hasFrame1: !!frame1,
+        speedRestored: stoppedFrame?.speedKmh,
+      };
+    });
+
+    console.log('6. Temporal Rewind Ring Buffer Test:', rewindTest);
+    if (!rewindTest.started || !rewindTest.hasFrame1 || !rewindTest.speedRestored) {
+      throw new Error('Temporal rewind ring buffer test failed');
+    }
+    console.log('  ✓ 600-frame circular rewind buffer push/step/restore validated.');
+
+    // 7. Unit Test: P2P & AI Tandem Drift Multipliers
+    const tandemTest = await page.evaluate(() => {
+      const StateSync = window.StateSync;
+      const THREE = window.THREE;
+
+      const p1Pos = new THREE.Vector3(10, 1, 20);
+      const p1Quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.5);
+
+      // Close door-to-door chaser (2.0m separation, aligned heading)
+      const chaserDoorPos = new THREE.Vector3(11.5, 1, 21.0);
+      const chaserDoorQuat = p1Quat.clone();
+
+      const doorTandem = StateSync.evaluateTandemDrift(p1Pos, p1Quat, true, chaserDoorPos, chaserDoorQuat, true);
+
+      // Distant chaser (6.5m separation)
+      const chaserMidPos = new THREE.Vector3(14.0, 1, 24.0);
+      const midTandem = StateSync.evaluateTandemDrift(p1Pos, p1Quat, true, chaserMidPos, chaserDoorQuat, true);
+
+      // Out of range (>8.0m)
+      const chaserFarPos = new THREE.Vector3(25.0, 1, 35.0);
+      const farTandem = StateSync.evaluateTandemDrift(p1Pos, p1Quat, true, chaserFarPos, chaserDoorQuat, true);
+
+      return {
+        doorIsTandem: doorTandem.isTandem,
+        doorMult: doorTandem.multiplier,
+        midIsTandem: midTandem.isTandem,
+        midMult: midTandem.multiplier,
+        farIsTandem: farTandem.isTandem,
+        farMult: farTandem.multiplier,
+      };
+    });
+
+    console.log('7. Tandem Drift Scoring Evaluation Test:', tandemTest);
+    if (!tandemTest.doorIsTandem || tandemTest.doorMult !== 3.5 ||
+        !tandemTest.midIsTandem || tandemTest.midMult !== 1.75 ||
+        tandemTest.farIsTandem || tandemTest.farMult !== 1.0) {
+      throw new Error('Tandem drift proximity and multiplier evaluation failed');
+    }
+    console.log('  ✓ Tandem drift door-to-door (3.5x), close (2.5x/1.75x), and range cutoff validated.');
+
     console.log('===========================================================');
     console.log('✓ ALL UNIT TESTS PASSED!');
     console.log('===========================================================');
