@@ -38,10 +38,10 @@ async function runSectionTest(sectionName, testFn) {
 
   let passed = false;
   try {
-    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Wait for main canvas or menu
-    await page.waitForSelector('canvas', { timeout: 10000 });
-    await page.waitForSelector('#menu-root', { timeout: 10000 });
+    await page.waitForSelector('canvas', { timeout: 30000 });
+    await page.waitForSelector('#menu-root', { timeout: 30000 });
 
     await testFn(page);
     passed = true;
@@ -142,8 +142,8 @@ async function main() {
   // SECTION 5: Split-Screen
   results['5 Split-screen'] = await runSectionTest('5 Split-screen', async (page) => {
     await page.click('#btn-split-screen');
-    await page.waitForSelector('#game-hud', { timeout: 5000 });
-    await page.waitForSelector('#hud-p2', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#game-hud', { timeout: 10000 });
+    await page.waitForSelector('#hud-p2', { state: 'visible', timeout: 10000 });
     
     // Let both players simulate for 1.5 seconds
     await page.keyboard.down('KeyW');

@@ -81,8 +81,8 @@ export class FollowCamera {
         .addScaledVector(forwardFlat, -distBehind)
         .add(new THREE.Vector3(0, heightAbove, 0));
 
-      // Dynamic apex lookahead: lead camera gaze into corners based on lateral movement
-      const steerLead = THREE.MathUtils.clamp(lateralVel * 0.14, -2.6, 2.6);
+      // Dynamic apex lookahead: lead camera gaze INTO corners towards the apex
+      const steerLead = -THREE.MathUtils.clamp(lateralVel * 0.18, -3.2, 3.2);
       const lookLead = 14.0 + (speedKmh / 120.0) * 7.0;
 
       desiredLook.copy(targetPos)

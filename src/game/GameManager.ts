@@ -579,7 +579,8 @@ export class GameManager {
   private animate = (): void => {
     requestAnimationFrame(this.animate);
 
-    const delta = Math.min(this.clock.getDelta(), 0.05);
+    const rawDelta = this.clock.getDelta();
+    const delta = Math.min(rawDelta, 0.05);
 
     if (this.isRacing) {
       if (this.isPaused) {
@@ -593,7 +594,7 @@ export class GameManager {
 
       if (this.countdownRemaining > 0) {
         isCountingDown = true;
-        this.countdownRemaining -= delta;
+        this.countdownRemaining -= Math.min(rawDelta, 0.2);
         const currentStep = Math.ceil(this.countdownRemaining);
 
         // Procedural Audio Starting Beeps (3, 2, 1)
@@ -609,7 +610,7 @@ export class GameManager {
           this.hud.showCountdown('1');
         }
       } else if (this.countdownRemaining > -1.0) {
-        this.countdownRemaining -= delta;
+        this.countdownRemaining -= Math.min(rawDelta, 0.2);
         // GO! Chord
         if (prevStep >= 1 && Math.ceil(this.countdownRemaining) <= 0) {
           this.audioManager.playCountdownBeep(true);
@@ -624,7 +625,7 @@ export class GameManager {
         // Player 1 inputs
         let p1Inputs = this.inputManager.getPlayerInputs();
         if (isCountingDown) {
-          p1Inputs = { throttle: 0.35, brake: 1.0, steer: 0, handbrake: true };
+          p1Inputs = { throttle: 0.35, brake: 1.0, steer: p1Inputs.steer, handbrake: true };
         }
         this.playerVehicle.updatePhysics(p1Inputs, dt, this.waypoints);
 
@@ -632,7 +633,7 @@ export class GameManager {
         if (this.currentMode === 'split-screen' && this.p2Vehicle) {
           let p2Inputs = this.inputManager.getPlayer2Inputs();
           if (isCountingDown) {
-            p2Inputs = { throttle: 0.35, brake: 1.0, steer: 0, handbrake: true };
+            p2Inputs = { throttle: 0.35, brake: 1.0, steer: p2Inputs.steer, handbrake: true };
           }
           this.p2Vehicle.updatePhysics(p2Inputs, dt, this.waypoints);
         }

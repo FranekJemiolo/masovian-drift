@@ -42,10 +42,12 @@ export class InputManager {
   private setupKeyboardListeners(): void {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+      if (e.key) this.keys[e.key.toLowerCase()] = true;
     });
 
     window.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
+      if (e.key) this.keys[e.key.toLowerCase()] = false;
     });
   }
 
@@ -105,11 +107,11 @@ export class InputManager {
     let handbrake = false;
 
     // Keyboard inputs (WASD or Arrow keys)
-    if (this.keys['KeyW'] || this.keys['ArrowUp']) throttle = 1.0;
-    if (this.keys['KeyS'] || this.keys['ArrowDown']) brake = 1.0;
-    if (this.keys['KeyA'] || this.keys['ArrowLeft']) steer -= 1.0;
-    if (this.keys['KeyD'] || this.keys['ArrowRight']) steer += 1.0;
-    if (this.keys['Space']) handbrake = true;
+    if (this.keys['KeyW'] || this.keys['ArrowUp'] || this.keys['w']) throttle = 1.0;
+    if (this.keys['KeyS'] || this.keys['ArrowDown'] || this.keys['s']) brake = 1.0;
+    if (this.keys['KeyA'] || this.keys['ArrowLeft'] || this.keys['a']) steer -= 1.0;
+    if (this.keys['KeyD'] || this.keys['ArrowRight'] || this.keys['d']) steer += 1.0;
+    if (this.keys['Space'] || this.keys[' ']) handbrake = true;
 
     // Mobile Gyroscope tilt override
     if (this.gyroActive && Math.abs(this.filteredGamma) > 1.5) {

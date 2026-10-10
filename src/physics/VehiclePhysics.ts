@@ -54,10 +54,26 @@ export class VehiclePhysics {
     pitchAngle: 0,
   };
 
-  // Suspension parameters
+  // Raycast Vehicle Suspension parameters (Hooke's Law: F = -kx - cv)
+  private physicsWorld!: RAPIER.World;
   private readonly wheelbase = 2.4; // meters
   private readonly trackWidth = 1.55; // meters
   private readonly cogHeight = 0.42; // Center of gravity height
+  private readonly suspensionRestLen = 0.48;
+  private readonly suspensionMaxLen = 0.76;
+  private readonly springStiffnessFront = 28000;
+  private readonly springStiffnessRear = 38000;
+  private readonly damperCoeffFront = 2200;
+  private readonly damperCoeffRear = 2600;
+
+  private readonly wheelOffsets = [
+    new THREE.Vector3(-0.76, 0.32, 1.05),  // FL
+    new THREE.Vector3(0.76, 0.32, 1.05),   // FR
+    new THREE.Vector3(-0.80, 0.32, -1.05), // RL
+    new THREE.Vector3(0.80, 0.32, -1.05),  // RR
+  ];
+  public wheelCompressions = [0, 0, 0, 0];
+  public wheelGroundedCount = 4;
 
   // Race progression tracking
   private brakeRotorHeat = 0;
@@ -128,6 +144,7 @@ export class VehiclePhysics {
     spawnPos: THREE.Vector3,
     spawnQuat: THREE.Quaternion
   ): void {
+    this.physicsWorld = world;
     const rbDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(spawnPos.x, spawnPos.y + 0.45, spawnPos.z)
       .setRotation(new RAPIER.Quaternion(spawnQuat.x, spawnQuat.y, spawnQuat.z, spawnQuat.w))
@@ -137,12 +154,12 @@ export class VehiclePhysics {
 
     this.rigidBody = world.createRigidBody(rbDesc);
 
-    // Chassis collision box (centered with 60% rear weight bias)
-    // 0.0 friction on chassis collider so tire dynamics mathematically govern traction & lateral grip!
-    const colDesc = RAPIER.ColliderDesc.cuboid(0.85, 0.35, 1.95)
+    // Chassis collision box (raised with y-offset so bottom sits at y = -0.06, well above ground contact patch!)
+    const colDesc = RAPIER.ColliderDesc.cuboid(0.82, 0.28, 1.90)
+      .setTranslation(0, 0.22, 0)
       .setMass(this.specs.mass)
       .setFriction(0.0)
-      .setRestitution(0.08);
+      .setRestitution(0.05);
 
     this.position.copy(spawnPos);
     this.quaternion.copy(spawnQuat);
@@ -197,6 +214,94 @@ export class VehiclePhysics {
       this.justCrashed = 0;
     }
     this.lastVelocity.copy(this.velocity);
+
+    // 1b. FOUR-POINT RAYCAST VEHICLE SUSPENSION (Hovercraft Physics: F = -kx - cv)
+    this.wheelGroundedCount = 0;
+    const chassisVel = this.velocity;
+    const chassisAngVel = this.angularVelocity;
+
+    for (let i = 0; i < 4; i++) {
+      const isFront = i < 2;
+      const offset = this.wheelOffsets[i];
+      const wheelWorld = offset.clone().applyQuaternion(this.quaternion).add(this.position);
+
+      const ray = new RAPIER.Ray(
+        new RAPIER.Vector3(wheelWorld.x, wheelWorld.y, wheelWorld.z),
+        new RAPIER.Vector3(-up.x, -up.y, -up.z)
+      );
+
+      const hit = this.physicsWorld.castRayAndGetNormal(
+        ray,
+        this.suspensionMaxLen,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        this.rigidBody
+      );
+
+      if (hit && hit.timeOfImpact < this.suspensionMaxLen) {
+        this.wheelGroundedCount++;
+        const currentLen = hit.timeOfImpact;
+        const compression = Math.max(0, this.suspensionRestLen - currentLen);
+        this.wheelCompressions[i] = compression;
+
+        // Compression velocity: v_point = v + omega x r
+        const rArm = wheelWorld.clone().sub(this.position);
+        const pointVel = chassisVel.clone().add(chassisAngVel.clone().cross(rArm));
+        const suspVel = -pointVel.dot(up);
+
+        const k = isFront ? this.springStiffnessFront : this.springStiffnessRear;
+        const c = isFront ? this.damperCoeffFront : this.damperCoeffRear;
+        const suspForceN = Math.max(0, k * compression - c * suspVel);
+
+        const impulse = up.clone().multiplyScalar(suspForceN * dt);
+        this.rigidBody.applyImpulseAtPoint(
+          new RAPIER.Vector3(impulse.x, impulse.y, impulse.z),
+          new RAPIER.Vector3(wheelWorld.x, wheelWorld.y, wheelWorld.z),
+          true
+        );
+      } else {
+        this.wheelCompressions[i] = 0;
+      }
+    }
+
+    // 1c. AIRBORNE STABILIZATION (Angular Stability auto-alignment)
+    const isAirborne = this.wheelGroundedCount <= 1;
+    if (isAirborne) {
+      let targetNormal = new THREE.Vector3(0, 1, 0);
+      const centerDownRay = new RAPIER.Ray(
+        new RAPIER.Vector3(this.position.x, this.position.y, this.position.z),
+        new RAPIER.Vector3(0, -1, 0)
+      );
+      const groundHit = this.physicsWorld.castRayAndGetNormal(
+        centerDownRay,
+        15.0,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        this.rigidBody
+      );
+      if (groundHit && groundHit.normal) {
+        targetNormal.set(groundHit.normal.x, groundHit.normal.y, groundHit.normal.z).normalize();
+      }
+
+      const rollTilt = right.dot(targetNormal);
+      const pitchTilt = forward.dot(targetNormal);
+
+      const mass = this.specs.mass;
+      const rollCorrection = -rollTilt * (mass * 24.0) - this.angularVelocity.z * (mass * 3.5);
+      const pitchCorrection = -pitchTilt * (mass * 20.0) - this.angularVelocity.x * (mass * 3.5);
+
+      const airTorque = forward.clone().multiplyScalar(rollCorrection)
+        .add(right.clone().multiplyScalar(pitchCorrection));
+
+      this.rigidBody.applyTorqueImpulse(
+        new RAPIER.Vector3(airTorque.x * dt, airTorque.y * dt, airTorque.z * dt),
+        true
+      );
+    }
 
     // M1: Real Geometric Kerb & Track Surface Detection
     let surfaceGrip = 1.0;
@@ -270,10 +375,11 @@ export class VehiclePhysics {
     const weightShiftLat = (latAccel * this.cogHeight) / (this.trackWidth * 9.81);
 
     // Calculate individual wheel loads (relative to total mass)
-    this.weightTransfer.frontLeftLoad = Math.max(0.02, (dynamicFrontBias * 0.5) - weightShiftLat * 0.5);
-    this.weightTransfer.frontRightLoad = Math.max(0.02, (dynamicFrontBias * 0.5) + weightShiftLat * 0.5);
-    this.weightTransfer.rearLeftLoad = Math.max(0.02, (dynamicRearBias * 0.5) - weightShiftLat * 0.5);
-    this.weightTransfer.rearRightLoad = Math.max(0.02, (dynamicRearBias * 0.5) + weightShiftLat * 0.5);
+    // Lateral weight shift transfers load to OUTSIDE tires during cornering:
+    this.weightTransfer.frontLeftLoad = Math.max(0.02, (dynamicFrontBias * 0.5) + weightShiftLat * 0.5);
+    this.weightTransfer.frontRightLoad = Math.max(0.02, (dynamicFrontBias * 0.5) - weightShiftLat * 0.5);
+    this.weightTransfer.rearLeftLoad = Math.max(0.02, (dynamicRearBias * 0.5) + weightShiftLat * 0.5);
+    this.weightTransfer.rearRightLoad = Math.max(0.02, (dynamicRearBias * 0.5) - weightShiftLat * 0.5);
 
     this.weightTransfer.frontBias = dynamicFrontBias;
     this.weightTransfer.rearBias = dynamicRearBias;
@@ -408,13 +514,23 @@ export class VehiclePhysics {
 
     // Apply forces and torques to Rapier RigidBody
     // 1. Forward Net Force
-    const netLongForce = (driveForceN - Math.sign(forwardSpeed) * (brakeForceN + aeroDragForce));
+    let netLongForce = (driveForceN - Math.sign(forwardSpeed) * (brakeForceN + aeroDragForce));
+
+    // Vector Redirection (Technique #2): Redirect lateral sliding force into forward speed during drifts
+    if (this.isDrifting) {
+      const redirectedForwardN = Math.abs(clampedLatForce) * 0.38;
+      netLongForce += redirectedForwardN;
+    }
     const forceWorld = VehiclePhysics._vForceWorld.copy(forward).multiplyScalar(netLongForce);
 
     // 2. Lateral Force (lateral tire adhesion holding car to corner line)
     const driftGripScale = this.isDrifting ? 0.65 : 1.0;
     const netLatForce = clampedLatForce * driftGripScale;
     forceWorld.addScaledVector(right, netLatForce);
+
+    // Front steered lateral traction force (pulls vehicle front in steer direction)
+    const frontSteerLateralForce = (this.steerAngle * Math.sign(forwardSpeed || 1)) * Math.min(1.0, this.speedKmh / 14.0) * (frontNormalN * 0.85);
+    forceWorld.addScaledVector(right, frontSteerLateralForce);
 
     // 3. Downforce
     forceWorld.y -= aeroDownforce;
@@ -432,7 +548,7 @@ export class VehiclePhysics {
 
     // High speeds: Dynamic yaw torque from tire slip difference + direct steering moment
     const dynamicYawTorque = (frontLateralForce * (this.wheelbase * 0.58)) - (rearLateralForce * (this.wheelbase * 0.42));
-    const directSteerTorque = this.steerAngle * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
+    const directSteerTorque = this.steerAngle * Math.sign(forwardSpeed || 1) * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
     const highSpeedYawTorque = dynamicYawTorque * 3.8 + directSteerTorque;
 
     // Compute yaw impulse and apply along local vehicle UP axis
@@ -514,13 +630,24 @@ export class VehiclePhysics {
     this.visual.root.position.copy(this.position);
     this.visual.root.quaternion.copy(this.quaternion);
 
-    // Apply visual chassis pitch (weight transfer squat / dive) and roll (cornering lean)
+    // Apply visual chassis pitch (squat / dive) and roll (outward centrifugal lean)
     this.visual.bodyMesh.rotation.x = -this.weightTransfer.pitchAngle * 0.6;
-    this.visual.bodyMesh.rotation.z = this.weightTransfer.rollAngle * 0.7;
+    this.visual.bodyMesh.rotation.z = -this.weightTransfer.rollAngle * 0.7;
 
     // Steer front wheels cleanly around vertical Y axis (isolated steering knuckle)
     this.visual.wheelFL.rotation.y = this.steerAngle;
     this.visual.wheelFR.rotation.y = this.steerAngle;
+
+    // Visual suspension travel on 4 wheels
+    const flTravel = Math.max(-0.10, Math.min(0.10, this.wheelCompressions[0] - 0.05));
+    const frTravel = Math.max(-0.10, Math.min(0.10, this.wheelCompressions[1] - 0.05));
+    const rlTravel = Math.max(-0.10, Math.min(0.10, this.wheelCompressions[2] - 0.05));
+    const rrTravel = Math.max(-0.10, Math.min(0.10, this.wheelCompressions[3] - 0.05));
+
+    this.visual.wheelFL.position.y = 0.32 + flTravel;
+    this.visual.wheelFR.position.y = 0.32 + frTravel;
+    this.visual.wheelRL.position.y = 0.32 + rlTravel;
+    this.visual.wheelRR.position.y = 0.32 + rrTravel;
 
     // Spin wheels along forward axle X axis via dedicated spin sub-groups (no gimbal wobble!)
     const forward = VehiclePhysics._vForward.set(0, 0, 1).applyQuaternion(this.quaternion);
@@ -564,7 +691,7 @@ export class VehiclePhysics {
 
     // Voxel Driver Helmet turns head towards corner apex
     if (this.visual.driverHead) {
-      const targetHeadYaw = -this.steerAngle * 0.65;
+      const targetHeadYaw = this.steerAngle * 0.65;
       this.visual.driverHead.rotation.y = THREE.MathUtils.lerp(
         this.visual.driverHead.rotation.y,
         targetHeadYaw,

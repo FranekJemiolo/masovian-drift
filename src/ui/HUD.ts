@@ -893,11 +893,11 @@ export class HUD {
     if (player) {
       const [px, py] = toMap(player.position.x, player.position.z);
       const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
-      const heading = Math.atan2(fwd.x, fwd.z);
+      const angle = Math.atan2(fwd.z, fwd.x) + Math.PI * 0.5;
 
       ctx.save();
       ctx.translate(px, py);
-      ctx.rotate(-heading);
+      ctx.rotate(angle);
 
       // Sleek delta racing arrow
       ctx.fillStyle = '#38bdf8';
