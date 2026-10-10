@@ -2,6 +2,27 @@
 
 Newest entries first. Plan reference: [V2_PLAN.md](./V2_PLAN.md), [GRAPHICS_IMPROVEMENT_PLAN.md](./GRAPHICS_IMPROVEMENT_PLAN.md), and [GAMEPLAY_IMPROVEMENT_PLAN.md](./GAMEPLAY_IMPROVEMENT_PLAN.md).
 
+## 2026-10-10 — Graphics, UI, UX, HUD & Visual Effects Refinement with Performance Budgeting
+
+**Refinements & Optimizations**:
+- **Post-Processing Shaders & Visual Effects (`src/graphics/PixelPostProcessor.ts`)**:
+  - Upgraded tone mapping to an enhanced ACES film curve with tuned Mazovian sunset warm palette (`vec3(1.06, 1.03, 0.98)`).
+  - Implemented high-speed directional radial streak motion blur for high speeds (`uSpeedFactor > 0.12`) with 4-sample tap radial offsets.
+  - Implemented anamorphic horizontal specular highlight glare on intense HDR bloom reflections (`bloom.r + bloom.g + bloom.b > 0.75`).
+- **HUD & UX Telemetry Polish (`src/ui/HUD.ts`, `src/style.css`)**:
+  - Added live lateral/longitudinal G-force indicator (`#hud-g-val`) with monospace neon amber styling (`.g-meter-val`).
+  - Implemented DOM dirty-checking cache (`_lastGVal`) to prevent unnecessary reflows/repaints, preserving 60 FPS performance budget.
+  - Added photo mode controls integration: `<kbd>P</kbd> Photo` hint in HUD controls pill, `📸 PHOTO MODE (P)` button in pause modal.
+  - Refined CSS micro-animations: animated flame border pulse on drift cards (`@keyframes flameBorderPulse`), vertical scale pop on active GT3 shift LEDs (`scaleY(1.15)` - `scaleY(1.25)`), and glassmorphic button hover transitions.
+- **Cinematic 6-DOF Photo Mode Integration (`src/ui/PhotoMode.ts`, `src/game/GameManager.ts`)**:
+  - Wired `KeyP` hotkey and pause menu button to freeze physics while keeping the scene rendering.
+  - Added WASD / QE 6-DOF camera free-flying controls during photo mode.
+  - Added instant screenshot canvas capture & PNG download link (`masovian_drift_photo_<timestamp>.png`).
+  - Added `onExit` callback for clean state recovery back into the race loop.
+- **Verification & Test Suite**:
+  - 100% test pass rate across all 6 test suites (unit tests 1–13, modernization tests 1–6, physics benchmarks, mechanical checks, and 7 smoke test sections with 0 console and page errors).
+  - Regenerated all 5 screenshot captures in `docs/screenshots/`.
+
 ## 2026-10-10 — V2 Complete Engine Implementation: All Phases V2.1 through V2.6 Fully Completed
 
 **All Remaining Phases Implemented & Verified**:

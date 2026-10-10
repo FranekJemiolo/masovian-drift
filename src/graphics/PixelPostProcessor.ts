@@ -205,15 +205,30 @@ export class PixelPostProcessor {
         float edgeFactor = clamp((edge * 0.45 + colorEdge * 0.20) * uEdgeStrength, 0.0, 1.0);
 
         // Warm Golden-Hour Color Grading (Mazovian sunset palette)
-        vec3 graded = color * vec3(1.05, 1.02, 0.97); // Warm sunlight spectrum
-        graded = ACESFilm(graded * 1.14);
+        vec3 graded = color * vec3(1.06, 1.03, 0.98); // Warm sunlight spectrum
+        graded = ACESFilm(graded * 1.18);
 
         // Saturation boost for punchy arcade look
         float lum = dot(graded, vec3(0.299, 0.587, 0.114));
-        vec3 satColor = mix(vec3(lum), graded, 1.25);
+        vec3 satColor = mix(vec3(lum), graded, 1.28);
 
         // Silhouette edge shading
         vec3 finalColor = mix(satColor, satColor * 0.54, edgeFactor * 0.35);
+
+        // Anamorphic horizontal flare on specular highlights
+        if (bloom.r + bloom.g + bloom.b > 0.75) {
+          finalColor += vec3(0.08, 0.22, 0.45) * (bloom.b * 0.4);
+        }
+
+        // High-Speed Directional Radial Streak Motion Blur
+        if (uSpeedFactor > 0.12) {
+          vec2 streakDir = uvCenter * (uSpeedFactor * 0.022);
+          vec3 blurColor = vec3(0.0);
+          for (int s = 1; s <= 4; s++) {
+            blurColor += texture2D(tDiffuse, vUv - streakDir * float(s) * 0.25).rgb;
+          }
+          finalColor = mix(finalColor, finalColor * 0.65 + (blurColor * 0.25) * 0.35, uSpeedFactor * 0.55);
+        }
 
         // High-Speed Speed Lines & Vignette
         float speedVignette = 0.35 + uSpeedFactor * 0.25;

@@ -29,6 +29,7 @@ export class PhotoMode {
   };
 
   private domOverlay: HTMLElement | null = null;
+  public onExit?: () => void;
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
@@ -59,6 +60,7 @@ export class PhotoMode {
       this.domOverlay.remove();
       this.domOverlay = null;
     }
+    this.onExit?.();
   }
 
   public moveCamera(dx: number, dy: number, dz: number): void {
@@ -148,6 +150,16 @@ export class PhotoMode {
       const val = parseInt((e.target as HTMLInputElement).value, 10);
       this.setFov(val);
       if (fovVal) fovVal.textContent = `${val}°`;
+    });
+
+    overlay.querySelector('#photo-capture-btn')?.addEventListener('click', () => {
+      const canvas = document.querySelector('canvas');
+      if (canvas) {
+        const link = document.createElement('a');
+        link.download = `masovian_drift_photo_${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
     });
 
     overlay.querySelector('#photo-exit-btn')?.addEventListener('click', () => {

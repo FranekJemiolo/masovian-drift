@@ -40,6 +40,7 @@ export class HUD {
   private wrongWayEl!: HTMLElement;
   private damageEl!: HTMLElement;
   private biasTagEl!: HTMLElement;
+  private gValEl!: HTMLElement;
 
   // Minimap
   private minimapCanvas!: HTMLCanvasElement;
@@ -71,6 +72,7 @@ export class HUD {
     onPause?: () => void;
     onRestart?: () => void;
     onQuit?: () => void;
+    onPhotoMode?: () => void;
     onVolumeChange?: (vol: number) => void;
     onCameraChange?: (mode: CameraViewMode) => void;
     onPixelScaleChange?: (scale: number) => void;
@@ -89,6 +91,7 @@ export class HUD {
   private _lastDrift = '';
   private _lastDamage = '';
   private _lastBias = '';
+  private _lastGVal = '';
   private _lastMinimapTime = 0;
   private _lastP2Speed = -1;
   private _lastP2Rpm = -1;
@@ -181,6 +184,7 @@ export class HUD {
           </div>
           <div class="telemetry-footer">
             <span id="hud-damage-status" class="damage-status">AERO: 100% | ALIGN: OK</span>
+            <span id="hud-g-val" class="g-meter-val">0.00G</span>
           </div>
         </div>
 
@@ -191,6 +195,7 @@ export class HUD {
           <span class="ctrl-unit"><kbd>SPACE</kbd> Drift</span>
           <span class="ctrl-unit"><kbd>C</kbd> Clutch-Kick</span>
           <span class="ctrl-unit"><kbd>R</kbd> Rewind</span>
+          <span class="ctrl-unit"><kbd>P</kbd> Photo</span>
           <span class="ctrl-unit"><kbd>K</kbd> Respawn</span>
           <span class="ctrl-unit"><kbd>ESC</kbd> Pause</span>
         </div>
@@ -253,6 +258,9 @@ export class HUD {
             </button>
             <button id="btn-pause-restart" class="btn-secondary">
               🔄 RESTART RACE (R)
+            </button>
+            <button id="btn-pause-photo" class="btn-secondary">
+              📸 PHOTO MODE (P)
             </button>
           </div>
 
@@ -373,6 +381,7 @@ export class HUD {
     this.wrongWayEl = this.container.querySelector('#hud-wrong-way')!;
     this.damageEl = this.container.querySelector('#hud-damage-status')!;
     this.biasTagEl = this.container.querySelector('#hud-bias-tag')!;
+    this.gValEl = this.container.querySelector('#hud-g-val')!;
 
     this.minimapCanvas = this.container.querySelector('#hud-minimap')!;
     if (this.minimapCanvas) {
@@ -403,6 +412,7 @@ export class HUD {
     const btnPause = this.container.querySelector('#btn-hud-pause');
     const btnResume = this.container.querySelector('#btn-pause-resume');
     const btnRestart = this.container.querySelector('#btn-pause-restart');
+    const btnPhoto = this.container.querySelector('#btn-pause-photo');
     const btnQuit = this.container.querySelector('#btn-pause-quit');
 
     btnPause?.addEventListener('click', (e) => {
@@ -418,6 +428,11 @@ export class HUD {
     btnRestart?.addEventListener('click', () => {
       this.hidePauseModal();
       this.callbacks.onRestart?.();
+    });
+
+    btnPhoto?.addEventListener('click', () => {
+      this.hidePauseModal();
+      this.callbacks.onPhotoMode?.();
     });
 
     btnQuit?.addEventListener('click', () => {
@@ -861,6 +876,16 @@ export class HUD {
       this.damageEl.classList.add('damaged');
     } else {
       this.damageEl.classList.remove('damaged');
+    }
+
+    // Lateral G-Force telemetry dirty-check
+    const speedMs = playerState.speedKmh / 3.6;
+    const yawRate = playerState.angularVelocity ? Math.abs(playerState.angularVelocity.y) : 0;
+    const latG = Math.min(2.5, (yawRate * speedMs) / 9.81);
+    const gStr = `${latG.toFixed(2)}G`;
+    if (gStr !== this._lastGVal) {
+      if (this.gValEl) this.gValEl.textContent = gStr;
+      this._lastGVal = gStr;
     }
 
     // Player 2 update if in split-screen

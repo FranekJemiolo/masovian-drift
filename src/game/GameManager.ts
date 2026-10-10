@@ -23,6 +23,7 @@ import { ECSWorldManager } from '../ecs/World';
 import { ECSPipeline } from '../ecs/ECSPipeline';
 import { SectorSplitTracker } from './SectorSplitTracker';
 import { RewindController } from './RewindController';
+import { PhotoMode } from '../ui/PhotoMode';
 
 interface GhostSample {
   time: number;
@@ -80,6 +81,7 @@ export class GameManager {
   public hud!: HUD;
   public menuUI!: MenuUI;
   private webRTCManager!: WebRTCManager;
+  public photoMode!: PhotoMode;
 
   // Game state
   public currentMode: GameMode = 'quick-race';
@@ -262,6 +264,16 @@ export class GameManager {
         this.postProcessor.setBloomIntensity(val);
         localStorage.setItem('masovian_bloom_intensity', val.toString());
       },
+      onPhotoMode: () => {
+        this.togglePhotoMode();
+      },
+    };
+
+    // Photo Mode integration
+    this.photoMode = new PhotoMode(this.p1Camera.camera);
+    this.photoMode.onExit = () => {
+      this.isPaused = false;
+      this.clock.getDelta();
     };
 
     // 8. Setup WebRTC Multiplayer Manager (Milestone 5)
@@ -626,6 +638,18 @@ export class GameManager {
     this.playerVehicle.resetPosition(wp.point.clone().add(new THREE.Vector3(0, 0.85, 0)), quat);
   }
 
+  public togglePhotoMode(): void {
+    if (!this.photoMode) return;
+    if (this.photoMode.isActive) {
+      this.photoMode.exit();
+      this.isPaused = false;
+      this.clock.getDelta();
+    } else {
+      this.isPaused = true;
+      this.photoMode.enter();
+    }
+  }
+
   /**
    * Main game animation loop (runs at 60 FPS)
    */
@@ -636,7 +660,23 @@ export class GameManager {
     const delta = Math.min(rawDelta, 0.05);
 
     if (this.isRacing) {
+      if (this.inputManager.isKeyJustPressed('KeyP')) {
+        this.togglePhotoMode();
+      }
+
       if (this.isPaused) {
+        if (this.photoMode?.isActive) {
+          let moveX = 0, moveY = 0, moveZ = 0;
+          if (this.inputManager.isKeyPressed('KeyW')) moveZ += 0.3;
+          if (this.inputManager.isKeyPressed('KeyS')) moveZ -= 0.3;
+          if (this.inputManager.isKeyPressed('KeyA')) moveX -= 0.3;
+          if (this.inputManager.isKeyPressed('KeyD')) moveX += 0.3;
+          if (this.inputManager.isKeyPressed('KeyE')) moveY += 0.3;
+          if (this.inputManager.isKeyPressed('KeyQ')) moveY -= 0.3;
+          if (moveX !== 0 || moveY !== 0 || moveZ !== 0) {
+            this.photoMode.moveCamera(moveX, moveY, moveZ);
+          }
+        }
         // While paused, still render current frame
         this.renderFrame();
         return;
@@ -836,13 +876,15 @@ export class GameManager {
       }
 
       // 3. Update Cameras
-      this.p1Camera.update(
-        this.playerVehicle.position,
-        this.playerVehicle.quaternion,
-        this.playerVehicle.velocity,
-        this.playerVehicle.speedKmh,
-        delta
-      );
+      if (!this.photoMode?.isActive) {
+        this.p1Camera.update(
+          this.playerVehicle.position,
+          this.playerVehicle.quaternion,
+          this.playerVehicle.velocity,
+          this.playerVehicle.speedKmh,
+          delta
+        );
+      }
 
       if (this.currentMode === 'split-screen' && this.p2Vehicle) {
         this.p2Camera.update(

@@ -126,6 +126,12 @@ canvas {
   border-color: var(--accent-red);
   box-shadow: 0 0 28px rgba(239, 68, 68, 0.75), inset 0 0 12px rgba(239, 68, 68, 0.3);
   transform: scale(1.06);
+  animation: flameBorderPulse 0.4s infinite alternate ease-in-out;
+}
+
+@keyframes flameBorderPulse {
+  from { box-shadow: 0 0 22px rgba(239, 68, 68, 0.65), inset 0 0 10px rgba(239, 68, 68, 0.25); border-color: #ef4444; }
+  to { box-shadow: 0 0 34px rgba(249, 115, 22, 0.95), inset 0 0 16px rgba(245, 158, 11, 0.4); border-color: #f97316; }
 }
 
 .drifting-flame .drift-text {
@@ -381,6 +387,10 @@ canvas {
 
 .telemetry-footer {
   margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .damage-status {
@@ -393,6 +403,19 @@ canvas {
 .damage-status.damaged {
   color: var(--accent-red);
   text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.g-meter-val {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
 }
 
 /* Speedometer & Tachometer Cluster */
@@ -566,21 +589,25 @@ canvas {
 .shift-led.led-green.active {
   background: #22c55e;
   box-shadow: 0 0 10px #22c55e, 0 0 20px rgba(34, 197, 94, 0.6);
+  transform: scaleY(1.15);
 }
 
 .shift-led.led-yellow.active {
   background: #eab308;
   box-shadow: 0 0 10px #eab308, 0 0 20px rgba(234, 179, 8, 0.6);
+  transform: scaleY(1.15);
 }
 
 .shift-led.led-orange.active {
   background: #f97316;
   box-shadow: 0 0 10px #f97316, 0 0 20px rgba(249, 115, 22, 0.6);
+  transform: scaleY(1.15);
 }
 
 .shift-led.led-red.active {
   background: #ef4444;
   box-shadow: 0 0 12px #ef4444, 0 0 24px rgba(239, 68, 68, 0.8);
+  transform: scaleY(1.25);
 }
 
 .shift-led.flashing {
