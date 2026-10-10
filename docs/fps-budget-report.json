@@ -1,23 +1,23 @@
 {
-  "timestamp": "2026-10-10T09:10:14.027Z",
+  "timestamp": "2026-10-10T22:04:34.893Z",
   "profiles": [
     {
       "profile": "Desktop (1080p Standard)",
       "totalFrames": 120,
-      "avgMs": 1003.21,
-      "p50Ms": 928.3,
-      "p95Ms": 1587.1,
-      "p99Ms": 2269.6,
-      "effectiveFps": 1
+      "avgMs": 407.85,
+      "p50Ms": 411.6,
+      "p95Ms": 441.4,
+      "p99Ms": 468.4,
+      "effectiveFps": 2.5
     },
     {
       "profile": "Mobile (Throttled 4x CPU)",
       "totalFrames": 120,
-      "avgMs": 912.91,
-      "p50Ms": 849.1,
-      "p95Ms": 1416.9,
-      "p99Ms": 2312.3,
-      "effectiveFps": 1.1
+      "avgMs": 319.76,
+      "p50Ms": 325.1,
+      "p95Ms": 339.7,
+      "p99Ms": 344.9,
+      "effectiveFps": 3.1
     }
   ],
   "budgetThresholds": {

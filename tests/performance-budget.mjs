@@ -29,12 +29,9 @@ async function runPerformanceBudgetTest() {
   page.on('pageerror', (err) => consoleErrors.push(err.message));
 
   try {
-    await page.goto('http://localhost:4173/masovian-drift/', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
-
-    // Start Quick Race
-    const quickRaceBtn = await page.waitForSelector('#btn-quick-race', { timeout: 8000 });
-    await quickRaceBtn.click();
+    await page.goto('http://localhost:4173/masovian-drift/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#btn-quick-race', { timeout: 15000 });
+    await page.click('#btn-quick-race');
     await page.waitForTimeout(1500);
 
     // Collect 100 frames of frame-time measurements

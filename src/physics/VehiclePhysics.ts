@@ -317,7 +317,7 @@ export class VehiclePhysics {
 
         const k = isFront ? this.springStiffnessFront : this.springStiffnessRear;
         const c = isFront ? this.damperCoeffFront : this.damperCoeffRear;
-        const suspForceN = Math.max(0, k * compression - c * suspVel);
+        const suspForceN = Math.max(0, k * compression + c * suspVel);
 
         const impulse = up.clone().multiplyScalar(suspForceN * dt);
         this.rigidBody.applyImpulseAtPoint(
