@@ -58,6 +58,39 @@
 - **5 Autonomous Opponents**: Named AI bots with distinct personalities and liveries navigating the circuit.
 - **Adaptive Lookahead Distance ($L_d$)**: Dynamically expands vision radius at high speeds on straightaways and contracts it entering sandy chicanes to execute controlled drift arcs without oscillations.
 
+### 7. AAA WebGPU Modernization Architecture
+- **Data-Oriented bitECS Pipeline**: Contiguous Structure of Arrays (`Float32Array`) components (`Position`, `Rotation`, `Velocity`, `VehicleTelemetry`, `TwoSampleStateBuffer`) eliminating heap fragmentation.
+- **Two-Sample Slerp/Lerp Visual Smoothing**: Zero-allocation linear and spherical interpolation decoupled from the 60 Hz physics step, eliminating micro-stutters across 120Hz/144Hz/240Hz monitors.
+- **Surface Nets Volumetric Terrain & std430 WebGPU**: Dual contouring isosurface extraction for dynamic riverbanks with WGSL compute shaders strictly enforcing 16-byte std430 memory alignment.
+- **Progressive Web App (PWA) & Offline Play**: W3C Web App Manifest and cache-first service worker delivering instant loading and offline standalone gameplay.
+- **Dynamic Resolution Scaling (DRS)**: Frame-time budget monitoring automatically scaling render targets between 1.0 and 0.70 to sustain locked 60 FPS under intensive drift smoke.
+
+---
+
+## 🧪 Automated Testing & Verification Matrix
+
+The repository features comprehensive automated regression suites:
+
+```bash
+# Isolated Playwright smoke suite (all 7 sections: menu, garage, race, pause, split-screen, lobby, time-trial)
+npm test
+
+# Automated performance & frame-time budget benchmark (V4)
+node tests/performance-budget.mjs
+
+# bitECS SoA, Two-Sample Slerp, Surface Nets & std430 alignment suite
+node tests/ecs-and-webgpu-tests.mjs
+
+# Headless Rapier3D & Pacejka '94 physics regression benchmarks (0-100 sprint, braking, skidpad)
+node tests/physics-regression.mjs
+
+# Comprehensive vehicle mechanics & animation verification
+node tests/comprehensive-vehicle-verification.mjs
+
+# Unit tests (StateSync 76-byte protocol, EvolutionStore, track waypoints)
+node tests/unit-tests.mjs
+```
+
 ---
 
 ## 🕹️ Controls

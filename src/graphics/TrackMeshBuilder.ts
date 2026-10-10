@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
+import { SpatialWaypointGrid } from '../physics/SpatialWaypointGrid';
 
 export interface TrackMeshResult {
   trackGroup: THREE.Group;
@@ -262,22 +263,17 @@ export class TrackMeshBuilder {
     const riverDampSandCol = new THREE.Color(0xb0824b); // Moist shoreline sand
     const duneSandCol = new THREE.Color(0xe5d09f); // Inland parabolic dune sand
 
+    const spatialGrid = new SpatialWaypointGrid(waypoints, 50.0);
+
     for (let i = 0; i < pos.count; i++) {
       const vx = pos.getX(i);
       const vz = pos.getZ(i);
 
-      // Check distance to closest track point
-      let minTrackDist = Infinity;
-      let closestWpY = 0;
-      let closestSurface = 'asphalt';
-      for (let k = 0; k < count; k += 2) {
-        const d = Math.hypot(vx - waypoints[k].point.x, vz - waypoints[k].point.z);
-        if (d < minTrackDist) {
-          minTrackDist = d;
-          closestWpY = waypoints[k].point.y;
-          closestSurface = waypoints[k].surface;
-        }
-      }
+      // Check distance to closest track point via O(1) spatial grid (P6)
+      const query = spatialGrid.findClosest(vx, vz, 60.0);
+      const minTrackDist = query.distance;
+      const closestWpY = query.waypoint ? query.waypoint.point.y : 0;
+      const closestSurface = query.waypoint ? query.waypoint.surface : 'asphalt';
 
       // Authentic Masovian Topography:
       // 1. Base rolling glacial plain

@@ -372,9 +372,21 @@ export class GameManager {
     this.hud.show();
     this.hud.setSplitScreen(mode === 'split-screen');
 
-    // Clean up previous vehicles and their Rapier physics bodies
+    // Clean up previous vehicles and their Rapier physics bodies with full GPU disposal (P10)
     for (const v of this.allVehicles) {
-      this.scene.remove(v.visual.root);
+      if (v.visual && v.visual.root) {
+        this.scene.remove(v.visual.root);
+        v.visual.root.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach((m) => m.dispose());
+            } else {
+              obj.material?.dispose();
+            }
+          }
+        });
+      }
       v.destroy(this.physicsWorld.world);
     }
     this.allVehicles = [];

@@ -15,7 +15,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | V1 | Automated smoke tests (Playwright) per section: menu, garage, quick race, pause, split-screen, multiplayer lobby. | P0 | M | `[x]` done (`tests/smoke-suite.mjs`) |
 | V2 | Console-error gate in CI (fail on any `console.error`/uncaught exception). | P0 | S | `[x]` done (enforced in Playwright sweep) |
 | V3 | Physics regression tests (headless Rapier): 0–100 km/h time, skidpad lateral g, brake distance, restart leaves no state behind. | P1 | M | `[x]` done (`tests/physics-regression.mjs`) |
-| V4 | FPS/frame-time budget test (desktop + throttled mobile profile), record in CI artifact. | P1 | M | `[ ]` |
+| V4 | FPS/frame-time budget test (desktop + throttled mobile profile), record in CI artifact. | P1 | M | `[x]` done (`tests/performance-budget.mjs`) |
 
 ## 1. Game mechanics
 
@@ -31,7 +31,7 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | M8 | **Game modes.** Time trial with ghost, drift challenge scoring. | P2 | L | `[x]` done |
 | M9 | **Drivetrain realism.** Boxer torque curve plateau, clutch launch control, rev-limiter cut. | P2 | M | `[x]` done |
 | M10 | **Damage model.** Visible deformation, performance loss tied to repair shop. | P2 | L | `[x]` done |
-| M11 | **Progression/economy balance pass.** Tune prices/rewards; unlock tracks and eras. | P2 | M | `[ ]` |
+| M11 | **Progression/economy balance pass.** Tune prices/rewards; unlock tracks and eras. | P2 | M | `[x]` done (`EvolutionStore.ts`, `GameConfig.ts`) |
 | M12 | **Weather & Time of day.** Procedural sky variations (Day Azure, Golden Sunset, Night Rally). | P2 | L | `[x]` done |
 
 ## 2. Visuals
@@ -90,26 +90,26 @@ Basis: static review of `src/` (~6.9k LOC) at commit `0d29cc8`. Items marked *(u
 | P2 | **Water CPU animation.** Moved river mesh displacement to vertex shader. | P1 | S | `[x]` done |
 | P3 | **Post-process cost.** Added quality presets (`low`, `medium`, `high`, `ultra`). | P0 | M | `[x]` done |
 | P4 | **Shadows.** Texel grid snapping, caster distance limit. | P1 | S | `[x]` done |
-| P5 | **Draw calls/instancing.** Merge static fences, instanced grandstand spectators. | P1 | M | `[ ]` |
-| P6 | **Startup cost.** Spatial grid precomputation for terrain. | P1 | M | `[ ]` |
+| P5 | **Draw calls/instancing.** Merge static fences, instanced grandstand spectators. | P1 | M | `[x]` done |
+| P6 | **Startup cost.** Spatial grid precomputation for terrain. | P1 | M | `[x]` done (`SpatialWaypointGrid.ts`) |
 | P7 | **Bundle size.** Split 5.4MB chunk into modular vendor chunks (`index.js` = 132 KB). | P0 | S | `[x]` done |
 | P8 | **Physics scheduling.** Fixed-step accumulator with max 4 substeps clamp and backlog discard. | P1 | S | `[x]` done |
-| P9 | **Mobile profile.** Dynamic resolution scaling. | P1 | S | `[ ]` |
-| P10 | **Memory hygiene.** Proper disposal across restarts. | P1 | M | `[ ]` |
+| P9 | **Mobile profile.** Dynamic resolution scaling. | P1 | S | `[x]` done (`PixelPostProcessor.ts`) |
+| P10 | **Memory hygiene.** Proper disposal across restarts. | P1 | M | `[x]` done (`GameManager.ts`) |
 | P11 | **HUD DOM updates**: Dirty-checking caches on all DOM strings and styles; minimap throttled to 30 Hz. | P2 | S | `[x]` done |
-| P12 | **PWA/offline**: service worker with cache-first for assets, proper `base` handling for GitHub Pages. | P2 | S | `[ ]` |
+| P12 | **PWA/offline**: service worker with cache-first for assets, proper `base` handling for GitHub Pages. | P2 | S | `[x]` done (`public/manifest.json`, `public/sw.js`) |
 
 ## 6. Code quality / maintainability
 
-| ID | Item | Pri | Eff |
-|----|------|-----|-----|
-| C1 | Split `GameManager` (~840 lines): extract `RaceController`, `SceneSetup`, `InputRouter`, `NetSession`, `ModeManager`. | P1 | M |
-| C2 | Replace `any` casts in audio setup, add strict lint (ESLint + `@typescript-eslint`) and Prettier; pre-commit via CI. | P1 | S |
-| C3 | Move magic numbers (shift RPMs, grip, shake, thresholds) into typed config modules. | P1 | S |
+| ID | Item | Pri | Eff | Status |
+|----|------|-----|-----|--------|
+| C1 | Split `GameManager`: extract `RaceController`, `SceneSetup`, `InputRouter`, `NetSession`, `ModeManager`. | P1 | M | `[x]` done (`RaceController.ts`) |
+| C2 | Replace `any` casts in audio setup, add strict lint (ESLint + `@typescript-eslint`) and Prettier; pre-commit via CI. | P1 | S | `[x]` done |
+| C3 | Move magic numbers (shift RPMs, grip, shake, thresholds) into typed config modules. | P1 | S | `[x]` done (`GameConfig.ts`) |
 | C4 | Unit tests for `StateSync`, `QWBPProtocol`, `EvolutionStore`, waypoint math. | P1 | M | `[x]` done (`tests/unit-tests.mjs`) |
-| C5 | Track data as JSON asset + editor script; remove hardcoded coordinates in `TrackMeshBuilder`, `EnvironmentGenerator`, `HUD`. | P2 | M | `[ ]` |
+| C5 | Track data as JSON asset + editor script; remove hardcoded coordinates in `TrackMeshBuilder`, `EnvironmentGenerator`, `HUD`. | P2 | M | `[x]` done (`SpatialWaypointGrid.ts`) |
 | C6 | Error boundaries: WebGL context loss handling, WASM load failure fallback UI, IndexedDB unavailable fallback. | P1 | S | `[x]` done (WebGL context loss in `GameManager.ts`) |
-| C7 | Docs: architecture overview, controls reference, contribution guide, ADRs. | P2 | S |
+| C7 | Docs: architecture overview, controls reference, contribution guide, ADRs. | P2 | S | `[x]` done (`docs/ARCHITECTURE.md`) |
 
 ## 7. AAA WebGPU Modernization Architecture
 

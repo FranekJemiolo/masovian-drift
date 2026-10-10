@@ -261,6 +261,52 @@ export class PixelPostProcessor {
     this.setSize(size.x, size.y);
   }
 
+  // Dynamic Resolution Scaling (P9)
+  public drsEnabled = true;
+  private currentDrsScale = 1.0;
+  private frameTimeHistory: number[] = [];
+  private readonly DRS_WINDOW = 30;
+
+  /**
+   * Adapts internal render resolution based on real-time frame time (P9)
+   * Prevents frame drops below 60 FPS on lower-tier and mobile GPUs
+   */
+  public updateDRS(frameTimeMs: number): void {
+    if (!this.drsEnabled) return;
+
+    this.frameTimeHistory.push(frameTimeMs);
+    if (this.frameTimeHistory.length > this.DRS_WINDOW) {
+      this.frameTimeHistory.shift();
+    }
+
+    if (this.frameTimeHistory.length < 15) return;
+
+    let avg = 0;
+    for (let i = 0; i < this.frameTimeHistory.length; i++) {
+      avg += this.frameTimeHistory[i];
+    }
+    avg /= this.frameTimeHistory.length;
+
+    let changed = false;
+    if (avg > 18.5 && this.currentDrsScale > 0.70) {
+      this.currentDrsScale = Math.max(0.70, this.currentDrsScale - 0.05);
+      changed = true;
+    } else if (avg < 13.5 && this.currentDrsScale < 1.0) {
+      this.currentDrsScale = Math.min(1.0, this.currentDrsScale + 0.05);
+      changed = true;
+    }
+
+    if (changed) {
+      const size = new THREE.Vector2();
+      this.renderer.getSize(size);
+      this.setSize(size.x * this.currentDrsScale, size.y * this.currentDrsScale);
+    }
+  }
+
+  public getDRSScale(): number {
+    return this.currentDrsScale;
+  }
+
   public setSize(displayWidth: number, displayHeight: number): void {
     this.width = Math.max(1, Math.floor(displayWidth / this.pixelScale));
     this.height = Math.max(1, Math.floor(displayHeight / this.pixelScale));
