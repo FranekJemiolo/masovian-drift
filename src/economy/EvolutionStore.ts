@@ -286,4 +286,34 @@ export class EvolutionStore {
     this.saveState();
     return totalPrize;
   }
+
+  /**
+   * Retrieves garage vehicle tuning setup
+   */
+  public getTuning(carId: string) {
+    const car = this.state.garage.find((c) => c.id === carId);
+    return car?.tuning ?? {
+      steeringLockDeg: 54,
+      differentialType: '1.5-way' as const,
+      brakeBias: 0.55,
+    };
+  }
+
+  /**
+   * Updates garage vehicle tuning (steering lock, differential, brake bias)
+   */
+  public setTuning(
+    carId: string,
+    tuning: { steeringLockDeg: number; differentialType: 'open' | '1.5-way' | 'spool'; brakeBias: number }
+  ): void {
+    const car = this.state.garage.find((c) => c.id === carId);
+    if (car) {
+      car.tuning = {
+        steeringLockDeg: Math.max(42, Math.min(68, tuning.steeringLockDeg)),
+        differentialType: tuning.differentialType,
+        brakeBias: Math.max(0.40, Math.min(0.70, tuning.brakeBias)),
+      };
+      this.saveState();
+    }
+  }
 }

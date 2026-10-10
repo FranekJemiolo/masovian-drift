@@ -109,6 +109,21 @@ export class VehiclePhysics {
   public isWrongWay = false;
   private lastClosestWpIdx = 0;
 
+  // V2 Garage Differential & Steering Angle Tuning
+  public tuning = {
+    steeringLockDeg: 54,
+    differentialType: '1.5-way' as 'open' | '1.5-way' | 'spool',
+    brakeBias: 0.55,
+  };
+
+  public setTuning(tuning: { steeringLockDeg: number; differentialType: 'open' | '1.5-way' | 'spool'; brakeBias: number }): void {
+    this.tuning = {
+      steeringLockDeg: Math.max(42, Math.min(68, tuning.steeringLockDeg)),
+      differentialType: tuning.differentialType,
+      brakeBias: Math.max(0.40, Math.min(0.70, tuning.brakeBias)),
+    };
+  }
+
   // Recovery timers (M7)
   public flipTimer = 0;
   public offTrackTimer = 0;
@@ -436,9 +451,10 @@ export class VehiclePhysics {
     this.weightTransfer.rollAngle = weightShiftLat * 0.12;
 
     // 3. STEERING & ALIGNMENT
-    // Speed-sensitive steering ratio
+    // Speed-sensitive steering ratio with customizable steering lock angle (up to 68 deg)
     const speedRatio = Math.min(1.0, this.speedKmh / 160.0);
-    const maxSteer = THREE.MathUtils.lerp(0.58, 0.22, speedRatio); // Radian max steer
+    const lockRad = (this.tuning.steeringLockDeg * Math.PI) / 180.0;
+    const maxSteer = THREE.MathUtils.lerp(lockRad, lockRad * 0.38, speedRatio);
     // Add persistent damage steering alignment pull
     const damagedSteerInput = inputs.steer + this.damage.steeringAlignmentOffset;
     this.targetSteerAngle = THREE.MathUtils.clamp(damagedSteerInput, -1.0, 1.0) * maxSteer;
@@ -470,6 +486,15 @@ export class VehiclePhysics {
     const isTrailBraking = inputs.brake > 0.2 && Math.abs(this.steerAngle) > 0.08;
     if (isTrailBraking) {
       rearMaxGrip *= 0.65; // Massive lift-off / trail-braking oversteer!
+    }
+
+    // Differential Lock Dynamics (V2 Garage Tuning: Open vs 1.5-Way vs 2-Way Spool)
+    if (inputs.throttle > 0.1 && Math.abs(this.steerAngle) > 0.06) {
+      if (this.tuning.differentialType === 'spool') {
+        rearMaxGrip *= 0.82; // 100% locked spool breaks rear traction immediately under throttle
+      } else if (this.tuning.differentialType === 'open') {
+        rearMaxGrip *= 1.08; // Open differential maintains grip, resisting snap oversteer
+      }
     }
 
     // Clutch-Kick & Drivetrain Decoupling Mechanics (M1, Initial D / CarX)

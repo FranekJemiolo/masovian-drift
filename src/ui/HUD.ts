@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { VehicleState } from '../game/Types';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { CameraViewMode } from '../camera/FollowCamera';
+import { TandemJudgingScorecard } from '../game/TandemJudgingSystem';
 
 export function getOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -570,6 +571,66 @@ export class HUD {
   public hideRaceResults(): void {
     this.resultsModal.style.display = 'none';
     this.currentResultsData = null;
+  }
+
+  public showTandemScorecard(card: TandemJudgingScorecard, onContinue?: () => void): void {
+    let overlay = this.container.querySelector('#hud-tandem-scorecard') as HTMLElement;
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'hud-tandem-scorecard';
+      overlay.style.cssText = `
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(15, 23, 42, 0.88);
+        backdrop-filter: blur(16px);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 10000;
+      `;
+      this.container.appendChild(overlay);
+    }
+
+    overlay.innerHTML = `
+      <div style="background: rgba(30, 41, 59, 0.95); border: 2px solid #38bdf8; border-radius: 16px; padding: 28px; width: 440px; text-align: center; color: #fff; box-shadow: 0 12px 48px rgba(0,0,0,0.8);">
+        <div style="font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #38bdf8;">FORMULA DRIFT ELECTRONIC JUDGING</div>
+        <h2 style="margin: 8px 0 16px 0; font-size: 26px; font-weight: 900;">HEAT ${card.run} • ${card.role.toUpperCase()} RUN</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; text-align: left;">
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
+            <div style="font-size: 11px; color: #94a3b8;">LINE ACCURACY (30)</div>
+            <div style="font-size: 20px; font-weight: 800; color: #38bdf8;">${card.lineScore} / 30</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
+            <div style="font-size: 11px; color: #94a3b8;">DRIFT ANGLE (30)</div>
+            <div style="font-size: 20px; font-weight: 800; color: #c084fc;">${card.angleScore} / 30</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
+            <div style="font-size: 11px; color: #94a3b8;">ENTRY SPEED (20)</div>
+            <div style="font-size: 20px; font-weight: 800; color: #facc15;">${card.speedScore} / 20</div>
+          </div>
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 8px;">
+            <div style="font-size: 11px; color: #94a3b8;">CHASE PROXIMITY (20)</div>
+            <div style="font-size: 20px; font-weight: 800; color: #4ade80;">${card.proximityScore} / 20</div>
+          </div>
+        </div>
+        <div style="font-size: 14px; margin-bottom: 6px; color: #f87171;">PENALTIES / DEDUCTIONS: -${card.deductions} PTS</div>
+        <div style="font-size: 32px; font-weight: 900; color: #facc15; margin-bottom: 20px;">TOTAL SCORE: ${card.totalScore} / 100</div>
+        <button id="btn-tandem-continue" style="width: 100%; padding: 12px; background: #0284c7; color: #fff; font-weight: 800; border: none; border-radius: 8px; cursor: pointer; font-size: 14px;">
+          CONTINUE TO NEXT HEAT
+        </button>
+      </div>
+    `;
+    overlay.style.display = 'flex';
+
+    overlay.querySelector('#btn-tandem-continue')?.addEventListener('click', () => {
+      this.hideTandemScorecard();
+      onContinue?.();
+    });
+  }
+
+  public hideTandemScorecard(): void {
+    const overlay = this.container.querySelector('#hud-tandem-scorecard') as HTMLElement;
+    if (overlay) {
+      overlay.style.display = 'none';
+    }
   }
 
   public showPauseModal(): void {

@@ -377,6 +377,10 @@ export class ParticleFX {
         this.emitSparks(v.position, v.velocity, 6);
       }
 
+      if (v.justBackfired && v.visual?.exhaustPipes && v.visual?.root) {
+        this.triggerBackfire(v.visual.exhaustPipes, v.visual.root);
+      }
+
       const isDrifting = v.isDrifting || Math.abs(v.slipAngle) > 0.16;
       const isSlipping = v.speedKmh > 18 && (isDrifting || v.weightTransfer.rearLeftLoad < 0.1);
 

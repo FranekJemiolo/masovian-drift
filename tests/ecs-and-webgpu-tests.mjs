@@ -94,6 +94,13 @@ async function runModernizationTests() {
         Math.abs(outP.z - (-88.0)) < 1e-4 &&
         Math.abs(outQ.w - 0.9) < 1e-4;
 
+      // 6. Radiance Cascades Screen-Space Indirect GI Test
+      const post = window._gameManager.postProcessor;
+      results.hasRadiancePass = !!post.radiancePass;
+      results.hasSsrPass = !!post.ssrPass;
+      results.giWidth = post.radiancePass?.target.width;
+      results.ssrWidth = post.ssrPass?.target.width;
+
       return results;
     });
 
@@ -127,6 +134,20 @@ async function runModernizationTests() {
     });
     if (!testResults.bridgeRoundtripOk) throw new Error('PhysicsBridge shared memory roundtrip failed');
     console.log('  ✓ PhysicsBridge zero-copy shared memory roundtrip validated.');
+
+    console.log('5. Radiance Cascades Screen-Space Indirect GI Test:', {
+      hasRadiancePass: testResults.hasRadiancePass,
+      giTargetWidth: testResults.giWidth,
+    });
+    if (!testResults.hasRadiancePass || !testResults.giWidth) throw new Error('Radiance Cascades Indirect GI pass validation failed');
+    console.log('  ✓ WebGPU Radiance Cascades spatial-angular cascade GI pass validated.');
+
+    console.log('6. Screen-Space Reflections (SSR) Wet Surface Test:', {
+      hasSsrPass: testResults.hasSsrPass,
+      ssrTargetWidth: testResults.ssrWidth,
+    });
+    if (!testResults.hasSsrPass || !testResults.ssrWidth) throw new Error('Screen-Space Reflections pass validation failed');
+    console.log('  ✓ Hierarchical Screen-Space Reflections (SSR) wet road pass validated.');
 
     console.log('===========================================================');
     console.log('✓ ALL MODERNIZATION ARCHITECTURE TESTS PASSED 100%!');

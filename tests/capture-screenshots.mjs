@@ -79,10 +79,34 @@ async function captureScreenshots() {
     await page.screenshot({ path: telemetryPath });
     console.log(`✓ Saved telemetry & thermals screenshot to ${telemetryPath}`);
 
+    // 5. Formula Drift Tandem Judging Scorecard Screenshot
+    console.log('[SCREENSHOTS] Displaying Formula Drift electronic judging scorecard...');
+    await page.evaluate(() => {
+      window._gameManager.hud.showTandemScorecard({
+        run: 1,
+        role: 'lead',
+        lineScore: 28,
+        angleScore: 27,
+        speedScore: 19,
+        proximityScore: 18,
+        deductions: 0,
+        totalScore: 92,
+      });
+    });
+    await page.waitForTimeout(600);
+
+    const tandemScorecardPath = path.join(SCREENSHOT_DIR, 'tandem_judging.png');
+    await page.screenshot({ path: tandemScorecardPath });
+    console.log(`✓ Saved tandem judging scorecard screenshot to ${tandemScorecardPath}`);
+
+    await page.evaluate(() => {
+      window._gameManager.hud.hideTandemScorecard();
+    });
+
     await page.keyboard.up('KeyW');
     await page.keyboard.up('KeyA');
     await page.keyboard.up('KeyD');
-    console.log('✓ All screenshots updated successfully!');
+    console.log('✓ All 5 screenshots updated successfully!');
   } catch (err) {
     console.error('Screenshot capture failed:', err);
     throw err;

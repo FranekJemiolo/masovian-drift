@@ -1,5 +1,7 @@
 import { EngineSynth } from './EngineSynth';
 import { MusicSynth } from './MusicSynth';
+import { GranularTireAudio } from './GranularTireAudio';
+import { TurboBlowOffSynth } from './TurboBlowOffSynth';
 
 export class AudioManager {
   private static instance: AudioManager | null = null;
@@ -7,6 +9,8 @@ export class AudioManager {
   public playerSynth: EngineSynth | null = null;
   public p2Synth: EngineSynth | null = null;
   public musicSynth: MusicSynth | null = null;
+  public granularTires: GranularTireAudio | null = null;
+  public turboSynth: TurboBlowOffSynth | null = null;
   public isUnlocked = false;
   public isMuted = false;
   public masterVolume = 0.8;
@@ -132,6 +136,8 @@ export class AudioManager {
       this.playerSynth = new EngineSynth(this.ctx, this.engineBus);
       this.p2Synth = new EngineSynth(this.ctx, this.engineBus);
       this.musicSynth = new MusicSynth(this.ctx, this.musicBus);
+      this.granularTires = new GranularTireAudio(this.ctx, this.sfxBus);
+      this.turboSynth = new TurboBlowOffSynth(this.ctx, this.sfxBus);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();

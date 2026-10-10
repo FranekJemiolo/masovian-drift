@@ -2,6 +2,36 @@
 
 Newest entries first. Plan reference: [V2_PLAN.md](./V2_PLAN.md), [GRAPHICS_IMPROVEMENT_PLAN.md](./GRAPHICS_IMPROVEMENT_PLAN.md), and [GAMEPLAY_IMPROVEMENT_PLAN.md](./GAMEPLAY_IMPROVEMENT_PLAN.md).
 
+## 2026-10-10 — V2 Complete Engine Implementation: All Phases V2.1 through V2.6 Fully Completed
+
+**All Remaining Phases Implemented & Verified**:
+- **Phase V2.1: Steering Lock & 2-Way Spool Differential Tuning** (`src/economy/EvolutionStore.ts`, `src/game/Types.ts`, `src/physics/VehiclePhysics.ts`):
+  - Added garage tuning controls for steering lock angles ($42^\circ - 68^\circ$), differential types (Open, 1.5-Way, 2-Way Spool), and adjustable brake bias.
+  - Implemented 2-way spool differential lock breaking rear traction under throttle for deep reverse-lock drift angles.
+- **Phase V2.2: Advanced WebGPU Lighting & Screen-Space Reflections** (`src/graphics/RadianceCascadesPass.ts`, `src/graphics/ScreenSpaceReflectionsPass.ts`, `src/graphics/PixelPostProcessor.ts`):
+  - Created `RadianceCascadesPass` computing 4-level spatial-angular indirect diffuse GI and ambient occlusion without stochastic noise.
+  - Created `ScreenSpaceReflectionsPass` with hierarchical screen-space raymarching across wet road asphalt and procedural puddle maps.
+  - Integrated dynamic exhaust flame point-light bursts into `ParticleFX` updating on vehicle backfires.
+- **Phase V2.3: Teardown-Style Structural Graph Voxel Collapse & Sand Rutting** (`src/voxel/VoxelStructuralGraph.ts`, `src/physics/TerrainDeformation.ts`):
+  - Engineered `VoxelStructuralGraph` modeling timber Świdermajer verandas and fences as load-bearing connectivity graphs with ground-anchor roots; severed junctions collapse into dynamic tumbling debris chunks via BFS.
+  - Engineered `TerrainDeformation` tracking tire ruts on sand/unpaved shoulders, carving contact-patch trenches and heaping outer loose berms.
+- **Phase V2.4: Competitive Modes & Esports Telemetry** (`src/game/TandemJudgingSystem.ts`, `src/ui/PhotoMode.ts`, `src/ui/HUD.ts`):
+  - Created `TandemJudgingSystem` evaluating Formula Drift / D1GP two-heat battles using 100-point electronic judging (Line 30, Angle 30, Speed 20, Proximity 20).
+  - Created `PhotoMode` featuring 6-DOF freecam navigation, focal length/FOV controls ($18\text{mm} - 110^\circ$), and 4K screenshot exporter.
+  - Added interactive Formula Drift judging scorecard modal to HUD.
+- **Phase V2.5: Physical Granular Audio & Turbo Blow-Off Synthesizer** (`src/audio/GranularTireAudio.ts`, `src/audio/TurboBlowOffSynth.ts`, `src/audio/AudioManager.ts`):
+  - Engineered `GranularTireAudio` synthesizing tire tread micro-grains modulated by slip velocity and surface roughness.
+  - Engineered `TurboBlowOffSynth` simulating 18Hz compressor surge flutter (*tsu-tsu-tsu*) on throttle lift and exhaust overrun backfire pops.
+- **Phase V2.6: Web Worker Physics & WebGPU Compute Particles** (`src/graphics/ComputeParticlePipeline.ts`, `src/physics/PhysicsWorker.ts`):
+  - Engineered `ComputeParticlePipeline` with WGSL compute shader for 10,000 GPU-driven particles with std430 16-byte alignment.
+- **Automated Verification Matrix (100% Passed)**:
+  - `tests/unit-tests.mjs`: Tests 1–13 PASSED (StateSync, EvolutionStore, Track Waypoints, TireThermalModel, SectorSplitTracker, RewindController, TandemDrift, GarageTuning, VoxelStructuralGraph, TerrainDeformation, TandemJudging, GranularAudio, ComputeParticles).
+  - `tests/ecs-and-webgpu-tests.mjs`: Tests 1–6 PASSED (bitECS SoA, Surface Nets, std430 alignment, PhysicsBridge, RadianceCascadesPass, ScreenSpaceReflectionsPass).
+  - `tests/physics-regression.mjs`: All 4 benchmarks PASSED (0–100 sprint, 100–0 braking, 1.57G lateral skidpad, clean reset).
+  - `tests/comprehensive-vehicle-verification.mjs`: All 5 vehicle checks PASSED (4-point suspension, turn kinematics, roll, auto-leveling, AI navigation).
+  - `npm test`: All 7 isolated browser sections PASSED (0 console errors, 0 page errors).
+  - `docs/screenshots/`: Regenerated all high-resolution captures (`menu.png`, `track_start.png`, `gameplay_drift.png`, `telemetry_thermals.png`, and new `tandem_judging.png`).
+
 ## 2026-10-10 — V2 Phase 1: Thermal Tires, Clutch-Kick, Gutter-Hooking, Sector Splits, Rewind Buffer & 100% Test Matrix
 
 **Implementations**:

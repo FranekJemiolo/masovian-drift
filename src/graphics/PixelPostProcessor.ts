@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { RadianceCascadesPass } from './RadianceCascadesPass';
+import { ScreenSpaceReflectionsPass } from './ScreenSpaceReflectionsPass';
 
 export interface PixelPostProcessorOptions {
   pixelScale?: number;
@@ -10,6 +12,9 @@ export class PixelPostProcessor {
   private scene: THREE.Scene;
   private camera: THREE.Camera;
   public pixelScale: number;
+
+  public radiancePass: RadianceCascadesPass;
+  public ssrPass: ScreenSpaceReflectionsPass;
 
   private renderTarget: THREE.WebGLRenderTarget;
   private depthTexture: THREE.DepthTexture;
@@ -50,6 +55,9 @@ export class PixelPostProcessor {
       depthTexture: this.depthTexture,
       depthBuffer: true,
     });
+
+    this.radiancePass = new RadianceCascadesPass(renderer, scene, camera);
+    this.ssrPass = new ScreenSpaceReflectionsPass(renderer, camera);
 
     this.postScene = new THREE.Scene();
     this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -419,6 +427,8 @@ export class PixelPostProcessor {
   }
 
   public dispose(): void {
+    this.radiancePass.dispose();
+    this.ssrPass.dispose();
     this.renderTarget.dispose();
     this.depthTexture.dispose();
     this.postMaterial.dispose();

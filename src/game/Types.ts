@@ -69,6 +69,12 @@ export interface VehicleSpecs {
   accentColor: number;
 }
 
+export interface VehicleTuning {
+  steeringLockDeg: number;       // 42 to 68 degrees (Formula Drift reverse lock)
+  differentialType: 'open' | '1.5-way' | 'spool'; // locked 2-way spool for drifting
+  brakeBias: number;             // front bias ratio (0.45 to 0.70)
+}
+
 export interface PlayerCarProfile {
   id: string;
   modelName: string;
@@ -81,6 +87,7 @@ export interface PlayerCarProfile {
     openExhaust: boolean;
     sandTires: boolean;
   };
+  tuning?: VehicleTuning;
   valuePln: number;
 }
 
