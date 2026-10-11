@@ -28,18 +28,18 @@ export class TrackWaypoints {
       { x: 0, z: 130, y: 0.1, s: 'asphalt', w: 14, speed: 190 },
 
       // 2. Turn 1 (Józefów Forest Right sweeper, climbing inland dune bluff)
-      { x: 35, z: 190, y: 0.6, s: 'asphalt', w: 13, speed: 140 },
-      { x: 90, z: 240, y: 1.4, s: 'asphalt', w: 13, speed: 120 },
-      { x: 155, z: 255, y: 2.2, s: 'gravel', w: 12, speed: 100 },
+      { x: 35, z: 190, y: 0.6, s: 'asphalt', w: 13, speed: 125 },
+      { x: 90, z: 240, y: 1.4, s: 'asphalt', w: 13, speed: 105 },
+      { x: 155, z: 255, y: 2.2, s: 'gravel', w: 12, speed: 90 },
 
       // 3. Sandy chicane through pine woods (Świdermajer villas & dune crest)
-      { x: 215, z: 220, y: 2.6, s: 'gravel', w: 12, speed: 85 },
-      { x: 255, z: 155, y: 2.0, s: 'gravel', w: 11, speed: 80 },
-      { x: 275, z: 75, y: 1.2, s: 'sand', w: 12, speed: 75 },
+      { x: 215, z: 220, y: 2.6, s: 'gravel', w: 12, speed: 75 },
+      { x: 255, z: 155, y: 2.0, s: 'gravel', w: 11, speed: 70 },
+      { x: 275, z: 75, y: 1.2, s: 'sand', w: 12, speed: 65 },
 
       // 4. Świder Riverbank hairpin (descending to river valley & sandy shoals!)
-      { x: 260, z: -10, y: 0.3, s: 'sand', w: 13, speed: 65 },
-      { x: 215, z: -70, y: 0.1, s: 'sand', w: 13, speed: 70 },
+      { x: 260, z: -10, y: 0.3, s: 'sand', w: 13, speed: 60 },
+      { x: 215, z: -70, y: 0.1, s: 'sand', w: 13, speed: 68 },
       { x: 165, z: -125, y: 0.4, s: 'gravel', w: 12, speed: 90 },
 
       // 5. Back straight through Otwock pine alley (rolling dune terrace)

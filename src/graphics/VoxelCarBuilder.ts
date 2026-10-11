@@ -15,6 +15,8 @@ export interface CarVisualElements {
   headlightBeams?: [THREE.Mesh, THREE.Mesh];
   headlightBeamMat?: THREE.MeshBasicMaterial;
   exhaustPipes: THREE.Vector3[];
+  contactShadowMesh?: THREE.Mesh;
+  contactShadowMaterial?: THREE.MeshBasicMaterial;
 }
 
 export class VoxelCarBuilder {
@@ -69,22 +71,49 @@ export class VoxelCarBuilder {
       roughness: 0.12,
       flatShading: true,
     });
+    const stainlessMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.96,
+      roughness: 0.18,
+      flatShading: true,
+    });
     const headLightMat = new THREE.MeshStandardMaterial({
       color: 0xfffbeb,
       emissive: 0xfef08a,
       emissiveIntensity: 1.6,
       flatShading: true,
     });
+    // Multi-tiered rear light cluster materials
     const brakeLightMat = new THREE.MeshStandardMaterial({
-      color: 0x991b1b,
+      color: 0xef4444,
       emissive: 0xef4444,
-      emissiveIntensity: 0.35,
+      emissiveIntensity: 1.5,
       flatShading: true,
     });
     const indicatorMat = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
-      emissive: 0xb45309,
-      emissiveIntensity: 0.5,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 1.2,
+      flatShading: true,
+    });
+    const reverseLightMat = new THREE.MeshStandardMaterial({
+      color: 0xf9fafb,
+      emissive: 0xf9fafb,
+      emissiveIntensity: 1.0,
+      flatShading: true,
+    });
+
+    // Fuchs Rim Materials
+    const fuchsLipMat = new THREE.MeshStandardMaterial({
+      color: 0xd1d5db, // #D1D5DB anodized aluminum lip
+      metalness: 0.88,
+      roughness: 0.20,
+      flatShading: true,
+    });
+    const fuchsPetalMat = new THREE.MeshStandardMaterial({
+      color: 0x111827, // #111827 satin black recessed petals
+      roughness: 0.78,
+      metalness: 0.22,
       flatShading: true,
     });
 
@@ -147,8 +176,10 @@ export class VoxelCarBuilder {
     addBox(0.08, 0.4, 0.12, 0.59, 0.76, -0.65, bodyMat);
 
     // 4. Iconic Rear Engine Deck Vents & Air-Cooled Boxer Fan
-    for (let i = 0; i < 4; i++) {
-      addBox(0.8, 0.03, 0.06, 0, 0.71, -1.2 - i * 0.12, blackTrimMat);
+    // Alternating dark recessed voxel slits (1 x 1 x 8 voxels) across decklid
+    for (let i = 0; i < 8; i++) {
+      const slitZ = -1.14 - i * 0.07;
+      addBox(0.88, 0.025, 0.038, 0, 0.71, slitZ, blackTrimMat);
     }
     // Iconic Air-Cooled Boxer Turbine Fan (recessed horizontally under decklid louvers)
     const fanGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.04, 12);
@@ -157,10 +188,22 @@ export class VoxelCarBuilder {
     fan.position.set(0, 0.44, -1.35);
     bodyGroup.add(fan);
 
-    // 5. Classic Ducktail / Whale-Tail Rear Spoiler
-    addBox(1.3, 0.08, 0.35, 0, 0.78, -1.82, accentMat);
-    addBox(0.2, 0.12, 0.2, -0.4, 0.72, -1.8, blackTrimMat);
-    addBox(0.2, 0.12, 0.2, 0.4, 0.72, -1.8, blackTrimMat);
+    // 5. Authentic 1973 Boxer 2.7 Carrera RS Ducktail Spoiler
+    const ducktailGroup = new THREE.Group();
+    ducktailGroup.position.set(0, 0.73, -1.74);
+
+    // Aerodynamic swept-up ducktail body
+    const spoilerRamp = addBox(1.34, 0.13, 0.36, 0, 0.06, 0, bodyMat, ducktailGroup);
+    spoilerRamp.rotation.x = -0.38; // upward kick angle!
+
+    // Raised trailing edge lip
+    const spoilerLip = addBox(1.36, 0.07, 0.08, 0, 0.17, -0.16, accentMat, ducktailGroup);
+    spoilerLip.rotation.x = -0.38;
+
+    // Sculpted ducktail side aerodynamic endplates
+    addBox(0.08, 0.17, 0.36, -0.64, 0.06, 0, bodyMat, ducktailGroup);
+    addBox(0.08, 0.17, 0.36, 0.64, 0.06, 0, bodyMat, ducktailGroup);
+    bodyGroup.add(ducktailGroup);
 
     // 6. Motorsport Aero (Front Splitter, Side Skirts, Rear Diffuser Fins)
     // Low front chin splitter
@@ -231,15 +274,10 @@ export class VoxelCarBuilder {
     addBox(0.3, 0.3, 0.04, -0.5, 0.55, 1.80, chromeMat);
     addBox(0.3, 0.3, 0.04, 0.5, 0.55, 1.80, chromeMat);
 
-    // Volumetric Headlight Dust Cones (cinematic AAA atmospheric beams, G3 / G4)
-    // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments, heightSegments, openEnded)
-    // By rotating around X by -Math.PI / 2, Y maps to -Z:
-    // Top (narrow 0.08m) -> Z = -height/2; Bottom (wide 1.85m) -> Z = +height/2.
-    // Translating along Z by +height/2 (9.0m) positions narrow top at Z=0 (headlight lens)
-    // and wide bottom at Z = +18.0m (down the road ahead of the car).
+    // Volumetric Headlight Dust Cones
     const coneGeo = new THREE.CylinderGeometry(0.08, 1.85, 18.0, 12, 1, true);
     coneGeo.rotateX(-Math.PI / 2);
-    coneGeo.translate(0, -0.15, 9.0); // Slight downward slope to hug roadbed
+    coneGeo.translate(0, -0.15, 9.0);
     const coneMat = new THREE.MeshBasicMaterial({
       color: 0xfffae0,
       transparent: true,
@@ -248,8 +286,6 @@ export class VoxelCarBuilder {
       side: THREE.FrontSide,
       depthWrite: false,
     });
-    // In bright daylight, keep dust beams invisible to prevent washed-out screen haze;
-    // visible dynamically in sunset/night or heavy dusk
     coneMat.visible = false;
 
     const leftBeam = new THREE.Mesh(coneGeo, coneMat);
@@ -264,27 +300,41 @@ export class VoxelCarBuilder {
     addBox(0.22, 0.08, 0.08, -0.52, 0.36, 1.95, indicatorMat);
     addBox(0.22, 0.08, 0.08, 0.52, 0.36, 1.95, indicatorMat);
 
-    // 10. Rear Tail lights (Continuous wide bar + brake lights)
-    addBox(1.3, 0.12, 0.08, 0, 0.55, -2.04, brakeLightMat);
-    addBox(0.25, 0.12, 0.08, -0.55, 0.55, -2.05, brakeLightMat);
-    addBox(0.25, 0.12, 0.08, 0.55, 0.55, -2.05, brakeLightMat);
+    // 10. Multi-tiered rear light clusters (Running/Brake, Turn indicators, Reverse)
+    // Left cluster
+    addBox(0.34, 0.06, 0.06, -0.52, 0.58, -2.04, indicatorMat);  // Amber turn indicator (top)
+    addBox(0.34, 0.07, 0.06, -0.52, 0.52, -2.04, brakeLightMat); // Red brake light (mid)
+    addBox(0.18, 0.05, 0.06, -0.43, 0.46, -2.04, reverseLightMat); // White reverse light (inner low)
+    addBox(0.16, 0.05, 0.06, -0.61, 0.46, -2.04, brakeLightMat); // Red reflector
 
-    // 11. Dual Chrome Exhaust Tips (lowered at rear bumper)
-    addBox(0.12, 0.12, 0.3, -0.42, 0.22, -2.08, chromeMat);
-    addBox(0.12, 0.12, 0.3, 0.42, 0.22, -2.08, chromeMat);
+    // Right cluster
+    addBox(0.34, 0.06, 0.06, 0.52, 0.58, -2.04, indicatorMat);  // Amber turn indicator (top)
+    addBox(0.34, 0.07, 0.06, 0.52, 0.52, -2.04, brakeLightMat); // Red brake light (mid)
+    addBox(0.18, 0.05, 0.06, 0.43, 0.46, -2.04, reverseLightMat); // White reverse light (inner low)
+    addBox(0.16, 0.05, 0.06, 0.61, 0.46, -2.04, brakeLightMat); // Red reflector
+
+    // Center continuous red running/reflector strip
+    addBox(0.66, 0.05, 0.05, 0, 0.52, -2.03, brakeLightMat);
+
+    // 11. Twin Stainless Exhaust Tips beneath rear bumper
     const exhaustPipes = [
-      new THREE.Vector3(-0.42, 0.22, -2.15),
-      new THREE.Vector3(0.42, 0.22, -2.15),
+      new THREE.Vector3(-0.42, 0.20, -2.12),
+      new THREE.Vector3(0.42, 0.20, -2.12),
     ];
+    for (const ep of exhaustPipes) {
+      // Outer stainless steel tip
+      addBox(0.14, 0.12, 0.28, ep.x, ep.y, ep.z + 0.08, stainlessMat);
+      // Dark hollow inner bore
+      addBox(0.08, 0.06, 0.06, ep.x, ep.y, ep.z - 0.04, blackTrimMat);
+    }
 
-    // 12. Wheels (FL, FR, RL, RR) with isolated steer pivot, brake rotors, and Fuchs/BBS hubs
+    // 12. Wheels with Fuchs-Style 5-Spoke Rims (FL, FR, RL, RR)
     const brakeRotorMaterials: THREE.MeshStandardMaterial[] = [];
 
     const createWheel = (x: number, z: number, isRight: boolean): { pivot: THREE.Group; spin: THREE.Group } => {
       const pivotGroup = new THREE.Group();
       pivotGroup.position.set(x, 0.32, z);
 
-      // Separate spin group so rotating around X does not cause gimbal wobble with Y steering
       const spinGroup = new THREE.Group();
       pivotGroup.add(spinGroup);
 
@@ -300,19 +350,34 @@ export class VoxelCarBuilder {
       tireMesh.castShadow = true;
       spinGroup.add(tireMesh);
 
-      // Chrome Deep-Dish Outer Rim Lip
-      const rimLipGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.245, 12);
-      const rimLipMesh = new THREE.Mesh(rimLipGeo, chromeMat);
+      // Anodized Aluminum Outer Rim Lip (#D1D5DB)
+      const rimLipGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.245, 16);
+      const rimLipMesh = new THREE.Mesh(rimLipGeo, fuchsLipMat);
       rimLipMesh.rotation.z = Math.PI / 2;
       spinGroup.add(rimLipMesh);
 
-      // Satin Black Fuchs / BBS Spoke Inset
-      const spokeGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.25, 5);
-      const spokeMesh = new THREE.Mesh(spokeGeo, blackTrimMat);
-      spokeMesh.rotation.z = Math.PI / 2;
-      spinGroup.add(spokeMesh);
+      // Center Hub (#111827)
+      const centerHubGeo = new THREE.CylinderGeometry(0.065, 0.065, 0.252, 10);
+      const centerHub = new THREE.Mesh(centerHubGeo, fuchsPetalMat);
+      centerHub.rotation.z = Math.PI / 2;
+      spinGroup.add(centerHub);
 
-      // Ventilated Steel Brake Rotor (heats up and glows orange-red under heavy braking!)
+      // 5-Spoke Fuchs Star Petals (#111827 satin black)
+      const spokeLength = 0.13;
+      const spokeGeo = new THREE.BoxGeometry(0.042, spokeLength, 0.248);
+      for (let s = 0; s < 5; s++) {
+        const spokeMesh = new THREE.Mesh(spokeGeo, fuchsPetalMat);
+        const ang = (s * Math.PI * 2) / 5;
+        spokeMesh.position.set(
+          Math.cos(ang) * (spokeLength * 0.48),
+          Math.sin(ang) * (spokeLength * 0.48),
+          0
+        );
+        spokeMesh.rotation.z = ang - Math.PI / 2;
+        spinGroup.add(spokeMesh);
+      }
+
+      // Ventilated Steel Brake Rotor
       const rotorGeo = new THREE.CylinderGeometry(0.23, 0.23, 0.05, 12);
       const rotorMat = new THREE.MeshStandardMaterial({
         color: 0x94a3b8,
@@ -326,7 +391,7 @@ export class VoxelCarBuilder {
       rotorMesh.rotation.z = Math.PI / 2;
       spinGroup.add(rotorMesh);
 
-      // Brembo-style Brake Caliper (stays attached to kingpin pivot, upright!)
+      // Brembo-style Brake Caliper
       const caliperMat = new THREE.MeshStandardMaterial({
         color: 0xd97706,
         roughness: 0.45,
@@ -355,14 +420,15 @@ export class VoxelCarBuilder {
     }
 
     // Procedural Ambient Contact Shadow under chassis (G3 / G4)
+    // Attached directly beneath chassis at y = 0.01 relative to ground / chassis contact
     const shadowCanvas = document.createElement('canvas');
     shadowCanvas.width = 128;
     shadowCanvas.height = 128;
     const sCtx = shadowCanvas.getContext('2d');
     if (sCtx) {
       const grad = sCtx.createRadialGradient(64, 64, 10, 64, 64, 64);
-      grad.addColorStop(0, 'rgba(0, 0, 0, 0.7)');
-      grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.35)');
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+      grad.addColorStop(0.6, 'rgba(0, 0, 0, 0.45)');
       grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       sCtx.fillStyle = grad;
       sCtx.fillRect(0, 0, 128, 128);
@@ -373,11 +439,11 @@ export class VoxelCarBuilder {
     const shadowMat = new THREE.MeshBasicMaterial({
       map: shadowTex,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.80,
       depthWrite: false,
     });
     const contactShadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
-    contactShadowMesh.position.set(0, 0.04, 0);
+    contactShadowMesh.position.set(0, 0.01, 0);
     root.add(contactShadowMesh);
 
     return {
@@ -395,8 +461,12 @@ export class VoxelCarBuilder {
       headlightBeams: [leftBeam, rightBeam],
       headlightBeamMat: coneMat,
       exhaustPipes,
+      contactShadowMesh,
+      contactShadowMaterial: shadowMat,
     };
   }
+
+
 
   /**
    * Builds a translucent holographic ghost car for Time Trial lap replays (M8)

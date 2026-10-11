@@ -42,6 +42,12 @@ export class HUD {
   private biasTagEl!: HTMLElement;
   private gValEl!: HTMLElement;
 
+  // Ergonomics & Telemetry Polish (Section 4.1)
+  public vehicleSpeedKmh = 0;
+  public raceTimer = 0;
+  public controlsOverlay!: HTMLElement;
+  public telemetryPanel!: HTMLElement;
+
   // Minimap
   private minimapCanvas!: HTMLCanvasElement;
   private minimapCtx: CanvasRenderingContext2D | null = null;
@@ -103,6 +109,13 @@ export class HUD {
     this.container.style.display = 'none';
     this.createDom();
     document.body.appendChild(this.container);
+
+    // Bind KeyT to toggle 4-point suspension telemetry panel (Section 4.1)
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.code === 'KeyT') {
+        this.toggleTelemetry();
+      }
+    });
   }
 
   private createDom(): void {
@@ -155,7 +168,7 @@ export class HUD {
       <!-- BOTTOM CLUSTERS (Pinned Strictly to Bottom Edges) -->
       <div class="hud-bottom-bar">
         <!-- 4-Point Dynamic Weight Transfer Telemetry -->
-        <div class="telemetry-card hud-glass">
+        <div id="telemetry-suspension-panel" class="telemetry-card hud-glass">
           <div class="hud-card-header">
             <span class="hud-label">4-POINT SUSPENSION LOAD & TIRE THERMALS</span>
             <span id="hud-bias-tag" class="bias-tag">40F / 60R</span>
@@ -191,11 +204,12 @@ export class HUD {
         </div>
 
         <!-- Sleek Keyboard & Gamepad Control Helper Pill -->
-        <div class="controls-pill hud-glass">
+        <div id="hud-controls-pill" class="controls-pill hud-glass">
           <span class="ctrl-unit"><kbd>W</kbd><kbd>S</kbd> Drive</span>
           <span class="ctrl-unit"><kbd>A</kbd><kbd>D</kbd> Steer</span>
           <span class="ctrl-unit"><kbd>SPACE</kbd> Drift</span>
           <span class="ctrl-unit"><kbd>C</kbd> Clutch</span>
+          <span class="ctrl-unit"><kbd>T</kbd> Telemetry</span>
           <span class="ctrl-unit"><kbd>R</kbd> Rewind</span>
           <span class="ctrl-unit"><kbd>P</kbd> Photo</span>
           <span class="ctrl-unit"><kbd>K</kbd> Respawn</span>
@@ -394,6 +408,9 @@ export class HUD {
     this.loadRLEl = this.container.querySelector('#patch-rl .fill')!;
     this.loadRREl = this.container.querySelector('#patch-rr .fill')!;
 
+    this.telemetryPanel = this.container.querySelector('#telemetry-suspension-panel')!;
+    this.controlsOverlay = this.container.querySelector('#hud-controls-pill')!;
+
     this.p2Container = this.container.querySelector('#hud-p2')!;
     this.p2SpeedEl = this.container.querySelector('#hud-p2-speed')!;
     this.p2RpmEl = this.container.querySelector('#hud-p2-rpm')!;
@@ -407,6 +424,25 @@ export class HUD {
     this.resultsModal = this.container.querySelector('#hud-results-modal')!;
     this.setupPauseListeners();
     this.setupResultsListeners();
+  }
+
+  public toggleTelemetry(): void {
+    const panel = document.getElementById('telemetry-suspension-panel') || this.telemetryPanel;
+    if (panel) {
+      const isNone = panel.style.display === 'none';
+      panel.style.display = isNone ? 'block' : 'none';
+    }
+  }
+
+  public setRaceTimer(seconds: number): void {
+    this.raceTimer = seconds;
+    const controls = document.getElementById('hud-controls-pill') || this.controlsOverlay;
+    if (controls) {
+      if (this.vehicleSpeedKmh > 20 || this.raceTimer > 5.0) {
+        controls.style.opacity = '0';
+        controls.style.transition = 'opacity 0.8s ease-out';
+      }
+    }
   }
 
   private setupPauseListeners(): void {
@@ -694,6 +730,18 @@ export class HUD {
     allVehicles?: VehicleState[],
     waypoints?: Waypoint[]
   ): void {
+    this.vehicleSpeedKmh = playerState.speedKmh;
+    this.raceTimer = playerState.lapTime;
+
+    // Bottom Controls Strip: Auto-fade after 5s or when speed > 20 km/h (Section 4.1)
+    const controls = document.getElementById('hud-controls-pill') || this.controlsOverlay;
+    if (controls) {
+      if (this.vehicleSpeedKmh > 20 || this.raceTimer > 5.0) {
+        controls.style.opacity = '0';
+        controls.style.transition = 'opacity 0.8s ease-out';
+      }
+    }
+
     const spd = Math.round(playerState.speedKmh);
     if (spd !== this._lastSpeed) {
       this.speedEl.textContent = spd.toString();
@@ -1018,43 +1066,43 @@ export class HUD {
     ctx.arc(startX, startY, 4.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw opponent AI vehicles
+    // Draw opponent AI vehicles (bright white pips, Section 4.1)
     for (const v of allVehicles) {
       if (v.isPlayer) continue;
       const [vx, vy] = toMap(v.position.x, v.position.z);
-      ctx.fillStyle = v.name.includes('Kuba') ? '#ef4444' :
-                      v.name.includes('Ania') ? '#e2e8f0' :
-                      v.name.includes('Tomek') ? '#3b82f6' :
-                      v.name.includes('Zofia') ? '#facc15' : '#22c55e';
+      ctx.fillStyle = '#ffffff'; // Bright white pips for AI opponents
       ctx.beginPath();
       ctx.arc(vx, vy, 4.0, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
     }
 
-    // Draw player vehicle (directional chevron arrow pointing forward, U9)
+    // Draw player vehicle (pulsing amber arrow pointing forward, Section 4.1)
     const player = allVehicles.find((v) => v.isPlayer);
     if (player) {
       const [px, py] = toMap(player.position.x, player.position.z);
       const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(player.quaternion);
       const angle = Math.atan2(fwd.z, fwd.x) + Math.PI * 0.5;
 
+      const pulse = 1.0 + Math.sin(Date.now() * 0.008) * 0.18;
+
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(angle);
+      ctx.scale(pulse, pulse);
 
-      // Sleek delta racing arrow
-      ctx.fillStyle = '#38bdf8';
+      // Pulsing amber delta racing arrow (#F59E0B)
+      ctx.fillStyle = '#f59e0b';
       ctx.beginPath();
-      ctx.moveTo(0, -8);
-      ctx.lineTo(5.5, 6);
-      ctx.lineTo(0, 3);
-      ctx.lineTo(-5.5, 6);
+      ctx.moveTo(0, -9);
+      ctx.lineTo(6, 7);
+      ctx.lineTo(0, 3.5);
+      ctx.lineTo(-6, 7);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = '#fef3c7';
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.restore();

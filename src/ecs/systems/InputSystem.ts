@@ -10,9 +10,9 @@ export class InputSystem {
     if (playerEid > 0) {
       let p1 = inputManager.getPlayerInputs();
       if (isCountingDown) {
-        VehicleInput.throttle[playerEid] = 0.35;
-        VehicleInput.brake[playerEid] = 0.0;
-        VehicleInput.steer[playerEid] = p1.steer;
+        VehicleInput.throttle[playerEid] = 0.0;
+        VehicleInput.brake[playerEid] = 1.0;
+        VehicleInput.steer[playerEid] = 0.0;
         VehicleInput.handbrake[playerEid] = 1.0;
       } else {
         VehicleInput.throttle[playerEid] = p1.throttle;
@@ -26,9 +26,9 @@ export class InputSystem {
     if (p2Eid > 0) {
       let p2 = inputManager.getPlayer2Inputs();
       if (isCountingDown) {
-        VehicleInput.throttle[p2Eid] = 0.35;
-        VehicleInput.brake[p2Eid] = 0.0;
-        VehicleInput.steer[p2Eid] = p2.steer;
+        VehicleInput.throttle[p2Eid] = 0.0;
+        VehicleInput.brake[p2Eid] = 1.0;
+        VehicleInput.steer[p2Eid] = 0.0;
         VehicleInput.handbrake[p2Eid] = 1.0;
       } else {
         VehicleInput.throttle[p2Eid] = p2.throttle;

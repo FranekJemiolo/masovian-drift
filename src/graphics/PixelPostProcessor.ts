@@ -165,22 +165,14 @@ export class PixelPostProcessor {
         float ao = clamp(1.0 - (aoSum * 0.25) * uAOIntensity, 0.35, 1.0);
         color *= ao;
 
-        // Crisp Geometric Voxel Edge Detection
-        float d00 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, -texel.y)).r);
-        float d20 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, -texel.y)).r);
-        float d02 = linearizeDepth(texture2D(tDepth, vUv + vec2(-texel.x, texel.y)).r);
-        float d22 = linearizeDepth(texture2D(tDepth, vUv + vec2(texel.x, texel.y)).r);
-
-        float edge = length(vec2(d20 - d02, d22 - d00)) * 7.5;
-
-        // Color difference for crisp silhouette outlines
+        // Crisp Geometric Voxel Edge Definition / Cavity Shader (Section 3.2)
+        float depthDiff = length(vec2(dFdx(centerDepth), dFdy(centerDepth)));
         vec3 cLeft = texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb;
         vec3 cRight = texture2D(tDiffuse, vUv + vec2(texel.x, 0.0)).rgb;
         vec3 cUp = texture2D(tDiffuse, vUv + vec2(0.0, texel.y)).rgb;
         vec3 cDown = texture2D(tDiffuse, vUv - vec2(0.0, texel.y)).rgb;
-        float colorEdge = length(cRight - cLeft) + length(cUp - cDown);
-
-        float edgeFactor = clamp((edge * 0.45 + colorEdge * 0.20) * uEdgeStrength, 0.0, 1.0);
+        float normalDiff = length(cRight - cLeft) + length(cUp - cDown);
+        float edgeFactor = clamp((depthDiff * 40.0 + normalDiff * 1.5) * uEdgeStrength, 0.0, 1.0);
 
         // Warm Golden-Hour Color Grading (Mazovian sunset palette)
         vec3 graded = color * vec3(1.06, 1.03, 0.98); // Warm sunlight spectrum
@@ -190,8 +182,8 @@ export class PixelPostProcessor {
         float lum = dot(graded, vec3(0.299, 0.587, 0.114));
         vec3 satColor = mix(vec3(lum), graded, 1.28);
 
-        // Silhouette edge shading
-        vec3 finalColor = mix(satColor, satColor * 0.54, edgeFactor * 0.35);
+        // Voxel edge & cavity shading (subtle darkening for tactile block definition)
+        vec3 finalColor = mix(satColor, satColor * 0.72, edgeFactor);
 
         // High-Speed Directional Radial Streak Motion Blur
         if (uSpeedFactor > 0.12) {

@@ -17,6 +17,80 @@ export interface TrackMeshResult {
 export class TrackMeshBuilder {
   public static readonly ROAD_ELEVATION = 0.40; // Firmly elevated above terrain!
 
+  /**
+   * Evaluates exact mathematical terrain elevation at (vx, vz) across the 1.6km x 1.6km map
+   */
+  public static getTerrainHeight(
+    vx: number,
+    vz: number,
+    waypoints?: Waypoint[],
+    spatialGrid?: SpatialWaypointGrid
+  ): number {
+    let minTrackDist = 999.0;
+    let closestWpY = 0.0;
+    if (spatialGrid) {
+      const query = spatialGrid.findClosest(vx, vz, 60.0);
+      minTrackDist = query.distance;
+      closestWpY = query.waypoint ? query.waypoint.point.y : 0;
+    } else if (waypoints && waypoints.length > 0) {
+      for (let k = 0; k < waypoints.length; k += 2) {
+        const wp = waypoints[k];
+        const dx = vx - wp.point.x;
+        const dz = vz - wp.point.z;
+        const d = Math.sqrt(dx * dx + dz * dz);
+        if (d < minTrackDist) {
+          minTrackDist = d;
+          closestWpY = wp.point.y;
+        }
+      }
+    }
+
+    // 1. Base rolling glacial plain
+    let h = Math.sin(vx * 0.012) * Math.cos(vz * 0.012) * 1.8 +
+            Math.sin(vx * 0.022 + vz * 0.016) * 0.9;
+
+    // 2. Inland sand dunes (Wydmy Otwockie/Józefowskie) in northern & eastern pine forests
+    if (vz > 120.0 || (vx > 60.0 && vz < -160.0)) {
+      const duneRidge = (Math.sin(vx * 0.018 + 0.8) * 1.5 + Math.cos(vz * 0.015) * 1.6);
+      h += Math.max(0, duneRidge);
+    }
+
+    // 3. Serpentine Świder River Valley Trench & Asymmetric Banks
+    const riverCenterlineX = 235.0 + Math.sin(vz * 0.016) * 45.0 - (vz + 40.0) * 0.22;
+    const distToRiverCenter = Math.abs(vx - riverCenterlineX);
+    const inRiverCorridor = Math.abs(vz) < 260.0 && distToRiverCenter < 80.0;
+
+    let isRiverBed = false;
+    if (inRiverCorridor) {
+      const riverBedWidth = 32.0;
+      if (distToRiverCenter < riverBedWidth) {
+        const normDist = distToRiverCenter / riverBedWidth;
+        const riverH = -1.15 + normDist * normDist * 0.65;
+        h = Math.min(h, riverH);
+        isRiverBed = true;
+      } else if (vx < riverCenterlineX && distToRiverCenter < 70.0) {
+        const shoalBlend = (distToRiverCenter - riverBedWidth) / 38.0;
+        const shoalH = -0.50 + shoalBlend * 0.65;
+        h = Math.min(h, shoalH);
+      } else if (vx >= riverCenterlineX && distToRiverCenter < 65.0) {
+        const cutbankBlend = (distToRiverCenter - riverBedWidth) / 33.0;
+        h = Math.max(h, 0.4 + cutbankBlend * 2.2);
+      }
+    }
+
+    // CARVE TRACK BED: near road, smoothly carve terrain below roadbed
+    if (minTrackDist < 26.0) {
+      const blend = minTrackDist / 26.0;
+      h = Math.min(h, closestWpY - 0.22) * (1.0 - blend) + h * blend;
+    }
+
+    if (!isRiverBed && h < -0.35) {
+      h = -0.35;
+    }
+
+    return h;
+  }
+
   public static buildTrack(waypoints: Waypoint[]): TrackMeshResult {
     const trackGroup = new THREE.Group();
     const count = waypoints.length;
@@ -38,15 +112,14 @@ export class TrackMeshBuilder {
     const curbColors: number[] = [];
 
     // High-visibility, rich arcade color palette
-    const asphaltDark = new THREE.Color(0x3a3e49); // Clean slate tarmac
-    const asphaltLight = new THREE.Color(0x454b57); // Alternating aggregate tarmac
+    const asphaltDark = new THREE.Color(0x333742); // Clean slate aggregate tarmac
+    const asphaltLight = new THREE.Color(0x3e4450); // Alternating aggregate tarmac
     const gravelColor = new THREE.Color(0x8a7d6e); // Mazovian gravel
     const sandColor = new THREE.Color(0xdfb17b); // Golden Świder river sand
     const whiteMarking = new THREE.Color(0xffffff);
     const yellowMarking = new THREE.Color(0xfbbf24);
     const redKerb = new THREE.Color(0xef4444);
-    const whiteKerb = new THREE.Color(0xf8fafc);
-    const rubberMark = new THREE.Color(0x22242a);
+    const whiteKerb = new THREE.Color(0xffffff);
 
     const ROAD_ELEVATION = TrackMeshBuilder.ROAD_ELEVATION;
 
@@ -83,19 +156,51 @@ export class TrackMeshBuilder {
       const yLeft = yRoad + bankOffsetLeft;
       const yRight = yRoad + bankOffsetRight;
 
-      // 4 Main Road Cross-Section Points:
+      const prevWp = waypoints[(i - 1 + count) % count];
+      const nextWp = waypoints[(i + 1) % count];
+      let curvature = 0;
+      if (prevWp.tangent && nextWp.tangent) {
+        curvature = prevWp.tangent.angleTo(nextWp.tangent);
+      }
+      const isMainStraight = (i <= 8 || i >= 135);
+      const isCorner = !isMainStraight && (curvature > 0.035 || wp.surface !== 'asphalt');
+
+      // Authentic Mazovian worn road surface with 1.5% cross-slope crown:
+      const crown = halfWidth * 0.015;
+      const oxidizedCenter = (wp.surface === 'asphalt') ? new THREE.Color(0x4b5563) : baseColor;
+      const racingLineColor = (wp.surface === 'asphalt' && isCorner)
+        ? new THREE.Color(0x1f2937) // #1F2937 Darkened rubberized patch layers through corner entries & exits
+        : ((wp.surface === 'asphalt') ? new THREE.Color(0x2d3440) : baseColor);
+      const vergeColorL = new THREE.Color(0xd97706); // #D97706 Fine sandy dune verge tone
+      const vergeColorR = new THREE.Color(0xfbbf24); // #FBBF24 Sandy verge tone
+
+      const pVergeL = pt.clone().addScaledVector(normal, -(halfWidth + 1.2));
+      const pVergeR = pt.clone().addScaledVector(normal, halfWidth + 1.2);
       const pLeft = pt.clone().addScaledVector(normal, -halfWidth);
       const pRight = pt.clone().addScaledVector(normal, halfWidth);
+      const pRaceL = pt.clone().addScaledVector(normal, -halfWidth * 0.45);
+      const pRaceR = pt.clone().addScaledVector(normal, halfWidth * 0.45);
 
-      // --- 1. Roadbed Geometry ---
-      roadVertices.push(pLeft.x, yLeft, pLeft.z);
-      roadVertices.push(pRight.x, yRight, pRight.z);
+      const yRaceL = yRoad + bankOffsetLeft * 0.45 + crown * 0.65;
+      const yRaceR = yRoad + bankOffsetRight * 0.45 + crown * 0.65;
+      const yCenter = yRoad + crown;
 
-      roadColors.push(baseColor.r, baseColor.g, baseColor.b);
-      roadColors.push(baseColor.r, baseColor.g, baseColor.b);
+      // 7 Roadbed cross-section vertices
+      const slicePts = [
+        { p: pVergeL, y: yLeft - 0.03, c: vergeColorL, u: 0.0 },
+        { p: pLeft, y: yLeft, c: baseColor, u: 0.1 },
+        { p: pRaceL, y: yRaceL, c: racingLineColor, u: 0.3 },
+        { p: pt, y: yCenter, c: oxidizedCenter, u: 0.5 },
+        { p: pRaceR, y: yRaceR, c: racingLineColor, u: 0.7 },
+        { p: pRight, y: yRight, c: baseColor, u: 0.9 },
+        { p: pVergeR, y: yRight - 0.03, c: vergeColorR, u: 1.0 },
+      ];
 
-      roadUvs.push(0, i * 0.25);
-      roadUvs.push(1, i * 0.25);
+      for (const sp of slicePts) {
+        roadVertices.push(sp.p.x, sp.y, sp.p.z);
+        roadColors.push(sp.c.r, sp.c.g, sp.c.b);
+        roadUvs.push(sp.u, i * 0.25);
+      }
 
       // --- 2. Road Markings Geometry (Dashed centerline + white edge lines) ---
       const lineThickness = 0.38;
@@ -114,7 +219,7 @@ export class TrackMeshBuilder {
 
       const yMarkLeft = yLeft + 0.035;
       const yMarkRight = yRight + 0.035;
-      const yMarkCenter = yRoad + 0.035; // Centerline follows road spine
+      const yMarkCenter = yCenter + 0.035;
 
       markVertices.push(mLeftOut.x, yMarkLeft, mLeftOut.z);
       markVertices.push(mLeftIn.x, yMarkLeft, mLeftIn.z);
@@ -127,22 +232,12 @@ export class TrackMeshBuilder {
       for (let k = 0; k < 4; k++) {
         markColors.push(edgeColor.r, edgeColor.g, edgeColor.b);
       }
-      // Centerline color is always pure crisp white
       markColors.push(whiteMarking.r, whiteMarking.g, whiteMarking.b);
       markColors.push(whiteMarking.r, whiteMarking.g, whiteMarking.b);
 
-      // --- 3. 3D Raised Curbs Cross-Section Nodes ---
-      const prevWp = waypoints[(i - 1 + count) % count];
-      const nextWp = waypoints[(i + 1) % count];
-      let curvature = 0;
-      if (prevWp.tangent && nextWp.tangent) {
-        curvature = prevWp.tangent.angleTo(nextWp.tangent);
-      }
-      const isMainStraight = (i <= 8 || i >= 135);
-      const isCorner = !isMainStraight && (curvature > 0.05 || wp.surface !== 'asphalt');
-
-      const curbWidth = isCorner ? 1.45 : 1.2;
-      const curbHeight = isCorner ? 0.20 : 0.0;
+      // --- 3. 3D Raised Curbs Cross-Section Nodes (0.08m height) ---
+      const curbWidth = isCorner ? 1.35 : 1.1;
+      const curbHeight = isCorner ? 0.08 : 0.0; // 0.08m raised 3D apex kerb
 
       // Outer kerb points
       const cLeftOuter = pt.clone().addScaledVector(normal, -(halfWidth + curbWidth));
@@ -170,13 +265,15 @@ export class TrackMeshBuilder {
       });
 
       if (i < count) {
-        // Road indices
-        const r0 = i * 2;
-        const r1 = i * 2 + 1;
-        const r2 = (i + 1) * 2;
-        const r3 = (i + 1) * 2 + 1;
-        roadIndices.push(r0, r1, r2);
-        roadIndices.push(r1, r3, r2);
+        // Road indices: 6 quads between 7 vertices of slice i and slice i+1
+        for (let q = 0; q < 6; q++) {
+          const v0 = i * 7 + q;
+          const v1 = i * 7 + q + 1;
+          const v2 = (i + 1) * 7 + q;
+          const v3 = (i + 1) * 7 + q + 1;
+          roadIndices.push(v0, v1, v2);
+          roadIndices.push(v1, v3, v2);
+        }
 
         // Markings indices
         const mi0 = i * 6;
@@ -195,7 +292,7 @@ export class TrackMeshBuilder {
       }
     }
 
-    // --- Build Crisp Curbs Quads (No color bleed across teeth) ---
+    // --- Build Crisp Curbs Quads (0.08m raised 3D apex kerbs with red/white serrations) ---
     for (let i = 0; i < count; i++) {
       const n0 = curbNodes[i];
       const n1 = curbNodes[i + 1];
@@ -324,60 +421,17 @@ export class TrackMeshBuilder {
       const closestWpY = query.waypoint ? query.waypoint.point.y : 0;
       const closestSurface = query.waypoint ? query.waypoint.surface : 'asphalt';
 
-      // Authentic Masovian Topography:
-      // 1. Base rolling glacial plain
-      let h = Math.sin(vx * 0.012) * Math.cos(vz * 0.012) * 1.8 +
-              Math.sin(vx * 0.022 + vz * 0.016) * 0.9;
+      // Authentic Masovian Topography via getTerrainHeight
+      const h = TrackMeshBuilder.getTerrainHeight(vx, vz, waypoints, spatialGrid);
+      pos.setY(i, h);
 
-      // 2. Inland sand dunes (Wydmy Otwockie/Józefowskie) in northern & eastern pine forests
-      if (vz > 120.0 || (vx > 60.0 && vz < -160.0)) {
-        const duneRidge = (Math.sin(vx * 0.018 + 0.8) * 1.5 + Math.cos(vz * 0.015) * 1.6);
-        h += Math.max(0, duneRidge);
-      }
-
-      // 3. Serpentine Świder River Valley Trench & Asymmetric Banks (Podcięte Skarpy & Piaszczyste Łachy)
+      // Check features for coloration
       const riverCenterlineX = 235.0 + Math.sin(vz * 0.016) * 45.0 - (vz + 40.0) * 0.22;
       const distToRiverCenter = Math.abs(vx - riverCenterlineX);
       const inRiverCorridor = Math.abs(vz) < 260.0 && distToRiverCenter < 80.0;
-
-      let isRiverBed = false;
-      let isSandyShoal = false;
-      let isCutbank = false;
-
-      if (inRiverCorridor) {
-        const riverBedWidth = 32.0;
-        if (distToRiverCenter < riverBedWidth) {
-          // River channel depression down into water table
-          const normDist = distToRiverCenter / riverBedWidth;
-          const riverH = -1.15 + normDist * normDist * 0.65;
-          h = Math.min(h, riverH);
-          isRiverBed = true;
-        } else if (vx < riverCenterlineX && distToRiverCenter < 70.0) {
-          // Inner meander bend: expansive sandy shoals (piaszczyste łachy)
-          const shoalBlend = (distToRiverCenter - riverBedWidth) / 38.0;
-          const shoalH = -0.50 + shoalBlend * 0.65;
-          h = Math.min(h, shoalH);
-          isSandyShoal = true;
-        } else if (vx >= riverCenterlineX && distToRiverCenter < 65.0) {
-          // Outer meander bend: steep undercut sandy bluff (skarpa wydmowa)
-          const cutbankBlend = (distToRiverCenter - riverBedWidth) / 33.0;
-          h = Math.max(h, 0.4 + cutbankBlend * 2.2);
-          isCutbank = true;
-        }
-      }
-
-      // CARVE TRACK BED: near road, smoothly carve terrain below roadbed
-      if (minTrackDist < 26.0) {
-        const blend = minTrackDist / 26.0;
-        h = Math.min(h, closestWpY - 0.22) * (1.0 - blend) + h * blend;
-      }
-
-      // Restrict sub-zero depression exclusively to the Świder riverbed trench
-      if (!isRiverBed && h < -0.35) {
-        h = -0.35;
-      }
-
-      pos.setY(i, h);
+      const isRiverBed = inRiverCorridor && distToRiverCenter < 32.0;
+      const isSandyShoal = inRiverCorridor && !isRiverBed && vx < riverCenterlineX && distToRiverCenter < 70.0;
+      const isCutbank = inRiverCorridor && !isRiverBed && vx >= riverCenterlineX && distToRiverCenter < 65.0;
 
       // Authentic regional terrain coloration
       let groundC = ((vx + vz) % 18 < 9) ? pineNeedleCol : grassCol;
@@ -583,16 +637,42 @@ export class TrackMeshBuilder {
         .addScaledVector(startWp.tangent ?? new THREE.Vector3(0, 0, 1), -distBack)
         .addScaledVector(norm, sideOffset);
 
-      // Grid box outline
+      // Grid box outline in crisp painted white
       const boxGeo = new THREE.PlaneGeometry(2.8, 5.0);
       boxGeo.rotateX(-Math.PI / 2);
-      const boxMesh = new THREE.Mesh(boxGeo, g === 0 ? gridYellowMat : gridMat);
+      const boxMesh = new THREE.Mesh(boxGeo, gridMat);
       boxMesh.position.set(gPos.x, startWp.point.y + ROAD_ELEVATION + 0.035, gPos.z);
       if (startWp.tangent) {
         boxMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), startWp.tangent);
       }
       boxMesh.renderOrder = 3;
       trackGroup.add(boxMesh);
+
+      // Pre-baked rubber launch skid marks
+      const skidGeo = new THREE.PlaneGeometry(0.32, 4.2);
+      skidGeo.rotateX(-Math.PI / 2);
+      const skidMat = new THREE.MeshBasicMaterial({
+        color: 0x111827,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
+      });
+      for (const skidSide of [-0.75, 0.75]) {
+        const skidMesh = new THREE.Mesh(skidGeo, skidMat);
+        skidMesh.position.set(
+          gPos.x + norm.x * skidSide,
+          startWp.point.y + ROAD_ELEVATION + 0.038,
+          gPos.z + norm.z * skidSide
+        );
+        if (startWp.tangent) {
+          skidMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), startWp.tangent);
+        }
+        skidMesh.renderOrder = 4;
+        trackGroup.add(skidMesh);
+      }
     }
 
     // --- 7. Roadside Verge Marker Posts (Słupki Pikietażowe) ---
@@ -918,8 +998,9 @@ export class TrackMeshBuilder {
         const distL = halfW + 1.2 + hash1 * 3.5;
         const posX = wp.point.x - norm.x * distL;
         const posZ = wp.point.z - norm.z * distL;
+        const hL = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints, spatialGrid);
         const scale = 0.75 + hash2 * 0.5;
-        dummy.position.set(posX, 0.05, posZ);
+        dummy.position.set(posX, hL + 0.05, posZ);
         dummy.rotation.set(0, hash3 * Math.PI * 2, 0);
         dummy.scale.set(scale, scale, scale);
         dummy.updateMatrix();
@@ -931,8 +1012,9 @@ export class TrackMeshBuilder {
         const distR = halfW + 1.2 + hash2 * 3.5;
         const posX = wp.point.x + norm.x * distR;
         const posZ = wp.point.z + norm.z * distR;
+        const hR = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints, spatialGrid);
         const scale = 0.75 + hash1 * 0.5;
-        dummy.position.set(posX, 0.05, posZ);
+        dummy.position.set(posX, hR + 0.05, posZ);
         dummy.rotation.set(0, hash1 * Math.PI * 2, 0);
         dummy.scale.set(scale, scale, scale);
         dummy.updateMatrix();

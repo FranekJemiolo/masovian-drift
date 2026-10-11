@@ -88,13 +88,23 @@ export class GameManager {
   public currentMode: GameMode = 'quick-race';
   public isRacing = false;
   public isPaused = false;
-  private countdownRemaining = 3.2;
+  public countdownRemaining = 3.2;
   private totalRaceTime = 0;
   private networkSequence = 0;
   private lastNetworkSendTime = 0;
   private clock = new THREE.Clock();
+  private prevPlayerThrottle = 0;
+
+  public get isCountingDown(): boolean {
+    return this.countdownRemaining > 0;
+  }
+
+  public get vehiclePhysics(): VehiclePhysics {
+    return this.playerVehicle;
+  }
 
   constructor() {
+    (window as any).gameManager = this;
     this.init();
   }
 
@@ -154,16 +164,17 @@ export class GameManager {
       location.reload();
     });
 
-    // 2. Setup Lighting & Atmosphere (Warm golden sun, rich bounce light)
-    const hemiLight = new THREE.HemisphereLight(0xbfdbfe, 0x4d7c0f, 0.85);
+    // 2. Setup Lighting & Atmosphere (Masovian Golden Hour Sunset)
+    const hemiLight = new THREE.HemisphereLight(0x6366f1, 0x78350f, 0.45);
     this.scene.add(hemiLight);
 
-    const ambientLight = new THREE.AmbientLight(0xfff7ed, 0.65);
+    const ambientLight = new THREE.AmbientLight(0x6366f1, 0.45); // Soft violet-blue (#6366F1, intensity 0.45)
     this.scene.add(ambientLight);
 
-    this.sunLight = new THREE.DirectionalLight(0xfff1cc, 2.5);
-    // Dynamic tracking sun light with focused shadow frustum
-    this.sunLight.position.set(-65, 115, -55);
+    // Warm amber sunlight (#FDE68A, intensity 2.8), 14° elevation above horizon
+    this.sunLight = new THREE.DirectionalLight(0xfde68a, 2.8);
+    // Dynamic tracking sun light with focused shadow frustum (14° elevation angle)
+    this.sunLight.position.set(-75, 30, -94);
     this.sunLight.target.position.set(0, 0, 0);
     this.scene.add(this.sunLight.target);
     this.sunLight.castShadow = true;
@@ -179,6 +190,9 @@ export class GameManager {
     this.sunLight.shadow.bias = -0.0001;
     this.sunLight.shadow.normalBias = 0.035; // Eliminates shadow acne on voxel steps
     this.scene.add(this.sunLight);
+
+    // Distance Fog: Exponential squared distance fog matching horizon sky tone (E0A96D)
+    this.scene.fog = new THREE.FogExp2(0xe0a96d, 0.0035);
 
     // Procedural atmospheric skydome, golden haze, and dual-tone voxel clouds (IBL enabled)
     this.atmosphere = new Atmosphere(this.scene, this.renderer);
@@ -200,15 +214,15 @@ export class GameManager {
     this.riverMesh = trackData.riverMesh;
     this.grassMesh = trackData.grassMesh ?? null;
 
-    // Build World Physics Colliders
-    this.physicsWorld.buildWorldColliders(this.waypoints);
+    // Build World Physics Colliders (synchronizing with 3D terrainMesh)
+    this.physicsWorld.buildWorldColliders(this.waypoints, trackData.terrainMesh);
 
     // Generate Forests & Villas with InstancedMesh (Milestone 2 single draw call)
     EnvironmentGenerator.generateEnvironment(this.scene, this.waypoints);
 
-    // 5. Cameras
-    this.p1Camera = new FollowCamera(64, window.innerWidth / window.innerHeight);
-    this.p2Camera = new FollowCamera(64, (window.innerWidth * 0.5) / window.innerHeight);
+    // 5. Cameras (Base FOV 60° for authentic cockpit/chase framing)
+    this.p1Camera = new FollowCamera(60, window.innerWidth / window.innerHeight);
+    this.p2Camera = new FollowCamera(60, (window.innerWidth * 0.5) / window.innerHeight);
 
     // 6. High-Fidelity Post-Processor (Native 1.0 resolution)
     this.postProcessor = new PixelPostProcessor(
@@ -726,7 +740,24 @@ export class GameManager {
           // Player 1 inputs
           let p1Inputs = this.inputManager.getPlayerInputs();
           if (isCountingDown) {
-            p1Inputs = { throttle: 0.35, brake: 0.0, steer: p1Inputs.steer, handbrake: true };
+            this.playerVehicle.setLinearVelocity({ x: 0, y: 0, z: 0 });
+            this.playerVehicle.setAngularVelocity({ x: 0, y: 0, z: 0 });
+            this.playerVehicle.setInput({ throttle: 0, brake: 1, steer: 0, handbrake: true });
+            this.playerVehicle.currentGear = 1;
+            p1Inputs = { throttle: 0, brake: 1.0, steer: 0, handbrake: true };
+            for (const other of this.allVehicles) {
+              if (other !== this.playerVehicle) {
+                other.setLinearVelocity({ x: 0, y: 0, z: 0 });
+                other.setAngularVelocity({ x: 0, y: 0, z: 0 });
+                other.setInput({ throttle: 0, brake: 1, steer: 0, handbrake: true });
+                other.currentGear = 1;
+              }
+            }
+          } else {
+            this.playerVehicle.clearInputOverride();
+            for (const other of this.allVehicles) {
+              other.clearInputOverride();
+            }
           }
           // Evaluate real-time Tandem Drift proximity & heading alignment (P2P & AI tandem bonus)
           let maxTandemMult = 1.0;
@@ -875,6 +906,18 @@ export class GameManager {
         }
       );
 
+      // Section 1.3: Freeze Physics During Pre-Race Countdown
+      if (isCountingDown) {
+        this.playerVehicle.setLinearVelocity({ x: 0, y: 0, z: 0 });
+        this.playerVehicle.setAngularVelocity({ x: 0, y: 0, z: 0 });
+        this.playerVehicle.setInput({ throttle: 0, brake: 1, steer: 0, handbrake: true });
+        for (const other of this.allVehicles) {
+          other.setLinearVelocity({ x: 0, y: 0, z: 0 });
+          other.setAngularVelocity({ x: 0, y: 0, z: 0 });
+          other.setInput({ throttle: 0, brake: 1, steer: 0, handbrake: true });
+        }
+      }
+
       // 2. Audio Synthesizer Update & 3D Spatial Listener Tracking (A4, A5)
       this.audioManager.updatePlayerEngine(
         this.playerVehicle.rpm,
@@ -955,13 +998,16 @@ export class GameManager {
         this.playerVehicle.speedKmh
       );
 
-      // Exhaust backfire pop on high RPM throttle lift-off (M4 deterministic PRNG) or justBackfired
-      if (this.playerVehicle.justBackfired || (this.playerVehicle.rpm > 6200 && this.inputManager.getPlayerInputs().throttle < 0.1)) {
-        if (this.playerVehicle.justBackfired || PRNG.global.chance(0.25)) {
-          this.particleFX.triggerBackfire(this.playerVehicle.visual.exhaustPipes, this.playerVehicle.visual.root);
-          this.audioManager.playBackfire();
-        }
+      // Exhaust backfire pop on high RPM throttle lift-off (>5,500 RPM) or justBackfired
+      const currentThrottle = this.inputManager.getPlayerInputs().throttle;
+      if (
+        this.playerVehicle.justBackfired ||
+        (this.playerVehicle.rpm > 5500 && this.prevPlayerThrottle > 0.35 && currentThrottle < 0.15)
+      ) {
+        this.particleFX.triggerBackfire(this.playerVehicle.visual.exhaustPipes, this.playerVehicle.visual.root);
+        this.audioManager.playBackfire();
       }
+      this.prevPlayerThrottle = currentThrottle;
 
       // High-G crash collision response (audio, camera shake, gamepad rumble, U5)
       if (this.playerVehicle.justCrashed > 0) {
@@ -1186,8 +1232,8 @@ export class GameManager {
       veh.offTrackTimer = 0;
     }
 
-    // Auto-recover if fallen off map, flipped upside down, or stranded far off track
-    if (veh.position.y < -2.5 || veh.flipTimer > 2.0 || veh.offTrackTimer > 8.0) {
+    // Auto-recover if fallen below ground, flipped upside down, stranded far off track, or stuck against obstacle
+    if (veh.position.y < -0.90 || veh.flipTimer > 2.0 || veh.offTrackTimer > 5.0 || veh.stuckTimer > 4.0) {
       this.respawnVehicleAtCheckpoint(veh);
     }
   }
@@ -1196,6 +1242,7 @@ export class GameManager {
     if (this.checkpoints.length === 0) return;
     veh.flipTimer = 0;
     veh.offTrackTimer = 0;
+    veh.stuckTimer = 0;
     const cpCount = this.checkpoints.length;
     const prevCpIdx = veh.currentCheckpointIndex === 0 ? 0 : (veh.currentCheckpointIndex - 1 + cpCount) % cpCount;
     const cp = this.checkpoints[prevCpIdx];
@@ -1301,6 +1348,10 @@ export class GameManager {
 
     this.audioManager.startEngines();
     this.audioManager.startMusic();
+  }
+
+  public get followCamera(): FollowCamera {
+    return this.p1Camera;
   }
 
   private onWindowResize(): void {

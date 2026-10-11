@@ -13,7 +13,7 @@ export class FollowCamera {
   private currentRoll = 0;
   private orbitAngle = 0;
 
-  constructor(fov: number = 62, aspect: number = 16 / 9) {
+  constructor(fov: number = 60, aspect: number = 16 / 9) {
     this.camera = new THREE.PerspectiveCamera(fov, aspect, 0.2, 1200);
   }
 
@@ -33,8 +33,9 @@ export class FollowCamera {
   public snapToTarget(targetPos: THREE.Vector3, targetQuat: THREE.Quaternion): void {
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(targetQuat);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(targetQuat);
-    this.currentPosition.copy(targetPos).addScaledVector(forward, -6.0).addScaledVector(up, 2.2);
-    this.currentLookTarget.copy(targetPos).addScaledVector(forward, 12.0).addScaledVector(up, 0.9);
+    // Raised pivot by +0.35m
+    this.currentPosition.copy(targetPos).addScaledVector(forward, -6.0).addScaledVector(up, 2.55);
+    this.currentLookTarget.copy(targetPos).addScaledVector(forward, 12.0).addScaledVector(up, 0.85);
     this.currentRoll = 0;
     this.camera.position.copy(this.currentPosition);
     this.camera.lookAt(this.currentLookTarget);
@@ -54,10 +55,9 @@ export class FollowCamera {
     speedKmh: number,
     delta: number
   ): void {
-    // Dynamic FOV based on speed (gives high-speed thrill without nausea)
-    const baseFov = 62;
-    const targetFov = baseFov + Math.min(16, (speedKmh / 200) * 16);
-    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 3.0);
+    // Speed-Based Dynamic FOV Kick (Section 4.2)
+    const targetFov = THREE.MathUtils.lerp(60, 78, Math.min(1.0, speedKmh / 180));
+    this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, 4.0, delta);
     this.camera.updateProjectionMatrix();
 
     // Compute vehicle forward and up vectors
@@ -71,9 +71,9 @@ export class FollowCamera {
     const lateralVel = velocity.dot(right);
 
     if (this.mode === 'chase') {
-      // Stable horizontal chase framing inspired by Need for Speed & classic racers
+      // Camera Rig Elevation: Raise default camera pivot by +0.35m (from 2.15 to 2.50) to clear Carrera RS ducktail spoiler
       const distBehind = 5.5 + (speedKmh / 160.0) * 1.2;
-      const heightAbove = 2.15 + (speedKmh / 200.0) * 0.35;
+      const heightAbove = 2.50 + (speedKmh / 200.0) * 0.35;
 
       // Flatten forward vector horizontally to decouple camera height from suspension pitch/roll
       const forwardFlat = new THREE.Vector3(forward.x, 0, forward.z).normalize();
@@ -87,10 +87,11 @@ export class FollowCamera {
       const steerLead = -THREE.MathUtils.clamp(lateralVel * 0.18, -3.2, 3.2);
       const lookLead = 14.0 + (speedKmh / 120.0) * 7.0;
 
+      // Pitched down by 2.5° (-0.25m vertical look target offset) to provide clear forward road visibility over ducktail
       desiredLook.copy(targetPos)
         .addScaledVector(forwardFlat, lookLead)
         .addScaledVector(right, steerLead)
-        .add(new THREE.Vector3(0, 1.1, 0));
+        .add(new THREE.Vector3(0, 0.85, 0));
 
     } else if (this.mode === 'hood') {
       // Hood / Bumper camera

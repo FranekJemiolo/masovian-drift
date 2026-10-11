@@ -127,6 +127,7 @@ export class VehiclePhysics {
   // Recovery timers (M7)
   public flipTimer = 0;
   public offTrackTimer = 0;
+  public stuckTimer = 0;
 
   public get upVector(): THREE.Vector3 {
     return new THREE.Vector3(0, 1, 0).applyQuaternion(this.quaternion);
@@ -143,6 +144,7 @@ export class VehiclePhysics {
   // Collision damage accumulator
   private lastVelocity = new THREE.Vector3();
   public spawnGraceTimer = 1.0;
+  private overrideInputs: VehicleInputs | null = null;
 
   constructor(
     id: string,
@@ -188,9 +190,9 @@ export class VehiclePhysics {
 
     this.rigidBody = world.createRigidBody(rbDesc);
 
-    // Chassis collision box (raised clearance so nose pitch dive never snags road colliders)
-    const colDesc = RAPIER.ColliderDesc.cuboid(0.78, 0.22, 1.65)
-      .setTranslation(0, 0.28, 0)
+    // Chassis collision box (raised clearance with rounded filleted edges so nose pitch dive and seams never snag)
+    const colDesc = RAPIER.ColliderDesc.roundCuboid(0.74, 0.16, 1.60, 0.06)
+      .setTranslation(0, 0.32, 0)
       .setMass(this.specs.mass)
       .setFriction(0.0)
       .setRestitution(0.05);
@@ -233,6 +235,7 @@ export class VehiclePhysics {
    */
   public updatePhysics(inputs: VehicleInputs, dt: number, waypoints?: Waypoint[]): void {
     if (!this.rigidBody) return;
+    if (this.overrideInputs) inputs = this.overrideInputs;
 
     // 1. Fetch current Rapier state
     const t = this.rigidBody.translation();
@@ -253,6 +256,13 @@ export class VehiclePhysics {
     const forwardSpeed = this.velocity.dot(forward);
     const lateralSpeed = this.velocity.dot(right);
     this.speedKmh = Math.abs(forwardSpeed) * 3.6;
+
+    // Recovery & anti-stall stuck timer (triggers auto-rescue if pinned with throttle against obstacle)
+    if (inputs.throttle > 0.35 && this.speedKmh < 2.5) {
+      this.stuckTimer += dt;
+    } else if (this.speedKmh >= 3.0 || inputs.throttle <= 0.1) {
+      this.stuckTimer = 0;
+    }
 
     // Detect impact shock & accumulate damage (horizontal only, with spawn grace period)
     if (this.spawnGraceTimer > 0) {
@@ -850,6 +860,12 @@ export class VehiclePhysics {
       }
     }
 
+    // Modulate contact shadow opacity dynamically based on suspension compression
+    if (this.visual.contactShadowMaterial) {
+      const avgCompression = (this.wheelCompressions[0] + this.wheelCompressions[1] + this.wheelCompressions[2] + this.wheelCompressions[3]) * 0.25;
+      this.visual.contactShadowMaterial.opacity = THREE.MathUtils.lerp(0.85, 0.4, Math.max(0, 1 - avgCompression));
+    }
+
     // Voxel Driver Helmet turns head towards corner apex
     if (this.visual.driverHead) {
       const targetHeadYaw = this.steerAngle * 0.65;
@@ -859,6 +875,36 @@ export class VehiclePhysics {
         dt * 10.0
       );
     }
+  }
+
+  public setLinearVelocity(vel: { x: number; y: number; z: number }): void {
+    this.rigidBody.setLinvel(new RAPIER.Vector3(vel.x, vel.y, vel.z), true);
+    this.speedKmh = 0;
+  }
+
+  public setAngularVelocity(vel: { x: number; y: number; z: number }): void {
+    this.rigidBody.setAngvel(new RAPIER.Vector3(vel.x, vel.y, vel.z), true);
+  }
+
+  public getLinearVelocity(): { x: number; y: number; z: number } {
+    return this.rigidBody ? this.rigidBody.linvel() : { x: 0, y: 0, z: 0 };
+  }
+
+  public getAngularVelocity(): { x: number; y: number; z: number } {
+    return this.rigidBody ? this.rigidBody.angvel() : { x: 0, y: 0, z: 0 };
+  }
+
+  public setInput(inputs: { throttle?: number; brake?: number; steer?: number; handbrake?: boolean }): void {
+    this.overrideInputs = {
+      throttle: inputs.throttle ?? 0,
+      brake: inputs.brake ?? 0,
+      steer: inputs.steer ?? 0,
+      handbrake: inputs.handbrake ?? false,
+    };
+  }
+
+  public clearInputOverride(): void {
+    this.overrideInputs = null;
   }
 
   public resetPosition(spawnPos: THREE.Vector3, spawnQuat: THREE.Quaternion): void {
@@ -876,6 +922,18 @@ export class VehiclePhysics {
     this.rpm = this.specs.idleRpm;
     this.currentGear = 1;
     this.isDrifting = false;
+  }
+
+  public getPosition(): THREE.Vector3 {
+    return this.position;
+  }
+
+  public getSpeedKmh(): number {
+    return this.speedKmh;
+  }
+
+  public getCurrentGear(): number {
+    return this.currentGear;
   }
 
   /**
@@ -896,6 +954,9 @@ export class VehiclePhysics {
     this.raceFinished = false;
     this.isOnKerb = false;
     this.isOffTrack = false;
+    this.flipTimer = 0;
+    this.offTrackTimer = 0;
+    this.stuckTimer = 0;
     this.currentSurface = 'asphalt';
     this.lastVelocity.set(0, 0, 0);
 

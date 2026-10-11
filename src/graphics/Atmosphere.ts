@@ -14,16 +14,16 @@ export class Atmosphere {
   constructor(scene: THREE.Scene, renderer?: THREE.WebGLRenderer) {
     this.scene = scene;
 
-    // 1. Procedural Gradient Skydome
+    // 1. Procedural Gradient Skydome (Masovian Golden Hour Palette)
     const skyGeo = new THREE.SphereGeometry(750, 32, 24);
     this.skyMaterial = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
       uniforms: {
-        topColor: { value: new THREE.Color(0x1d4ed8) },    // Deep royal cobalt zenith
-        midColor: { value: new THREE.Color(0x60a5fa) },    // Bright Mazovian azure
-        bottomColor: { value: new THREE.Color(0xfef3c7) }, // Warm golden afternoon horizon haze
-        sunDir: { value: new THREE.Vector3(-100, 170, -90).normalize() },
+        topColor: { value: new THREE.Color(0x312e81) },    // Deep twilight violet-blue (#312E81)
+        midColor: { value: new THREE.Color(0xf59e0b) },    // Golden sunset amber (#F59E0B)
+        bottomColor: { value: new THREE.Color(0xe0a96d) }, // Horizon haze matching fog tone (#E0A96D)
+        sunDir: { value: new THREE.Vector3(-75, 30, -94).normalize() }, // 14° elevation above horizon
       },
       vertexShader: `
         varying vec3 vWorldPosition;
@@ -61,12 +61,15 @@ export class Atmosphere {
     this.skyMesh = new THREE.Mesh(skyGeo, this.skyMaterial);
     scene.add(this.skyMesh);
 
+    // Distance Fog: Exponential squared distance fog matching horizon sky tone (E0A96D)
+    scene.fog = new THREE.FogExp2(0xe0a96d, 0.0035);
+
     // 2. Procedural Sky IBL Environment Map (G3: Lighting & Reflections)
     if (renderer) {
       this.generateSkyIBL(renderer);
     }
 
-    // 3. Dual-Tone Voxel Cumulus Clouds (Multi-Block Stepped Geometry)
+    // 3. Dual-Tone Voxel Cumulus Clouds (Multi-Block Stepped Geometry with Self-Shadowing Undersides)
     this.cloudsGroup = new THREE.Group();
     const cloudCount = 42;
 
@@ -81,15 +84,33 @@ export class Atmosphere {
 
     const cloudGeo = this.mergeGeometriesSimple([bMain, bTop, bSideL, bSideR]);
 
+    // Apply self-shadowing vertex colors across cloud undersides (darker amber-tinted underside)
+    const cPos = cloudGeo.getAttribute('position');
+    if (cPos) {
+      const vColors: number[] = [];
+      for (let i = 0; i < cPos.count; i++) {
+        const vy = cPos.getY(i);
+        // vy ranges from -3.0 to 9.0; compute normalized height
+        const normH = THREE.MathUtils.clamp((vy + 3.0) / 12.0, 0.0, 1.0);
+        // Self-shadowing gradient: underside warm slate-amber [0.72, 0.60, 0.54], sunlit crest [1.0, 0.98, 0.92]
+        const cr = THREE.MathUtils.lerp(0.72, 1.0, normH);
+        const cg = THREE.MathUtils.lerp(0.60, 0.98, normH);
+        const cb = THREE.MathUtils.lerp(0.54, 0.92, normH);
+        vColors.push(cr, cg, cb);
+      }
+      cloudGeo.setAttribute('color', new THREE.Float32BufferAttribute(vColors, 3));
+    }
+
     this.cloudMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
+      vertexColors: true,
       roughness: 0.9,
       metalness: 0.02,
       flatShading: true,
     });
 
     const instancedClouds = new THREE.InstancedMesh(cloudGeo, this.cloudMat, cloudCount);
-    instancedClouds.castShadow = false;
+    instancedClouds.castShadow = false; // Keep castShadow false to avoid roaming black ground artifacts
     instancedClouds.receiveShadow = false;
 
     const dummy = new THREE.Object3D();
@@ -132,10 +153,10 @@ export class Atmosphere {
       if (!ctx) return;
 
       const grad = ctx.createLinearGradient(0, 0, 0, 128);
-      grad.addColorStop(0, '#1d4ed8');   // Top
-      grad.addColorStop(0.5, '#60a5fa'); // Mid
-      grad.addColorStop(0.85, '#fef3c7'); // Bottom horizon
-      grad.addColorStop(1.0, '#4d7c0f'); // Ground bounce
+      grad.addColorStop(0, '#312e81');   // Deep twilight indigo top
+      grad.addColorStop(0.45, '#f59e0b'); // Golden amber mid
+      grad.addColorStop(0.80, '#e0a96d'); // Masovian horizon haze
+      grad.addColorStop(1.0, '#78350f'); // Warm pine ground bounce
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 256, 128);
 

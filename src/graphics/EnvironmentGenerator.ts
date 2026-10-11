@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { PRNG } from '../utils/PRNG';
 import { SSVDAG, SwidermajerVoxelBuilder } from '../voxel/SSVDAG';
+import { TrackMeshBuilder } from './TrackMeshBuilder';
 
 export class EnvironmentGenerator {
   /**
@@ -18,15 +19,15 @@ export class EnvironmentGenerator {
     const dummy = new THREE.Object3D();
 
     // -------------------------------------------------------------
-    // 1. TIERED PINE FORESTS (3-Tier Conical Needles, 1200 Trees)
+    // 1. MAZOVIAN SCOTS PINE FORESTS (Pinus sylvestris, 1200 Trees)
     // -------------------------------------------------------------
     const pineCount = 1200;
 
-    // Pine Trunk Geometry (Textured bark)
-    const trunkGeo = new THREE.CylinderGeometry(0.35, 0.55, 6.5, 6);
-    trunkGeo.translate(0, 3.25, 0);
+    // Tall, bare reddish-brown lower Scots pine trunk (8m to 14m height, avg 11.5m)
+    const trunkGeo = new THREE.CylinderGeometry(0.28, 0.46, 11.5, 7);
+    trunkGeo.translate(0, 5.75, 0);
     const trunkMat = new THREE.MeshStandardMaterial({
-      color: 0x4a3525,
+      color: 0x7c2d12, // Rich reddish-brown Scots pine bark (#7C2D12)
       roughness: 0.9,
       flatShading: true,
     });
@@ -34,22 +35,22 @@ export class EnvironmentGenerator {
     trunkInstanced.castShadow = true;
     trunkInstanced.receiveShadow = true;
 
-    // Create 3-Tiered Pine Foliage Geometry
-    const t1 = new THREE.ConeGeometry(4.0, 4.2, 7);
-    t1.translate(0, 4.8, 0);
-    const t2 = new THREE.ConeGeometry(3.0, 3.8, 7);
-    t2.translate(0, 7.2, 0);
-    const t3 = new THREE.ConeGeometry(1.9, 3.4, 7);
-    t3.translate(0, 9.4, 0);
+    // High, flat-topped dense voxel canopies concentrated in the upper 30% of the tree (8.5m - 12.5m)
+    const t1 = new THREE.CylinderGeometry(4.2, 4.5, 1.8, 8);
+    t1.translate(0, 8.8, 0);
+    const t2 = new THREE.CylinderGeometry(3.2, 3.5, 1.6, 8);
+    t2.translate(0, 10.4, 0);
+    const t3 = new THREE.CylinderGeometry(1.8, 2.2, 1.2, 7);
+    t3.translate(0, 11.8, 0);
 
-    // Merge tiers into one foliage geometry
-    const tieredPineGeo = this.mergeGeometriesSimple([t1, t2, t3]);
+    // Merge tiers into one Scots pine canopy geometry
+    const scotsPineCanopyGeo = this.mergeGeometriesSimple([t1, t2, t3]);
     const pineFoliageMat = new THREE.MeshStandardMaterial({
-      color: 0x245a43, // Rich vibrant pine needle green
-      roughness: 0.8,
+      color: 0x1e3a2f, // Deep Mazovian pine needle green
+      roughness: 0.82,
       flatShading: true,
     });
-    const pineFoliageInstanced = new THREE.InstancedMesh(tieredPineGeo, pineFoliageMat, pineCount);
+    const pineFoliageInstanced = new THREE.InstancedMesh(scotsPineCanopyGeo, pineFoliageMat, pineCount);
     pineFoliageInstanced.castShadow = true;
     pineFoliageInstanced.receiveShadow = true;
 
@@ -63,7 +64,7 @@ export class EnvironmentGenerator {
         const distSq = dx * dx + dz * dz;
         // On starting straight (grid & launch area), enforce 25m clearance!
         const isStart = k < 18 || k > wpCount - 18;
-        const reqDist = isStart ? 25.0 : (wp.width * 0.5 + 4.8);
+        const reqDist = isStart ? 25.0 : (wp.width * 0.5 + 5.2);
         if (distSq < reqDist * reqDist) {
           return false;
         }
@@ -73,32 +74,41 @@ export class EnvironmentGenerator {
 
     let placedPines = 0;
     let pineAttempts = 0;
-    while (placedPines < pineCount && pineAttempts < pineCount * 4) {
+    while (placedPines < pineCount && pineAttempts < pineCount * 5) {
       pineAttempts++;
       const wpIdx = Math.floor(rng.next() * wpCount);
       const wp = waypoints[wpIdx];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
       const isStartStraight = wpIdx < 18 || wpIdx > wpCount - 18;
-      const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 6.0);
+      const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 6.2);
       const side = rng.chance(0.5) ? -1 : 1;
-      const distFromTrack = minClearance + rng.next() * 120.0;
+      const distFromTrack = minClearance + rng.next() * 125.0;
       const alongOffset = (rng.next() - 0.5) * 16.0;
 
       const posX = wp.point.x + normal.x * distFromTrack * side + (wp.tangent ? wp.tangent.x * alongOffset : 0);
       const posZ = wp.point.z + normal.z * distFromTrack * side + (wp.tangent ? wp.tangent.z * alongOffset : 0);
-      const posY = wp.point.y;
+
+      // Multi-octave coherent noise mask to cluster pines in organic groves along the dunes
+      const clusterMask = Math.sin(posX * 0.024) * Math.cos(posZ * 0.024) + Math.sin(posX * 0.052 + 1.2) * Math.cos(posZ * 0.048);
+      if (clusterMask < -0.35 && rng.next() > 0.18) {
+        continue;
+      }
 
       if (!isPositionClearOfRoad(posX, posZ)) {
         continue;
       }
 
-      const scale = 0.85 + rng.next() * 0.65;
+      // Exact terrain elevation lookup anchors lower trunk directly into the ground with zero floating
+      const terrainY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints);
+      const posY = terrainY - 0.40; // Trunk extends 0.40m into soil to eradicate floating gap
+
+      const scale = 0.82 + rng.next() * 0.55;
       const rotY = rng.next() * Math.PI * 2;
 
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set((rng.next() - 0.5) * 0.04, rotY, (rng.next() - 0.5) * 0.04);
-      dummy.scale.set(scale, scale * (0.9 + rng.next() * 0.25), scale);
+      dummy.rotation.set((rng.next() - 0.5) * 0.03, rotY, (rng.next() - 0.5) * 0.03);
+      dummy.scale.set(scale, scale * (0.92 + rng.next() * 0.28), scale);
       dummy.updateMatrix();
 
       trunkInstanced.setMatrixAt(placedPines, dummy.matrix);
@@ -106,9 +116,9 @@ export class EnvironmentGenerator {
 
       // Deterministic color variation for organic Mazovian forest
       const col = new THREE.Color().setHSL(
-        0.38 + (rng.next() - 0.5) * 0.05,
-        0.55 + rng.next() * 0.25,
-        0.24 + rng.next() * 0.14
+        0.37 + (rng.next() - 0.5) * 0.04,
+        0.58 + rng.next() * 0.22,
+        0.20 + rng.next() * 0.12
       );
       pineFoliageInstanced.setColorAt(placedPines, col);
       placedPines++;
@@ -171,7 +181,7 @@ export class EnvironmentGenerator {
 
       const posX = wp.point.x + normal.x * distFromTrack * side;
       const posZ = wp.point.z + normal.z * distFromTrack * side;
-      const posY = wp.point.y;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) - 0.25;
 
       if (!isPositionClearOfRoad(posX, posZ)) {
         continue;
@@ -206,48 +216,78 @@ export class EnvironmentGenerator {
     envGroup.add(birchFoliageInstanced);
 
     // -------------------------------------------------------------
-    // 3. ŚWIDERMAJER WOODEN RESORT VILLAS (Warsaw Architecture)
+    // 3. AUTHENTIC ŚWIDERMAJER PROCEDURAL VILLAS (Michał Elwiro Andriolli Architecture)
     // -------------------------------------------------------------
     const villaCount = 20;
 
-    // Villa Body (Warm Mazovian timber walls)
-    const villaBodyGeo = new THREE.BoxGeometry(16, 7.5, 12);
-    villaBodyGeo.translate(0, 3.75, 0);
-    const villaBodyMat = new THREE.MeshStandardMaterial({
-      color: 0x92704a, // Warm weathered pine timber
-      roughness: 0.8,
+    // 1. Two-story timber frames: Ground floor pine siding (#854D0E)
+    const gfGeo = new THREE.BoxGeometry(15.2, 3.8, 11.2);
+    gfGeo.translate(0, 1.9, 0);
+    const gfMat = new THREE.MeshStandardMaterial({
+      color: 0x854d0e, // Warm horizontal pine siding (#854D0E)
+      roughness: 0.85,
       flatShading: true,
     });
-    const villaBodyInstanced = new THREE.InstancedMesh(villaBodyGeo, villaBodyMat, villaCount);
-    villaBodyInstanced.castShadow = true;
-    villaBodyInstanced.receiveShadow = true;
+    const gfInstanced = new THREE.InstancedMesh(gfGeo, gfMat, villaCount);
+    gfInstanced.castShadow = true;
+    gfInstanced.receiveShadow = true;
 
-    // Villa Gabled Shingle Roof
-    const roofGeo = new THREE.ConeGeometry(12.5, 6.2, 4);
-    roofGeo.translate(0, 10.6, 0);
-    roofGeo.rotateY(Math.PI / 4);
-    const roofMat = new THREE.MeshStandardMaterial({
-      color: 0x3d271d, // Cedar shingles
-      roughness: 0.7,
+    // 2. Two-story timber frames: Second floor pine siding (#B45309)
+    const ufGeo = new THREE.BoxGeometry(14.0, 3.6, 10.2);
+    ufGeo.translate(0, 5.6, 0);
+    const ufMat = new THREE.MeshStandardMaterial({
+      color: 0xb45309, // Second floor pine siding (#B45309)
+      roughness: 0.85,
       flatShading: true,
     });
-    const roofInstanced = new THREE.InstancedMesh(roofGeo, roofMat, villaCount);
+    const ufInstanced = new THREE.InstancedMesh(ufGeo, ufMat, villaCount);
+    ufInstanced.castShadow = true;
+    ufInstanced.receiveShadow = true;
+
+    // 3. Multi-Gabled Rooflines with distinct pine needle overhangs & finials
+    const rMain = new THREE.ConeGeometry(12.8, 5.4, 4);
+    rMain.rotateY(Math.PI / 4);
+    rMain.translate(0, 10.1, 0);
+    const rGable = new THREE.ConeGeometry(8.6, 4.8, 4);
+    rGable.rotateY(Math.PI / 4);
+    rGable.translate(0, 9.6, 2.6);
+    // Decorative carved finials at gables
+    const finial1 = new THREE.CylinderGeometry(0.08, 0.18, 1.6, 5);
+    finial1.translate(0, 13.4, 0);
+    const finial2 = new THREE.CylinderGeometry(0.08, 0.18, 1.5, 5);
+    finial2.translate(0, 12.6, 2.6);
+    const roofCompositeGeo = this.mergeGeometriesSimple([rMain, rGable, finial1, finial2]);
+
+    const roofMat = new THREE.MeshStandardMaterial({
+      color: 0x3d271d, // Weathered Mazovian shingle roof
+      roughness: 0.75,
+      flatShading: true,
+    });
+    const roofInstanced = new THREE.InstancedMesh(roofCompositeGeo, roofMat, villaCount);
     roofInstanced.castShadow = true;
     roofInstanced.receiveShadow = true;
 
-    // Villa Openwork Carved Veranda / Porch ("Lalki" architectural woodwork)
-    const verandaGeo = new THREE.BoxGeometry(14, 4.5, 4.2);
-    verandaGeo.translate(0, 2.25, 7.5);
-    const verandaMat = new THREE.MeshStandardMaterial({
-      color: 0xf1f5f9, // Clean whitewashed carved wooden veranda
-      roughness: 0.5,
+    // 4. Openwork Fretwork Verandas (Laubzega woodwork: pierced balustrades, carved posts, pediment arches)
+    const balustrade = new THREE.BoxGeometry(13.6, 0.9, 3.2);
+    balustrade.translate(0, 0.45, 6.8);
+    const verandaRoof = new THREE.BoxGeometry(14.0, 0.35, 3.4);
+    verandaRoof.translate(0, 3.3, 6.8);
+    const balconyRailing = new THREE.BoxGeometry(10.2, 0.85, 2.2);
+    balconyRailing.translate(0, 4.25, 6.0);
+    const verandaArch = new THREE.BoxGeometry(7.0, 0.4, 0.3);
+    verandaArch.translate(0, 3.0, 8.4);
+    const fretworkGeo = this.mergeGeometriesSimple([balustrade, verandaRoof, balconyRailing, verandaArch]);
+
+    const fretworkMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9, // Clean whitewashed pierced fretwork woodwork
+      roughness: 0.55,
       flatShading: true,
     });
-    const verandaInstanced = new THREE.InstancedMesh(verandaGeo, verandaMat, villaCount);
-    verandaInstanced.castShadow = true;
-    verandaInstanced.receiveShadow = true;
+    const fretworkInstanced = new THREE.InstancedMesh(fretworkGeo, fretworkMat, villaCount);
+    fretworkInstanced.castShadow = true;
+    fretworkInstanced.receiveShadow = true;
 
-    // Red Brick Chimneys
+    // 5. Red Brick Chimneys
     const chimneyGeo = new THREE.BoxGeometry(1.2, 5.2, 1.2);
     chimneyGeo.translate(3.5, 12.0, 0);
     const chimneyMat = new THREE.MeshStandardMaterial({
@@ -259,16 +299,21 @@ export class EnvironmentGenerator {
     chimneyInstanced.castShadow = true;
     chimneyInstanced.receiveShadow = true;
 
-    // Glowing Warm Windows (Amber interior lights, flush with timber walls)
-    const windowGeo = new THREE.BoxGeometry(13.6, 1.8, 11.6);
-    windowGeo.translate(0, 4.2, 0);
+    // 6. Inset Glowing Interior Windows (recessed by 0.08m into frames to prevent exterior clipping)
+    // Wall frames are 15.2 and 14.0 wide; inset windows are 15.04 and 13.84 (-0.16m total, 0.08m inset each side)
+    const winGf = new THREE.BoxGeometry(15.04, 1.6, 11.04);
+    winGf.translate(0, 2.1, 0);
+    const winUf = new THREE.BoxGeometry(13.84, 1.5, 10.04);
+    winUf.translate(0, 5.7, 0);
+    const windowCompositeGeo = this.mergeGeometriesSimple([winGf, winUf]);
+
     const windowMat = new THREE.MeshStandardMaterial({
       color: 0xfef08a,
       emissive: 0xeab308,
-      emissiveIntensity: 0.45,
-      roughness: 0.3,
+      emissiveIntensity: 0.5,
+      roughness: 0.25,
     });
-    const windowInstanced = new THREE.InstancedMesh(windowGeo, windowMat, villaCount);
+    const windowInstanced = new THREE.InstancedMesh(windowCompositeGeo, windowMat, villaCount);
     windowInstanced.receiveShadow = true;
 
     const villaLocations = [
@@ -301,35 +346,39 @@ export class EnvironmentGenerator {
 
       const posX = wp.point.x + normal.x * loc.dist * loc.side;
       const posZ = wp.point.z + normal.z * loc.dist * loc.side;
-      const posY = wp.point.y;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ);
 
       dummy.position.set(posX, posY, posZ);
       dummy.rotation.set(0, loc.rot, 0);
       dummy.scale.set(1.0, 1.0, 1.0);
       dummy.updateMatrix();
 
-      villaBodyInstanced.setMatrixAt(k, dummy.matrix);
+      gfInstanced.setMatrixAt(k, dummy.matrix);
+      ufInstanced.setMatrixAt(k, dummy.matrix);
       roofInstanced.setMatrixAt(k, dummy.matrix);
-      verandaInstanced.setMatrixAt(k, dummy.matrix);
+      fretworkInstanced.setMatrixAt(k, dummy.matrix);
       chimneyInstanced.setMatrixAt(k, dummy.matrix);
       windowInstanced.setMatrixAt(k, dummy.matrix);
     }
 
-    villaBodyInstanced.instanceMatrix.needsUpdate = true;
+    gfInstanced.instanceMatrix.needsUpdate = true;
+    ufInstanced.instanceMatrix.needsUpdate = true;
     roofInstanced.instanceMatrix.needsUpdate = true;
-    verandaInstanced.instanceMatrix.needsUpdate = true;
+    fretworkInstanced.instanceMatrix.needsUpdate = true;
     chimneyInstanced.instanceMatrix.needsUpdate = true;
     windowInstanced.instanceMatrix.needsUpdate = true;
 
-    villaBodyInstanced.computeBoundingSphere();
+    gfInstanced.computeBoundingSphere();
+    ufInstanced.computeBoundingSphere();
     roofInstanced.computeBoundingSphere();
-    verandaInstanced.computeBoundingSphere();
+    fretworkInstanced.computeBoundingSphere();
     chimneyInstanced.computeBoundingSphere();
     windowInstanced.computeBoundingSphere();
 
-    envGroup.add(villaBodyInstanced);
+    envGroup.add(gfInstanced);
+    envGroup.add(ufInstanced);
     envGroup.add(roofInstanced);
-    envGroup.add(verandaInstanced);
+    envGroup.add(fretworkInstanced);
     envGroup.add(chimneyInstanced);
     envGroup.add(windowInstanced);
 
@@ -365,7 +414,7 @@ export class EnvironmentGenerator {
       const side = (k % 6 < 3) ? 1 : -1;
       const posX = wp.point.x + norm.x * halfW * side;
       const posZ = wp.point.z + norm.z * halfW * side;
-      const posY = wp.point.y + 0.40;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) + 0.02;
 
       dummy.position.set(posX, posY, posZ);
       dummy.rotation.set(0, rng.next() * Math.PI * 2, 0);
@@ -410,7 +459,7 @@ export class EnvironmentGenerator {
 
       const posX = wp.point.x + norm.x * dist * side;
       const posZ = wp.point.z + norm.z * dist * side;
-      const posY = wp.point.y + 0.38;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) + 0.02;
 
       dummy.position.set(posX, posY, posZ);
       dummy.rotation.set(0, rng.next() * Math.PI, 0);
@@ -461,7 +510,7 @@ export class EnvironmentGenerator {
 
       const posX = wp.point.x + norm.x * dist * side;
       const posZ = wp.point.z + norm.z * dist * side;
-      const posY = wp.point.y + 0.38;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) - 0.05;
 
       dummy.position.set(posX, posY, posZ);
       if (wp.tangent) {
@@ -501,7 +550,7 @@ export class EnvironmentGenerator {
 
       const posX = wp.point.x + norm.x * st.dist * st.side;
       const posZ = wp.point.z + norm.z * st.dist * st.side;
-      const posY = wp.point.y + 0.40;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ);
       standGroup.position.set(posX, posY, posZ);
 
       if (wp.tangent) {
@@ -527,7 +576,6 @@ export class EnvironmentGenerator {
       canopy.castShadow = true;
       standGroup.add(canopy);
 
-      // Canopy support poles
       // Canopy support poles
       const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 4.2, 6);
       for (const px of [-4.8, 4.8]) {
@@ -586,11 +634,11 @@ export class EnvironmentGenerator {
     // -------------------------------------------------------------
     EnvironmentGenerator.turbineRotors = [];
     const turbineLocations = [
-      { x: -320, z: -280, y: 12 },
-      { x: -440, z: 120, y: 16 },
-      { x: -280, z: 380, y: 14 },
-      { x: 380, z: 320, y: 18 },
-      { x: 420, z: -220, y: 15 },
+      { x: -320, z: -280 },
+      { x: -440, z: 120 },
+      { x: -280, z: 380 },
+      { x: 380, z: 320 },
+      { x: 420, z: -220 },
     ];
 
     const towerMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.35, metalness: 0.1 });
@@ -598,7 +646,8 @@ export class EnvironmentGenerator {
 
     for (const tl of turbineLocations) {
       const turbineGroup = new THREE.Group();
-      turbineGroup.position.set(tl.x, tl.y, tl.z);
+      const turbY = TrackMeshBuilder.getTerrainHeight(tl.x, tl.z);
+      turbineGroup.position.set(tl.x, turbY, tl.z);
 
       // Slender conical tower (52m tall)
       const towerGeo = new THREE.CylinderGeometry(1.4, 2.8, 52, 10);
@@ -661,11 +710,10 @@ export class EnvironmentGenerator {
       const wp = waypoints[sh.wpIdx];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
       const shGroup = new THREE.Group();
-      shGroup.position.set(
-        wp.point.x + norm.x * sh.dist * sh.side,
-        wp.point.y + 0.40,
-        wp.point.z + norm.z * sh.dist * sh.side
-      );
+      const shX = wp.point.x + norm.x * sh.dist * sh.side;
+      const shZ = wp.point.z + norm.z * sh.dist * sh.side;
+      const shY = TrackMeshBuilder.getTerrainHeight(shX, shZ);
+      shGroup.position.set(shX, shY, shZ);
 
       // Stone/Wood Column base
       const col = new THREE.Mesh(new THREE.BoxGeometry(0.9, 3.6, 0.9), shrineWoodMat);
@@ -715,11 +763,10 @@ export class EnvironmentGenerator {
         const wp = waypoints[site.wpIdx];
         const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
         const villaMesh = new THREE.Mesh(villaGeo, villaMat);
-        villaMesh.position.set(
-          wp.point.x + norm.x * site.dist * site.side,
-          wp.point.y + 0.05,
-          wp.point.z + norm.z * site.dist * site.side
-        );
+        const vX = wp.point.x + norm.x * site.dist * site.side;
+        const vZ = wp.point.z + norm.z * site.dist * site.side;
+        const vY = TrackMeshBuilder.getTerrainHeight(vX, vZ);
+        villaMesh.position.set(vX, vY, vZ);
         villaMesh.rotation.y = site.rotY;
         villaMesh.scale.set(0.48, 0.48, 0.48);
         villaMesh.castShadow = true;
