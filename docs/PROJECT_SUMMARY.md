@@ -114,6 +114,27 @@ The 1.6 km Masovian circuit incorporates 140 high-density spline waypoints with 
 4. **Physically Correct Suspension Damping Sign & Critical Settling**:
    * Corrected the suspension damping sign ($F = \max(0, kx + c\dot{x})$), converting destabilizing energy-pumping into true critical damping.
    * Set vehicle rigid body spawn translation height to `spawnPos.y + 0.20m`, achieving instant, bounce-free road settling upon spawn and manual checkpoint respawn (`KeyK`).
+5. **Volumetric Headlight Dust Cone Overhaul**:
+   * Fixed inverted cylinder rotation (`-Math.PI / 2`) and translated cone base down the road ($Z = +18\text{m}$) from headlight lens ($Z = 0$), eliminating the translucent triangular artifact over the camera.
+   * Dynamically disabled headlight dust cone opacity during daylight mode, enabling it during sunset and night.
+6. **Stepped Voxel Cumulus Clouds**:
+   * Replaced primitive single boxes with 4-box merged stepped voxel cloud formations with preset-responsive atmospheric tinting (peach sunset, slate moonlight, crisp white daylight).
+7. **Road Markings & Starting Grid Anti-Z-Fighting**:
+   * Enabled `polygonOffset: true` (`factor: -3, units: -3`) on all road markings, grid boxes, and start line meshes.
+   * Fixed centerline dash generation to prevent black vertex color interpolation and connect strictly between active dash waypoints.
+8. **Crisp Road Curbs & Pure Earth Shoulders**:
+   * Implemented unshared quad generation per track segment, eliminating vertex color interpolation and creating razor-sharp alternating red and white motorsport curb teeth.
+   * Sloped shoulders colored purely with natural gravel (`0x8a7d6e`), eliminating painted curb bleeding onto roadside terrain.
+9. **HUD Layout & Minimap Canvas Isolation**:
+   * Scoped fullscreen canvas CSS exclusively to `#webgl-canvas`, preventing `#hud-minimap` from blowing up across the screen.
+   * Rendered crisp 280x280 minimap with colored sectors (S1 Cyan, S2 Purple, S3 Amber), competitor dots, player delta arrow, and radar circle.
+   * Streamlined controls pill positioned with zero overlap against the speedometer/tachometer cluster on all display resolutions.
+10. **River Channel Elevation & Inland Water Clamping**:
+   * Clamped inland terrain depression to prevent the river water plane from poking through inland dunes and chicane verandas, and tuned authentic amber-peaty Masovian river water shader colors.
+11. **Boxer Engine Fan Recessed**:
+   * Recessed the air-cooled Boxer turbine fan horizontally beneath deck louvers ($y = 0.44$), eliminating protruding circular disc artifacts through the cabin rear window.
+12. **Chassis Rigid Body Collider Clearance**:
+   * Beveled front/rear chassis collider length from 1.90m to 1.65m with $Y = +0.28\text{m}$ clearance, preventing heavy pitch nose-dive during emergency braking from snagging the roadbed.
 
 ---
 

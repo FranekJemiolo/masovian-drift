@@ -109,28 +109,30 @@ export class HUD {
     this.container.innerHTML = `
       <!-- TOP STATUS BAR -->
       <div class="hud-top-bar">
-        <div class="hud-card hud-glass">
-          <div class="hud-label">POSITION</div>
-          <div id="hud-rank" class="hud-value rank-text">1st</div>
-        </div>
-        <div class="hud-card hud-glass">
-          <div class="hud-label">LAP</div>
-          <div id="hud-lap" class="hud-value">1 / 3</div>
-        </div>
-        <div class="hud-card hud-glass">
-          <div class="hud-label">LAP TIME</div>
-          <div id="hud-time" class="hud-value time-mono">00:00.00</div>
-          <div id="hud-delta" class="delta-tag" style="display: none;">+0.00s</div>
-        </div>
-        <div id="hud-drift-card" class="hud-card hud-glass drift-card">
-          <div class="hud-label">DRIFT SCORE</div>
-          <div id="hud-drift" class="hud-value drift-text">0 PTS</div>
+        <div class="hud-top-left">
+          <div class="hud-card hud-glass">
+            <div class="hud-label">POSITION</div>
+            <div id="hud-rank" class="hud-value rank-text">1st</div>
+          </div>
+          <div class="hud-card hud-glass">
+            <div class="hud-label">LAP</div>
+            <div id="hud-lap" class="hud-value">1 / 3</div>
+          </div>
+          <div class="hud-card hud-glass">
+            <div class="hud-label">LAP TIME</div>
+            <div id="hud-time" class="hud-value time-mono">00:00.00</div>
+            <div id="hud-delta" class="delta-tag" style="display: none;">+0.00s</div>
+          </div>
+          <div id="hud-drift-card" class="hud-card hud-glass drift-card">
+            <div class="hud-label">DRIFT SCORE</div>
+            <div id="hud-drift" class="hud-value drift-text">0 PTS</div>
+          </div>
         </div>
 
         <!-- 2D CIRCUIT MINIMAP & PAUSE BUTTON -->
         <div class="minimap-wrap">
           <div class="minimap-card hud-glass">
-            <canvas id="hud-minimap" width="240" height="240"></canvas>
+            <canvas id="hud-minimap" width="280" height="280"></canvas>
           </div>
           <button id="btn-hud-pause" class="btn-pause-icon hud-glass" title="Pause Game (ESC)">⏸️</button>
         </div>
@@ -190,14 +192,13 @@ export class HUD {
 
         <!-- Sleek Keyboard & Gamepad Control Helper Pill -->
         <div class="controls-pill hud-glass">
-          <span class="ctrl-unit"><kbd>W</kbd><kbd>S</kbd> Gas/Brake</span>
+          <span class="ctrl-unit"><kbd>W</kbd><kbd>S</kbd> Drive</span>
           <span class="ctrl-unit"><kbd>A</kbd><kbd>D</kbd> Steer</span>
           <span class="ctrl-unit"><kbd>SPACE</kbd> Drift</span>
-          <span class="ctrl-unit"><kbd>C</kbd> Clutch-Kick</span>
+          <span class="ctrl-unit"><kbd>C</kbd> Clutch</span>
           <span class="ctrl-unit"><kbd>R</kbd> Rewind</span>
           <span class="ctrl-unit"><kbd>P</kbd> Photo</span>
           <span class="ctrl-unit"><kbd>K</kbd> Respawn</span>
-          <span class="ctrl-unit"><kbd>ESC</kbd> Pause</span>
         </div>
 
         <!-- Main Speedometer & Tachometer Cluster with LED Shift Lights -->
@@ -939,28 +940,49 @@ export class HUD {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Track boundary coordinates
-    const minX = -190, maxX = 295;
-    const minZ = -355, maxZ = 280;
+    // Compute dynamic bounds from track waypoints
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < waypoints.length; i++) {
+      const p = waypoints[i].point;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    }
     const spanX = maxX - minX;
     const spanZ = maxZ - minZ;
+    const span = Math.max(spanX, spanZ);
 
     const toMap = (x: number, z: number): [number, number] => {
-      const pad = 14;
-      const mx = pad + ((x - minX) / spanX) * (w - pad * 2);
-      const my = pad + ((z - minZ) / spanZ) * (h - pad * 2);
+      const pad = 24;
+      const usable = w - pad * 2;
+      const mx = pad + ((x - minX) / span) * usable + (usable - (spanX / span) * usable) * 0.5;
+      const my = pad + ((z - minZ) / span) * usable + (usable - (spanZ / span) * usable) * 0.5;
       return [mx, my];
     };
+
+    // Radar aesthetic circular backdrop ring
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, (w - 30) * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Circuit badge
+    ctx.font = '700 10px "Chakra Petch", sans-serif';
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
+    ctx.textAlign = 'center';
+    ctx.fillText('ŚWIDER CIRCUIT • 1.6 KM', w / 2, 17);
 
     const n = waypoints.length;
     const s1End = Math.floor(n / 3);
     const s2End = Math.floor((2 * n) / 3);
 
     // Track backdrop glow
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 10;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
     ctx.beginPath();
     const [startX, startY] = toMap(waypoints[0].point.x, waypoints[0].point.z);
     ctx.moveTo(startX, startY);

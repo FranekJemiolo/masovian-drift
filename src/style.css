@@ -34,7 +34,8 @@ html, body {
   touch-action: none;
 }
 
-canvas {
+#webgl-canvas,
+body > canvas:not(#hud-minimap) {
   display: block;
   width: 100vw;
   height: 100vh;
@@ -74,7 +75,14 @@ canvas {
   right: max(24px, env(safe-area-inset-right));
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 14px;
+}
+
+.hud-top-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .hud-card {
@@ -158,22 +166,26 @@ canvas {
 
 /* MINIMAP & DRIFT BANNER */
 .minimap-card {
-  margin-left: auto;
   padding: 6px;
   border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  position: relative;
+  z-index: 20;
 }
 
 #hud-minimap {
-  width: 120px;
-  height: 120px;
-  border-radius: 10px;
+  width: 140px;
+  height: 140px;
+  border-radius: 12px;
   display: block;
+  position: relative;
+  z-index: 20;
+  background: rgba(10, 15, 29, 0.9);
 }
 
 .hud-drift-banner {
@@ -621,15 +633,26 @@ canvas {
 
 /* Controls Hint Pill in Bottom Bar */
 .controls-pill {
+  position: absolute;
+  left: 268px;
+  bottom: 0;
   border-radius: 999px;
-  padding: 8px 18px;
+  padding: 5px 12px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 11px;
+  gap: 8px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--text-muted);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+@media (max-width: 960px) {
+  .controls-pill {
+    display: none;
+  }
 }
 
 .ctrl-unit {

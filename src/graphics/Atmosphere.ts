@@ -7,6 +7,7 @@ export class Atmosphere {
   public skyMesh: THREE.Mesh;
   public cloudsGroup: THREE.Group;
   private skyMaterial: THREE.ShaderMaterial;
+  private cloudMat: THREE.MeshStandardMaterial;
   private scene: THREE.Scene;
   private currentPreset: AtmospherePreset = 'day';
 
@@ -65,34 +66,44 @@ export class Atmosphere {
       this.generateSkyIBL(renderer);
     }
 
-    // 3. Dual-Tone Voxel Cumulus Clouds (Deterministic PRNG)
+    // 3. Dual-Tone Voxel Cumulus Clouds (Multi-Block Stepped Geometry)
     this.cloudsGroup = new THREE.Group();
-    const cloudCount = 36;
-    const cloudGeo = new THREE.BoxGeometry(32, 7, 44);
+    const cloudCount = 42;
 
-    const cloudMat = new THREE.MeshStandardMaterial({
+    // Merge 4 stepped voxel cuboids into a rich cumulus formation
+    const bMain = new THREE.BoxGeometry(42, 6, 38);
+    const bTop = new THREE.BoxGeometry(26, 7, 24);
+    bTop.translate(0, 5.5, 0);
+    const bSideL = new THREE.BoxGeometry(18, 5, 20);
+    bSideL.translate(-18, -0.5, 4);
+    const bSideR = new THREE.BoxGeometry(16, 4, 18);
+    bSideR.translate(17, -1.0, -5);
+
+    const cloudGeo = this.mergeGeometriesSimple([bMain, bTop, bSideL, bSideR]);
+
+    this.cloudMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.85,
-      metalness: 0.05,
+      roughness: 0.9,
+      metalness: 0.02,
       flatShading: true,
     });
 
-    const instancedClouds = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudCount);
+    const instancedClouds = new THREE.InstancedMesh(cloudGeo, this.cloudMat, cloudCount);
     instancedClouds.castShadow = false;
     instancedClouds.receiveShadow = false;
 
     const dummy = new THREE.Object3D();
     const rng = new PRNG(4242);
     for (let i = 0; i < cloudCount; i++) {
-      const radius = 180 + rng.next() * 520;
+      const radius = 190 + rng.next() * 580;
       const angle = rng.next() * Math.PI * 2;
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
-      const y = 95 + rng.next() * 45;
+      const y = 92 + rng.next() * 48;
 
-      const sx = 0.9 + rng.next() * 1.5;
-      const sy = 0.7 + rng.next() * 0.6;
-      const sz = 0.9 + rng.next() * 1.6;
+      const sx = 0.85 + rng.next() * 1.4;
+      const sy = 0.75 + rng.next() * 0.6;
+      const sz = 0.85 + rng.next() * 1.4;
 
       dummy.position.set(x, y, z);
       dummy.scale.set(sx, sy, sz);
@@ -157,16 +168,19 @@ export class Atmosphere {
       u.midColor.value.setHex(0xf97316);   // Golden orange
       u.bottomColor.value.setHex(0xfef08a);// Horizon glow
       u.sunDir.value.set(-160, 45, -70).normalize();
+      if (this.cloudMat) this.cloudMat.color.setHex(0xfed7aa); // Warm peach sunset clouds
     } else if (preset === 'night') {
       u.topColor.value.setHex(0x020617);   // Pitch navy
       u.midColor.value.setHex(0x0f172a);   // Slate blue
       u.bottomColor.value.setHex(0x1e293b);// Distant dusk
       u.sunDir.value.set(0, -100, 0).normalize();
+      if (this.cloudMat) this.cloudMat.color.setHex(0x334155); // Moonlight slate clouds
     } else {
       u.topColor.value.setHex(0x1d4ed8);
       u.midColor.value.setHex(0x60a5fa);
       u.bottomColor.value.setHex(0xfef3c7);
       u.sunDir.value.set(-100, 170, -90).normalize();
+      if (this.cloudMat) this.cloudMat.color.setHex(0xffffff);
     }
   }
 
@@ -181,6 +195,47 @@ export class Atmosphere {
 
     // Gentle cloud drift
     this.cloudsGroup.rotation.y += delta * 0.003;
+  }
+
+  /**
+   * Helper to merge multiple simple BufferGeometries into one
+   */
+  private mergeGeometriesSimple(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
+    const merged = new THREE.BufferGeometry();
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    let indexOffset = 0;
+
+    for (const g of geos) {
+      const pos = g.getAttribute('position');
+      const norm = g.getAttribute('normal');
+      const uv = g.getAttribute('uv');
+      const idx = g.getIndex();
+
+      if (pos) {
+        for (let i = 0; i < pos.count; i++) {
+          positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+          if (norm) normals.push(norm.getX(i), norm.getY(i), norm.getZ(i));
+          if (uv) uvs.push(uv.getX(i), uv.getY(i));
+        }
+      }
+
+      if (idx) {
+        for (let i = 0; i < idx.count; i++) {
+          indices.push(idx.getX(i) + indexOffset);
+        }
+      }
+      indexOffset += pos ? pos.count : 0;
+    }
+
+    merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    if (normals.length > 0) merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    if (uvs.length > 0) merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    if (indices.length > 0) merged.setIndex(indices);
+
+    return merged;
   }
 }
 

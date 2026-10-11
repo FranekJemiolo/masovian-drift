@@ -188,9 +188,9 @@ export class VehiclePhysics {
 
     this.rigidBody = world.createRigidBody(rbDesc);
 
-    // Chassis collision box (raised with y-offset so bottom sits at y = -0.06, well above ground contact patch!)
-    const colDesc = RAPIER.ColliderDesc.cuboid(0.82, 0.28, 1.90)
-      .setTranslation(0, 0.22, 0)
+    // Chassis collision box (raised clearance so nose pitch dive never snags road colliders)
+    const colDesc = RAPIER.ColliderDesc.cuboid(0.78, 0.22, 1.65)
+      .setTranslation(0, 0.28, 0)
       .setMass(this.specs.mass)
       .setFriction(0.0)
       .setRestitution(0.05);

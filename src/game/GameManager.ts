@@ -125,6 +125,7 @@ export class GameManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.id = 'webgl-canvas';
     document.body.appendChild(this.renderer.domElement);
 
     // WebGL Context Loss & Recovery Error Boundary (C6)

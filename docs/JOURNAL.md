@@ -431,7 +431,40 @@ Newest entries first. Plan reference: [V2_PLAN.md](./V2_PLAN.md), [GRAPHICS_IMPR
 | Regional & SOTA AI | Regional Geography (Świder & Dunes), Physical Banking, Headlight Volumetrics, Frenet Multi-Candidate AI, Kamm Trail Braking | `[x]` done |
 | Modernization | bitECS SoA Pipeline, Decoupled Execution, Two-Sample Lerp/Slerp Buffer, Surface Nets, std430 Alignment, PhysicsBridge | `[x]` done |
 | Next Phase | Volumetric Voxel Debris Physics, P2P/AI Tandem Drift Scoring Multipliers, Dynamic Neon Tandem HUD Glow | `[x]` done |
-| Full Completion | 100% of all planned engine & graphics items implemented and validated across automated test suites | `[x]` done |
+### 2026-10-11 — AAA Visual Polish, HUD Minimap Isolation & Crisp Geometry Upgrades
+
+**Implementations & Bug Fixes**:
+- **Volumetric Headlight Dust Cone Overhaul (`src/graphics/VoxelCarBuilder.ts`)**:
+  - Resolved inverted cylinder orientation (`rotateX(-Math.PI / 2)`) and translated cone base down the road ($Z = +18\text{m}$) with apex at headlight lens ($Z = 0$).
+  - Dynamically disabled daylight beam visibility to eliminate translucent camera haze; automatically activated during sunset and night modes.
+- **Stepped Voxel Cumulus Cloud Formations (`src/graphics/Atmosphere.ts`)**:
+  - Replaced single box slabs with 4-box merged stepped voxel cloud formations.
+  - Linked cloud tinting to atmospheric lighting presets (peach sunset `0xfed7aa`, slate moonlight `0x334155`, pure white daylight `0xffffff`).
+- **Road Markings Anti-Z-Fighting (`src/graphics/TrackMeshBuilder.ts`)**:
+  - Configured `polygonOffset: true` (`factor: -3, units: -3`) across all road markings, grid lines, and start line meshes.
+  - Replaced dashed centerline vertex color interpolation with pure crisp white quads connected strictly between active waypoints.
+- **Razor-Sharp Road Curbs & Clean Earth Shoulders (`src/graphics/TrackMeshBuilder.ts`)**:
+  - Refactored curb geometry generation to use unshared quads per track segment, eliminating vertex color interpolation and creating razor-sharp alternating red and white motorsport curb teeth.
+  - Replaced shoulder curb color with pure natural gravel (`0x8a7d6e`), eliminating red curb paint bleeding onto roadside sand and grass.
+- **Inland Water Table Depression Clamping (`src/graphics/TrackMeshBuilder.ts`)**:
+  - Clamped non-riverbed terrain depression to prevent the river water plane from poking through inland dunes and chicane verandas.
+  - Tuned authentic peaty-amber Masovian river water shader colors (`0x162c24` deep, `0x2d5c4b` shallow).
+- **In-Game HUD & Minimap Canvas Isolation (`src/ui/HUD.ts`, `src/style.css`, `src/game/GameManager.ts`)**:
+  - Isolated full-screen canvas styling exclusively to `#webgl-canvas`, preventing `#hud-minimap` from detaching and stretching across 100vw x 100vh.
+  - Rendered crisp 280x280 minimap with dynamic bounding box, colored track sectors (S1 Cyan, S2 Purple, S3 Amber), competitor dots, player delta arrow, and circular radar grid.
+  - Pinned controls pill neatly adjacent to telemetry card, eliminating tachometer cluster overlap and right-edge truncation.
+- **Chassis Rigid Body Collider Clearance & Boxer Fan Recessing (`src/physics/VehiclePhysics.ts`, `src/graphics/VoxelCarBuilder.ts`)**:
+  - Beveled front/rear chassis box collider to $1.65\text{m}$ length with $Y = +0.28\text{m}$ clearance, preventing high-speed emergency braking nose-dive snags on the roadbed.
+  - Recessed the air-cooled Boxer turbine fan horizontally beneath deck louvers ($y = 0.44$), eliminating protruding circular disc artifacts through the cabin rear window.
+
+**Automated verification sweep results**:
+- `npm run build`: **0 ERRORS** (Clean Vite & TypeScript compile in 1.3s).
+- `tests/unit-tests.mjs`: **100% PASSED** (13/13 unit tests).
+- `tests/physics-regression.mjs`: **100% PASSED** (0-100 sprint: 4.05s, 100-0 braking: 26.3m, skidpad: peak 1.80G, clean reset).
+- `tests/ecs-and-webgpu-tests.mjs`: **100% PASSED** (6/6 architecture and WebGPU tests).
+- `tests/comprehensive-vehicle-verification.mjs`: **100% PASSED** (5/5 vehicle dynamics & AI tests).
+- `tests/smoke-suite.mjs` (`npm test`): **100% PASSED** across all 7 isolated browser sections with **0 console errors and 0 page errors**.
+- `tests/full-circuit-e2e.mjs`: **100% PASSED** across 140/140 waypoints (0 sinkage, 0 flips, clean respawn) with updated live screenshots.
 
 
 

@@ -68,7 +68,7 @@ export class ParticleFX {
   private flameTimer = 0;
 
   // 4. Dynamic Skid Mark Decals (Instanced Ribbons)
-  private maxSkids = 240;
+  private maxSkids = 600;
   private skidSegments: SkidSegment[] = [];
   private skidMesh: THREE.InstancedMesh;
   private skidDummy = new THREE.Object3D();
@@ -400,8 +400,9 @@ export class ParticleFX {
         }
 
         if (isDrifting && v.speedKmh > 24) {
-          this.addSkidMark(leftRear, v.quaternion, v.position.y - 0.28);
-          this.addSkidMark(rightRear, v.quaternion, v.position.y - 0.28);
+          const skidY = v.position.y - 0.135;
+          this.addSkidMark(leftRear, v.quaternion, skidY);
+          this.addSkidMark(rightRear, v.quaternion, skidY);
         }
       }
     }

@@ -12,6 +12,8 @@ export interface CarVisualElements {
   brakeRotorMaterials: THREE.MeshStandardMaterial[];
   driverHead: THREE.Group;
   headlightLight: THREE.SpotLight | null;
+  headlightBeams?: [THREE.Mesh, THREE.Mesh];
+  headlightBeamMat?: THREE.MeshBasicMaterial;
   exhaustPipes: THREE.Vector3[];
 }
 
@@ -131,8 +133,8 @@ export class VoxelCarBuilder {
     addBox(1.18, 0.12, 1.1, 0, 0.94, -0.2, bodyMat);
 
     // Rear window (fastback slope down toward engine deck)
-    const rearWindow = addBox(1.16, 0.36, 0.8, 0, 0.75, -0.95, glassMat);
-    rearWindow.rotation.x = Math.PI * 0.15;
+    const rearWindow = addBox(1.14, 0.32, 0.72, 0, 0.76, -0.88, glassMat);
+    rearWindow.rotation.x = Math.PI * 0.16;
 
     // Side windows (L & R)
     addBox(0.06, 0.32, 0.95, -0.6, 0.77, -0.2, glassMat);
@@ -148,12 +150,11 @@ export class VoxelCarBuilder {
     for (let i = 0; i < 4; i++) {
       addBox(0.8, 0.03, 0.06, 0, 0.71, -1.2 - i * 0.12, blackTrimMat);
     }
-    // Iconic Air-Cooled Boxer Turbine Fan (visible under decklid)
-    const fanGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.08, 12);
-    fanGeo.rotateX(Math.PI / 2);
-    const fanMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.85, roughness: 0.25 });
+    // Iconic Air-Cooled Boxer Turbine Fan (recessed horizontally under decklid louvers)
+    const fanGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.04, 12);
+    const fanMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8, roughness: 0.3 });
     const fan = new THREE.Mesh(fanGeo, fanMat);
-    fan.position.set(0, 0.62, -1.38);
+    fan.position.set(0, 0.44, -1.35);
     bodyGroup.add(fan);
 
     // 5. Classic Ducktail / Whale-Tail Rear Spoiler
@@ -231,17 +232,26 @@ export class VoxelCarBuilder {
     addBox(0.3, 0.3, 0.04, 0.5, 0.55, 1.80, chromeMat);
 
     // Volumetric Headlight Dust Cones (cinematic AAA atmospheric beams, G3 / G4)
-    const coneGeo = new THREE.CylinderGeometry(0.12, 1.35, 16.0, 10, 1, true);
-    coneGeo.rotateX(Math.PI / 2);
-    coneGeo.translate(0, 0, 8.0);
+    // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments, heightSegments, openEnded)
+    // By rotating around X by -Math.PI / 2, Y maps to -Z:
+    // Top (narrow 0.08m) -> Z = -height/2; Bottom (wide 1.85m) -> Z = +height/2.
+    // Translating along Z by +height/2 (9.0m) positions narrow top at Z=0 (headlight lens)
+    // and wide bottom at Z = +18.0m (down the road ahead of the car).
+    const coneGeo = new THREE.CylinderGeometry(0.08, 1.85, 18.0, 12, 1, true);
+    coneGeo.rotateX(-Math.PI / 2);
+    coneGeo.translate(0, -0.15, 9.0); // Slight downward slope to hug roadbed
     const coneMat = new THREE.MeshBasicMaterial({
       color: 0xfffae0,
       transparent: true,
-      opacity: isPlayer ? 0.16 : 0.10,
+      opacity: isPlayer ? 0.06 : 0.03,
       blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
+      side: THREE.FrontSide,
       depthWrite: false,
     });
+    // In bright daylight, keep dust beams invisible to prevent washed-out screen haze;
+    // visible dynamically in sunset/night or heavy dusk
+    coneMat.visible = false;
+
     const leftBeam = new THREE.Mesh(coneGeo, coneMat);
     leftBeam.position.set(-0.5, 0.55, 1.84);
     bodyGroup.add(leftBeam);
@@ -382,6 +392,8 @@ export class VoxelCarBuilder {
       brakeRotorMaterials,
       driverHead,
       headlightLight,
+      headlightBeams: [leftBeam, rightBeam],
+      headlightBeamMat: coneMat,
       exhaustPipes,
     };
   }

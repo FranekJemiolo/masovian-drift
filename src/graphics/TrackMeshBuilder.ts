@@ -50,6 +50,22 @@ export class TrackMeshBuilder {
 
     const ROAD_ELEVATION = TrackMeshBuilder.ROAD_ELEVATION;
 
+    interface CurbNode {
+      pL: THREE.Vector3;
+      cLO: THREE.Vector3;
+      sLB: THREE.Vector3;
+      pR: THREE.Vector3;
+      cRO: THREE.Vector3;
+      sRB: THREE.Vector3;
+      yL: number;
+      ycL: number;
+      yR: number;
+      ycR: number;
+      yBase: number;
+      isCorner: boolean;
+    }
+    const curbNodes: CurbNode[] = [];
+
     for (let i = 0; i <= count; i++) {
       const wp = waypoints[i % count];
       const pt = wp.point;
@@ -82,7 +98,7 @@ export class TrackMeshBuilder {
       roadUvs.push(1, i * 0.25);
 
       // --- 2. Road Markings Geometry (Dashed centerline + white edge lines) ---
-      const lineThickness = 0.32;
+      const lineThickness = 0.38;
       // Left white continuous line
       const mLeftIn = pt.clone().addScaledVector(normal, -(halfWidth - 0.45));
       const mLeftOut = pt.clone().addScaledVector(normal, -(halfWidth - 0.45 + lineThickness));
@@ -96,9 +112,9 @@ export class TrackMeshBuilder {
       const mCenterL = pt.clone().addScaledVector(normal, -lineThickness * 0.5);
       const mCenterR = pt.clone().addScaledVector(normal, lineThickness * 0.5);
 
-      const yMarkLeft = yLeft + 0.025;
-      const yMarkRight = yRight + 0.025;
-      const yMarkCenter = yRoad + 0.025; // Centerline follows road spine
+      const yMarkLeft = yLeft + 0.035;
+      const yMarkRight = yRight + 0.035;
+      const yMarkCenter = yRoad + 0.035; // Centerline follows road spine
 
       markVertices.push(mLeftOut.x, yMarkLeft, mLeftOut.z);
       markVertices.push(mLeftIn.x, yMarkLeft, mLeftIn.z);
@@ -111,12 +127,11 @@ export class TrackMeshBuilder {
       for (let k = 0; k < 4; k++) {
         markColors.push(edgeColor.r, edgeColor.g, edgeColor.b);
       }
-      // Centerline color (transparent black if off)
-      const cDashCol = isCenterDash ? whiteMarking : new THREE.Color(0, 0, 0);
-      markColors.push(cDashCol.r, cDashCol.g, cDashCol.b);
-      markColors.push(cDashCol.r, cDashCol.g, cDashCol.b);
+      // Centerline color is always pure crisp white
+      markColors.push(whiteMarking.r, whiteMarking.g, whiteMarking.b);
+      markColors.push(whiteMarking.r, whiteMarking.g, whiteMarking.b);
 
-      // --- 3. 3D Raised Curbs (Corners only!) & Sloped Shoulders ---
+      // --- 3. 3D Raised Curbs Cross-Section Nodes ---
       const prevWp = waypoints[(i - 1 + count) % count];
       const nextWp = waypoints[(i + 1) % count];
       let curvature = 0;
@@ -128,8 +143,6 @@ export class TrackMeshBuilder {
 
       const curbWidth = isCorner ? 1.45 : 1.2;
       const curbHeight = isCorner ? 0.20 : 0.0;
-      const isRed = Math.floor(i * 0.7) % 2 === 0;
-      const curColor = isCorner ? (isRed ? redKerb : whiteKerb) : gravelColor;
 
       // Outer kerb points
       const cLeftOuter = pt.clone().addScaledVector(normal, -(halfWidth + curbWidth));
@@ -141,22 +154,20 @@ export class TrackMeshBuilder {
       const yCurbLeft = yLeft + curbHeight;
       const yCurbRight = yRight + curbHeight;
 
-      // L inner, L top, L base, R inner, R top, R base
-      curbVertices.push(pLeft.x, yLeft, pLeft.z);
-      curbVertices.push(cLeftOuter.x, yCurbLeft, cLeftOuter.z);
-      curbVertices.push(sLeftBase.x, pt.y - 0.05, sLeftBase.z);
-
-      curbVertices.push(pRight.x, yRight, pRight.z);
-      curbVertices.push(cRightOuter.x, yCurbRight, cRightOuter.z);
-      curbVertices.push(sRightBase.x, pt.y - 0.05, sRightBase.z);
-
-      curbColors.push(curColor.r, curColor.g, curColor.b);
-      curbColors.push(curColor.r, curColor.g, curColor.b);
-      curbColors.push(gravelColor.r, gravelColor.g, gravelColor.b);
-
-      curbColors.push(curColor.r, curColor.g, curColor.b);
-      curbColors.push(curColor.r, curColor.g, curColor.b);
-      curbColors.push(gravelColor.r, gravelColor.g, gravelColor.b);
+      curbNodes.push({
+        pL: pLeft,
+        cLO: cLeftOuter,
+        sLB: sLeftBase,
+        pR: pRight,
+        cRO: cRightOuter,
+        sRB: sRightBase,
+        yL: yLeft,
+        ycL: yCurbLeft,
+        yR: yRight,
+        ycR: yCurbRight,
+        yBase: pt.y - 0.05,
+        isCorner,
+      });
 
       if (i < count) {
         // Road indices
@@ -176,29 +187,62 @@ export class TrackMeshBuilder {
         // Right line quad
         markIndices.push(mi0 + 2, mi0 + 3, mi1 + 2);
         markIndices.push(mi0 + 3, mi1 + 3, mi1 + 2);
-        // Centerline dash quad
-        if (isCenterDash) {
+        // Centerline dash quad (connect only between active dash waypoints)
+        if (isCenterDash && ((i + 1) % 6) < 3) {
           markIndices.push(mi0 + 4, mi0 + 5, mi1 + 4);
           markIndices.push(mi0 + 5, mi1 + 5, mi1 + 4);
         }
-
-        // Curbs indices
-        const ci0 = i * 6;
-        const ci1 = (i + 1) * 6;
-        // Left curb top
-        curbIndices.push(ci0, ci1, ci0 + 1);
-        curbIndices.push(ci0 + 1, ci1, ci1 + 1);
-        // Left curb shoulder
-        curbIndices.push(ci0 + 1, ci1 + 1, ci0 + 2);
-        curbIndices.push(ci0 + 2, ci1 + 1, ci1 + 2);
-
-        // Right curb top
-        curbIndices.push(ci0 + 3, ci0 + 4, ci1 + 3);
-        curbIndices.push(ci0 + 4, ci1 + 4, ci1 + 3);
-        // Right curb shoulder
-        curbIndices.push(ci0 + 4, ci0 + 5, ci1 + 4);
-        curbIndices.push(ci0 + 5, ci1 + 5, ci1 + 4);
       }
+    }
+
+    // --- Build Crisp Curbs Quads (No color bleed across teeth) ---
+    for (let i = 0; i < count; i++) {
+      const n0 = curbNodes[i];
+      const n1 = curbNodes[i + 1];
+      const segCorner = n0.isCorner || n1.isCorner;
+      const isRed = (i % 2 === 0);
+      const curColor = segCorner ? (isRed ? redKerb : whiteKerb) : gravelColor;
+
+      const pushQuad = (
+        v0: THREE.Vector3, y0: number, c0: THREE.Color,
+        v1: THREE.Vector3, y1: number, c1: THREE.Color,
+        v2: THREE.Vector3, y2: number, c2: THREE.Color,
+        v3: THREE.Vector3, y3: number, c3: THREE.Color
+      ) => {
+        const base = curbVertices.length / 3;
+        curbVertices.push(v0.x, y0, v0.z, v1.x, y1, v1.z, v2.x, y2, v2.z, v3.x, y3, v3.z);
+        curbColors.push(c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, c2.r, c2.g, c2.b, c3.r, c3.g, c3.b);
+        curbIndices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+      };
+
+      // Left curb top
+      pushQuad(
+        n0.pL, n0.yL, curColor,
+        n0.cLO, n0.ycL, curColor,
+        n1.pL, n1.yL, curColor,
+        n1.cLO, n1.ycL, curColor
+      );
+      // Left shoulder (natural earth/gravel runoff)
+      pushQuad(
+        n0.cLO, n0.ycL, gravelColor,
+        n0.sLB, n0.yBase, gravelColor,
+        n1.cLO, n1.ycL, gravelColor,
+        n1.sLB, n1.yBase, gravelColor
+      );
+      // Right curb top
+      pushQuad(
+        n0.cRO, n0.ycR, curColor,
+        n0.pR, n0.yR, curColor,
+        n1.cRO, n1.ycR, curColor,
+        n1.pR, n1.yR, curColor
+      );
+      // Right shoulder (natural earth/gravel runoff)
+      pushQuad(
+        n0.sRB, n0.yBase, gravelColor,
+        n0.cRO, n0.ycR, gravelColor,
+        n1.sRB, n1.yBase, gravelColor,
+        n1.cRO, n1.ycR, gravelColor
+      );
     }
 
     // --- Build Road Mesh ---
@@ -229,6 +273,9 @@ export class TrackMeshBuilder {
     const markMat = new THREE.MeshBasicMaterial({
       vertexColors: true,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
     });
     const markingsMesh = new THREE.Mesh(markGeo, markMat);
     markingsMesh.renderOrder = 2;
@@ -323,6 +370,11 @@ export class TrackMeshBuilder {
       if (minTrackDist < 26.0) {
         const blend = minTrackDist / 26.0;
         h = Math.min(h, closestWpY - 0.22) * (1.0 - blend) + h * blend;
+      }
+
+      // Restrict sub-zero depression exclusively to the Świder riverbed trench
+      if (!isRiverBed && h < -0.35) {
+        h = -0.35;
       }
 
       pos.setY(i, h);
@@ -485,17 +537,35 @@ export class TrackMeshBuilder {
     trackGroup.add(gantry);
 
     // --- 6. Staggered Starting Grid Boxes on Asphalt ---
-    const gridMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false });
-    const gridYellowMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthWrite: false });
+    const gridMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
+    const gridYellowMat = new THREE.MeshBasicMaterial({
+      color: 0xfbbf24,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
 
     // Checkerboard starting line at Waypoint 0
     const startLineGeo = new THREE.PlaneGeometry(startWp.width - 1.0, 2.5, 14, 2);
     startLineGeo.rotateX(-Math.PI / 2);
     const startLineMesh = new THREE.Mesh(
       startLineGeo,
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.3,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+        polygonOffsetUnits: -3,
+      })
     );
-    startLineMesh.position.set(startWp.point.x, startWp.point.y + ROAD_ELEVATION + 0.03, startWp.point.z);
+    startLineMesh.position.set(startWp.point.x, startWp.point.y + ROAD_ELEVATION + 0.035, startWp.point.z);
     if (startWp.tangent) {
       startLineMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), startWp.tangent);
     }
@@ -517,7 +587,7 @@ export class TrackMeshBuilder {
       const boxGeo = new THREE.PlaneGeometry(2.8, 5.0);
       boxGeo.rotateX(-Math.PI / 2);
       const boxMesh = new THREE.Mesh(boxGeo, g === 0 ? gridYellowMat : gridMat);
-      boxMesh.position.set(gPos.x, startWp.point.y + ROAD_ELEVATION + 0.028, gPos.z);
+      boxMesh.position.set(gPos.x, startWp.point.y + ROAD_ELEVATION + 0.035, gPos.z);
       if (startWp.tangent) {
         boxMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), startWp.tangent);
       }
@@ -661,13 +731,13 @@ export class TrackMeshBuilder {
     }
 
     // --- 11. Shimmering Świder River Water Body (GPU Gerstner Waves & Fresnel, G6/P2) ---
-    const waterGeo = new THREE.PlaneGeometry(480, 360, 72, 72);
+    const waterGeo = new THREE.PlaneGeometry(160, 520, 32, 64);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uDeepWater: { value: new THREE.Color(0x022c44) },
-        uShallowWater: { value: new THREE.Color(0x06b6d4) },
+        uDeepWater: { value: new THREE.Color(0x162c24) }, // Rich peaty Masovian river depth
+        uShallowWater: { value: new THREE.Color(0x2d5c4b) }, // Shimmering golden-green river shallows
         uSunColor: { value: new THREE.Color(0xfff7ed) },
         uSunDir: { value: new THREE.Vector3(-0.45, 0.82, -0.36).normalize() },
       },
@@ -746,7 +816,7 @@ export class TrackMeshBuilder {
       depthWrite: true,
     });
     const riverMesh = new THREE.Mesh(waterGeo, waterMat);
-    riverMesh.position.set(230, -0.62, -50);
+    riverMesh.position.set(235, -0.76, 0);
     trackGroup.add(riverMesh);
 
     // 12. Wind-Animated Shoulder Grass InstancedMesh (G5)

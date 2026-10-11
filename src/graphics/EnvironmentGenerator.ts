@@ -148,8 +148,8 @@ export class EnvironmentGenerator {
     const birchFoliageGeo = this.mergeGeometriesSimple([b1, b2]);
 
     const birchFoliageMat = new THREE.MeshStandardMaterial({
-      color: 0x84cc16, // Fresh bright spring birch green
-      roughness: 0.65,
+      color: 0x4f7d38, // Authentic silver birch canopy green
+      roughness: 0.72,
       flatShading: true,
     });
     const birchFoliageInstanced = new THREE.InstancedMesh(birchFoliageGeo, birchFoliageMat, birchCount);
@@ -187,9 +187,9 @@ export class EnvironmentGenerator {
       birchFoliageInstanced.setMatrixAt(placedBirches, dummy.matrix);
 
       const bCol = new THREE.Color().setHSL(
-        0.24 + rng.next() * 0.06,
-        0.75 + rng.next() * 0.2,
-        0.42 + rng.next() * 0.12
+        0.26 + rng.next() * 0.05,
+        0.52 + rng.next() * 0.18,
+        0.32 + rng.next() * 0.10
       );
       birchFoliageInstanced.setColorAt(placedBirches, bCol);
       placedBirches++;
