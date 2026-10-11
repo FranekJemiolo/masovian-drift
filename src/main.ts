@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import RAPIER from '@dimforge/rapier3d-compat';
 import './style.css';
 import { GameManager } from './game/GameManager';
 import { ECSWorldManager } from './ecs/World';
@@ -17,6 +18,7 @@ import { PhotoMode } from './ui/PhotoMode';
 
 function bootstrap(): void {
   (window as any).THREE = THREE;
+  (window as any).RAPIER = RAPIER;
   (window as any).ECSWorldManager = ECSWorldManager;
   (window as any).SurfaceNets = SurfaceNets;
   (window as any).PhysicsBridge = PhysicsBridge;

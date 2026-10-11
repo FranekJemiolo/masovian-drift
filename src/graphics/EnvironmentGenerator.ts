@@ -1,22 +1,32 @@
 import * as THREE from 'three';
+import RAPIER from '@dimforge/rapier3d-compat';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { PRNG } from '../utils/PRNG';
 import { SSVDAG, SwidermajerVoxelBuilder } from '../voxel/SSVDAG';
 import { TrackMeshBuilder } from './TrackMeshBuilder';
+import { PhysicsWorld } from '../physics/PhysicsWorld';
 
 export class EnvironmentGenerator {
   /**
    * Procedurally generates dense pine forests, Mazovian birch groves,
-   * and authentic Świdermajer wooden villas using InstancedMesh for maximum 60 FPS performance.
+   * tire barriers, hay bales, fences, and authentic Świdermajer wooden villas
+   * using InstancedMesh for maximum 60 FPS performance, and registers exact
+   * Rapier solid colliders on the physics world.
    */
   public static generateEnvironment(
     scene: THREE.Scene,
-    waypoints: Waypoint[]
+    waypoints: Waypoint[],
+    physicsWorld?: PhysicsWorld
   ): THREE.Group {
     const rng = new PRNG(1920042);
     const envGroup = new THREE.Group();
     const wpCount = waypoints.length;
     const dummy = new THREE.Object3D();
+
+    const rapierWorld = physicsWorld?.world;
+    const envBody = rapierWorld
+      ? rapierWorld.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0))
+      : null;
 
     // -------------------------------------------------------------
     // 1. MAZOVIAN SCOTS PINE FORESTS (Pinus sylvestris, 1200 Trees)
@@ -105,14 +115,28 @@ export class EnvironmentGenerator {
 
       const scale = 0.82 + rng.next() * 0.55;
       const rotY = rng.next() * Math.PI * 2;
+      const rotX = (rng.next() - 0.5) * 0.03;
+      const rotZ = (rng.next() - 0.5) * 0.03;
+      const scaleY = scale * (0.92 + rng.next() * 0.28);
 
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set((rng.next() - 0.5) * 0.03, rotY, (rng.next() - 0.5) * 0.03);
-      dummy.scale.set(scale, scale * (0.92 + rng.next() * 0.28), scale);
+      dummy.rotation.set(rotX, rotY, rotZ);
+      dummy.scale.set(scale, scaleY, scale);
       dummy.updateMatrix();
 
       trunkInstanced.setMatrixAt(placedPines, dummy.matrix);
       pineFoliageInstanced.setMatrixAt(placedPines, dummy.matrix);
+
+      if (envBody && rapierWorld) {
+        // Solid Scots Pine trunk collider (radius 0.38m, height 11.5m scaled)
+        const halfH = (11.5 * scaleY) * 0.5;
+        const radius = 0.38 * scale;
+        const treeCol = RAPIER.ColliderDesc.cylinder(halfH, radius)
+          .setTranslation(posX, posY + halfH, posZ)
+          .setFriction(0.75)
+          .setRestitution(0.08);
+        rapierWorld.createCollider(treeCol, envBody);
+      }
 
       // Deterministic color variation for organic Mazovian forest
       const col = new THREE.Color().setHSL(
@@ -188,13 +212,29 @@ export class EnvironmentGenerator {
       }
 
       const scale = 0.9 + rng.next() * 0.5;
+      const rotX = (rng.next() - 0.5) * 0.08;
+      const rotY = rng.next() * Math.PI * 2;
+      const rotZ = (rng.next() - 0.5) * 0.08;
+      const scaleY = scale * (0.95 + rng.next() * 0.25);
+
       dummy.position.set(posX, posY, posZ);
-      dummy.rotation.set((rng.next() - 0.5) * 0.08, rng.next() * Math.PI * 2, (rng.next() - 0.5) * 0.08);
-      dummy.scale.set(scale, scale * (0.95 + rng.next() * 0.25), scale);
+      dummy.rotation.set(rotX, rotY, rotZ);
+      dummy.scale.set(scale, scaleY, scale);
       dummy.updateMatrix();
 
       birchTrunkInstanced.setMatrixAt(placedBirches, dummy.matrix);
       birchFoliageInstanced.setMatrixAt(placedBirches, dummy.matrix);
+
+      if (envBody && rapierWorld) {
+        // Solid Birch trunk collider (radius 0.28m, height 6.0m scaled)
+        const halfH = (6.0 * scaleY) * 0.5;
+        const radius = 0.28 * scale;
+        const birchCol = RAPIER.ColliderDesc.cylinder(halfH, radius)
+          .setTranslation(posX, posY + halfH, posZ)
+          .setFriction(0.70)
+          .setRestitution(0.08);
+        rapierWorld.createCollider(birchCol, envBody);
+      }
 
       const bCol = new THREE.Color().setHSL(
         0.26 + rng.next() * 0.05,
@@ -359,6 +399,17 @@ export class EnvironmentGenerator {
       fretworkInstanced.setMatrixAt(k, dummy.matrix);
       chimneyInstanced.setMatrixAt(k, dummy.matrix);
       windowInstanced.setMatrixAt(k, dummy.matrix);
+
+      if (envBody && rapierWorld) {
+        // Two-story Świdermajer villa solid obstacle
+        const q = dummy.quaternion;
+        const villaCol = RAPIER.ColliderDesc.cuboid(8.0, 4.0, 6.0)
+          .setTranslation(posX, posY + 4.0, posZ)
+          .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setFriction(0.65)
+          .setRestitution(0.05);
+        rapierWorld.createCollider(villaCol, envBody);
+      }
     }
 
     gfInstanced.instanceMatrix.needsUpdate = true;
@@ -428,6 +479,15 @@ export class EnvironmentGenerator {
         placedTires,
         isRedStack ? new THREE.Color(0xdc2626) : new THREE.Color(0xf1f5f9)
       );
+
+      if (envBody && rapierWorld) {
+        // Red & White tire barrier stack (radius 0.58m, height 0.96m, elastic energy dissipation)
+        const tireCol = RAPIER.ColliderDesc.cylinder(0.48, 0.58)
+          .setTranslation(posX, posY + 0.48, posZ)
+          .setFriction(0.85)
+          .setRestitution(0.28);
+        rapierWorld.createCollider(tireCol, envBody);
+      }
       placedTires++;
     }
     tireStackInstanced.instanceMatrix.needsUpdate = true;
@@ -469,6 +529,18 @@ export class EnvironmentGenerator {
       hayInstanced.setMatrixAt(placedHay, dummy.matrix);
       const hColor = new THREE.Color().setHSL(0.12 + rng.next() * 0.03, 0.85, 0.44 + rng.next() * 0.1);
       hayInstanced.setColorAt(placedHay, hColor);
+
+      if (envBody && rapierWorld) {
+        // Golden straw hay bale obstacle (box halfExtents 0.8m x (0.6 * scaleY) x 0.8m)
+        const scaleY = 1.0 + (placedHay % 3) * 0.2;
+        const q = dummy.quaternion;
+        const baleCol = RAPIER.ColliderDesc.cuboid(0.8, 0.6 * scaleY, 0.8)
+          .setTranslation(posX, posY + 0.6 * scaleY, posZ)
+          .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setFriction(0.80)
+          .setRestitution(0.12);
+        rapierWorld.createCollider(baleCol, envBody);
+      }
       placedHay++;
     }
     hayInstanced.instanceMatrix.needsUpdate = true;
@@ -520,6 +592,17 @@ export class EnvironmentGenerator {
       dummy.updateMatrix();
 
       fenceInstanced.setMatrixAt(placedFences, dummy.matrix);
+
+      if (envBody && rapierWorld) {
+        // Rural split-rail timber fence section (halfExtents 0.15m x 0.65m x 1.9m)
+        const q = dummy.quaternion;
+        const fenceCol = RAPIER.ColliderDesc.cuboid(0.15, 0.65, 1.9)
+          .setTranslation(posX, posY + 0.65, posZ)
+          .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setFriction(0.70)
+          .setRestitution(0.05);
+        rapierWorld.createCollider(fenceCol, envBody);
+      }
       placedFences++;
     }
     fenceInstanced.instanceMatrix.needsUpdate = true;
@@ -626,6 +709,17 @@ export class EnvironmentGenerator {
         EnvironmentGenerator.spectators.push(fanGroup);
       }
 
+      if (envBody && rapierWorld) {
+        // Grandstand spectator pavilion solid seating tier
+        const q = standGroup.quaternion;
+        const standCol = RAPIER.ColliderDesc.cuboid(5.0, 0.8, 2.0)
+          .setTranslation(posX, posY + 0.8, posZ)
+          .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setFriction(0.70)
+          .setRestitution(0.05);
+        rapierWorld.createCollider(standCol, envBody);
+      }
+
       envGroup.add(standGroup);
     }
 
@@ -690,6 +784,15 @@ export class EnvironmentGenerator {
         rotorGroup.add(bladeArm);
       }
 
+      if (envBody && rapierWorld) {
+        // Conical wind turbine tower solid base
+        const turbCol = RAPIER.ColliderDesc.cylinder(26.0, 2.1)
+          .setTranslation(tl.x, turbY + 26.0, tl.z)
+          .setFriction(0.60)
+          .setRestitution(0.05);
+        rapierWorld.createCollider(turbCol, envBody);
+      }
+
       turbineGroup.add(rotorGroup);
       EnvironmentGenerator.turbineRotors.push(rotorGroup);
       envGroup.add(turbineGroup);
@@ -732,6 +835,15 @@ export class EnvironmentGenerator {
       roof.rotateY(Math.PI / 4);
       shGroup.add(roof);
 
+      if (envBody && rapierWorld) {
+        // Roadside shrine column collider
+        const shrineCol = RAPIER.ColliderDesc.cuboid(0.45, 1.8, 0.45)
+          .setTranslation(shX, shY + 1.8, shZ)
+          .setFriction(0.60)
+          .setRestitution(0.05);
+        rapierWorld.createCollider(shrineCol, envBody);
+      }
+
       envGroup.add(shGroup);
     }
 
@@ -771,6 +883,18 @@ export class EnvironmentGenerator {
         villaMesh.scale.set(0.48, 0.48, 0.48);
         villaMesh.castShadow = true;
         villaMesh.receiveShadow = true;
+
+        if (envBody && rapierWorld) {
+          // SSVDAG Resort villa solid obstacle
+          const q = villaMesh.quaternion;
+          const ssvdagCol = RAPIER.ColliderDesc.cuboid(7.68, 5.76, 5.76)
+            .setTranslation(vX, vY + 5.76, vZ)
+            .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+            .setFriction(0.65)
+            .setRestitution(0.05);
+          rapierWorld.createCollider(ssvdagCol, envBody);
+        }
+
         envGroup.add(villaMesh);
       }
     }

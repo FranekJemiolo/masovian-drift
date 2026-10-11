@@ -226,8 +226,8 @@ export class GameManager {
     // Build World Physics Colliders (synchronizing with 3D terrainMesh)
     this.physicsWorld.buildWorldColliders(this.waypoints, trackData.terrainMesh);
 
-    // Generate Forests & Villas with InstancedMesh (Milestone 2 single draw call)
-    EnvironmentGenerator.generateEnvironment(this.scene, this.waypoints);
+    // Generate Forests & Villas with InstancedMesh & Solid Rapier Colliders (trees, barriers, bales, fences)
+    EnvironmentGenerator.generateEnvironment(this.scene, this.waypoints, this.physicsWorld);
 
     // 5. Cameras (Base FOV 60° for authentic cockpit/chase framing)
     this.p1Camera = new FollowCamera(60, window.innerWidth / window.innerHeight);

@@ -137,35 +137,9 @@ export class PhysicsWorld {
         .setRestitution(0.02);
       this.world.createCollider(shoulderColDesc, segmentBody);
     }
-
-    // 4. Świdermajer Villa Colliders (solid obstacles)
-    const villaLocations = [
-      { wpIdx: 4, dist: 28, side: 1 },
-      { wpIdx: 12, dist: 32, side: -1 },
-      { wpIdx: 24, dist: 26, side: 1 },
-      { wpIdx: 36, dist: 30, side: -1 },
-      { wpIdx: 48, dist: 34, side: 1 },
-      { wpIdx: 60, dist: 28, side: 1 },
-      { wpIdx: 72, dist: 32, side: -1 },
-      { wpIdx: 84, dist: 36, side: 1 },
-      { wpIdx: 96, dist: 28, side: -1 },
-      { wpIdx: 108, dist: 25, side: 1 },
-    ];
-
-    for (const loc of villaLocations) {
-      const wp = waypoints[loc.wpIdx % wpCount];
-      const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const posX = wp.point.x + normal.x * loc.dist * loc.side;
-      const posZ = wp.point.z + normal.z * loc.dist * loc.side;
-      const posY = (wp.point.y ?? 0) + 4.0;
-
-      const villaDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(posX, posY, posZ);
-      const villaBody = this.world.createRigidBody(villaDesc);
-      const villaCol = RAPIER.ColliderDesc.cuboid(8.0, 4.0, 6.0)
-        .setRestitution(0.1)
-        .setFriction(0.6);
-      this.world.createCollider(villaCol, villaBody);
-    }
+    // Note: Environment obstacles (pine & birch trees, tire stacks, hay bales, fences,
+    // grandstands, shrines, and Świdermajer villas) are generated with exact matching transforms
+    // by EnvironmentGenerator.generateEnvironment(scene, waypoints, physicsWorld).
   }
 
   /**
