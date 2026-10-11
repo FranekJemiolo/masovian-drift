@@ -3,6 +3,7 @@ import { VehicleState } from '../game/Types';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { CameraViewMode } from '../camera/FollowCamera';
 import { TandemJudgingScorecard } from '../game/TandemJudgingSystem';
+import { InputManager } from '../controls/InputManager';
 
 export function getOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -318,6 +319,15 @@ export class HUD {
               </div>
               <input type="range" id="slider-bloom" min="0" max="250" value="125" class="hud-slider">
             </div>
+
+            <div class="pause-setting-item">
+              <div class="setting-title-row">
+                <span>🕹️ STEERING CONTROLS</span>
+              </div>
+              <div class="btn-group-toggle">
+                <button id="btn-pause-invert-steering" class="toggle-btn">STEERING: NORMAL</button>
+              </div>
+            </div>
           </div>
 
           <div class="pause-footer">
@@ -549,6 +559,14 @@ export class HUD {
       setPxActive(3);
       this.callbacks.onPixelScaleChange?.(3.0);
     });
+
+    // Invert Steering Toggle
+    const btnInvert = this.container.querySelector('#btn-pause-invert-steering') as HTMLButtonElement;
+    btnInvert?.addEventListener('click', () => {
+      const inverted = InputManager.getInstance().toggleInvertSteering();
+      btnInvert.classList.toggle('active', inverted);
+      btnInvert.textContent = inverted ? '✓ INVERT STEERING: ON' : 'STEERING: NORMAL';
+    });
   }
 
   private setupResultsListeners(): void {
@@ -688,6 +706,12 @@ export class HUD {
   public showPauseModal(): void {
     this.isPaused = true;
     this.pauseModal.style.display = 'flex';
+    const btnInvert = this.container.querySelector('#btn-pause-invert-steering') as HTMLButtonElement;
+    if (btnInvert) {
+      const inverted = InputManager.getInstance().invertSteering;
+      btnInvert.classList.toggle('active', inverted);
+      btnInvert.textContent = inverted ? '✓ INVERT STEERING: ON' : 'STEERING: NORMAL';
+    }
     this.callbacks.onPause?.();
   }
 

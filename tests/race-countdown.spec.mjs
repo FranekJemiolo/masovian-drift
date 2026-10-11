@@ -21,7 +21,7 @@ async function runTest() {
     await page.waitForTimeout(1500);
 
     // Record initial spawn point by triggering race start
-    await page.click('#btn-quick-race');
+    await page.click('#btn-quick-race', { force: true });
     await page.waitForSelector('#game-hud', { timeout: 30000 });
 
     // Wait exactly 1.0s during the 3.0s pre-race countdown

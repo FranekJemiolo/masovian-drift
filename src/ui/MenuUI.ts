@@ -343,14 +343,17 @@ export class MenuUI {
 
           <div class="pause-setting-item">
             <div class="setting-title-row">
-              <span>♿ ACCESSIBILITY (U4)</span>
+              <span>♿ ACCESSIBILITY & CONTROLS (U4)</span>
             </div>
-            <div style="display: flex; gap: 10px; margin-top: 6px;">
+            <div style="display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap;">
               <button id="btn-reduced-motion" class="toggle-btn ${reducedMotion ? 'active' : ''}">
                 ${reducedMotion ? '✓ REDUCED MOTION' : 'REDUCED MOTION'}
               </button>
               <button id="btn-high-contrast" class="toggle-btn ${highContrast ? 'active' : ''}">
                 ${highContrast ? '✓ HIGH CONTRAST' : 'HIGH CONTRAST SHIFT LIGHTS'}
+              </button>
+              <button id="btn-invert-steering" class="toggle-btn ${InputManager.getInstance().invertSteering ? 'active' : ''}">
+                ${InputManager.getInstance().invertSteering ? '✓ INVERT STEERING' : 'STEERING: NORMAL'}
               </button>
             </div>
           </div>
@@ -468,6 +471,14 @@ export class MenuUI {
       localStorage.setItem('masovian_high_contrast', String(nxt));
       btnContrast.classList.toggle('active', nxt);
       btnContrast.textContent = nxt ? '✓ HIGH CONTRAST' : 'HIGH CONTRAST SHIFT LIGHTS';
+    });
+
+    const btnInvert = modal.querySelector('#btn-invert-steering') as HTMLButtonElement;
+    btnInvert?.addEventListener('click', () => {
+      audio.playUiClick();
+      const inverted = InputManager.getInstance().toggleInvertSteering();
+      btnInvert.classList.toggle('active', inverted);
+      btnInvert.textContent = inverted ? '✓ INVERT STEERING' : 'STEERING: NORMAL';
     });
 
     // Gamepad detection update

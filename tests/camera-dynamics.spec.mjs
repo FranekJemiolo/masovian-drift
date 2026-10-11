@@ -19,7 +19,7 @@ async function runTest() {
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForSelector('#menu-root', { timeout: 30000 });
     await page.waitForTimeout(1500);
-    await page.click('#btn-quick-race');
+    await page.click('#btn-quick-race', { force: true });
     await page.waitForSelector('#game-hud', { timeout: 30000 });
 
     const result = await page.evaluate(() => {

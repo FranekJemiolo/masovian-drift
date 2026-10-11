@@ -19,8 +19,12 @@ export class InputManager {
   public touchBrake = 0;
   public touchHandbrake = false;
   public isMobileDevice = false;
+  public invertSteering = false;
 
   private constructor() {
+    try {
+      this.invertSteering = localStorage.getItem('masovian_invert_steering') === 'true';
+    } catch (_) {}
     this.detectMobile();
     this.setupKeyboardListeners();
     this.setupGyroListeners();
@@ -31,6 +35,14 @@ export class InputManager {
       this.instance = new InputManager();
     }
     return this.instance;
+  }
+
+  public toggleInvertSteering(): boolean {
+    this.invertSteering = !this.invertSteering;
+    try {
+      localStorage.setItem('masovian_invert_steering', this.invertSteering ? 'true' : 'false');
+    } catch (_) {}
+    return this.invertSteering;
   }
 
   private detectMobile(): void {
@@ -108,6 +120,7 @@ export class InputManager {
     let clutch = false;
 
     // Keyboard inputs (WASD or Arrow keys)
+    // Left steers left (-1.0 -> leftwards yaw towards -X), Right steers right (+1.0 -> rightwards yaw towards +X)
     if (this.keys['KeyW'] || this.keys['ArrowUp'] || this.keys['w']) throttle = 1.0;
     if (this.keys['KeyS'] || this.keys['ArrowDown'] || this.keys['s']) brake = 1.0;
     if (this.keys['KeyA'] || this.keys['ArrowLeft'] || this.keys['a']) steer -= 1.0;
@@ -117,7 +130,7 @@ export class InputManager {
 
     // Mobile Gyroscope tilt override
     if (this.gyroActive && Math.abs(this.filteredGamma) > 1.5) {
-      // Normalize gamma (-maxTilt .. +maxTilt) to -1.0 .. +1.0
+      // Normalize gamma (-maxTilt .. +maxTilt) to -1.0 .. +1.0 (left tilt negative, right tilt positive)
       const gyroSteer = this.filteredGamma / this.maxTiltAngle;
       steer = Math.max(-1.0, Math.min(1.0, gyroSteer));
     }
@@ -141,12 +154,16 @@ export class InputManager {
         if (Math.abs(stickX) > 0.12) {
           steer += stickX;
         }
-        if (pad.buttons[14]?.pressed) steer -= 1.0;
-        if (pad.buttons[15]?.pressed) steer += 1.0;
+        if (pad.buttons[14]?.pressed) steer -= 1.0; // D-pad Left
+        if (pad.buttons[15]?.pressed) steer += 1.0; // D-pad Right
         if (pad.buttons[2]?.pressed) handbrake = true;
         if (pad.buttons[4]?.pressed) clutch = true; // Left bumper (LB)
       }
     } catch (_) {}
+
+    if (this.invertSteering) {
+      steer = -steer;
+    }
 
     return {
       throttle: Math.min(1.0, Math.max(0, throttle)),
@@ -190,6 +207,10 @@ export class InputManager {
         if (pad2.buttons[2]?.pressed || pad2.buttons[4]?.pressed) handbrake = true;
       }
     } catch (_) {}
+
+    if (this.invertSteering) {
+      steer = -steer;
+    }
 
     return {
       throttle: Math.min(1.0, Math.max(0, throttle)),
