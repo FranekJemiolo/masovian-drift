@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import RAPIER from '@dimforge/rapier3d-compat';
 import { AudioManager } from '../audio/AudioManager';
 import { FollowCamera } from '../camera/FollowCamera';
 import { InputManager } from '../controls/InputManager';
@@ -725,7 +726,7 @@ export class GameManager {
           // Player 1 inputs
           let p1Inputs = this.inputManager.getPlayerInputs();
           if (isCountingDown) {
-            p1Inputs = { throttle: 0.35, brake: 1.0, steer: p1Inputs.steer, handbrake: true };
+            p1Inputs = { throttle: 0.35, brake: 0.0, steer: p1Inputs.steer, handbrake: true };
           }
           // Evaluate real-time Tandem Drift proximity & heading alignment (P2P & AI tandem bonus)
           let maxTandemMult = 1.0;
@@ -749,6 +750,12 @@ export class GameManager {
           this.playerVehicle.tandemDistance = minTandemDist;
 
           this.playerVehicle.updatePhysics(p1Inputs, dt, this.waypoints);
+          if (isCountingDown) {
+            this.playerVehicle.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
+            this.playerVehicle.rigidBody.setAngvel(new RAPIER.Vector3(0, 0, 0), true);
+            this.playerVehicle.speedKmh = 0;
+            this.playerVehicle.currentGear = 1;
+          }
 
           // Player 2 inputs (if in Split-Screen)
           if (this.currentMode === 'split-screen' && this.p2Vehicle) {
@@ -774,18 +781,30 @@ export class GameManager {
 
             let p2Inputs = this.inputManager.getPlayer2Inputs();
             if (isCountingDown) {
-              p2Inputs = { throttle: 0.35, brake: 1.0, steer: p2Inputs.steer, handbrake: true };
+              p2Inputs = { throttle: 0.35, brake: 0.0, steer: p2Inputs.steer, handbrake: true };
             }
             this.p2Vehicle.updatePhysics(p2Inputs, dt, this.waypoints);
+            if (isCountingDown) {
+              this.p2Vehicle.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
+              this.p2Vehicle.rigidBody.setAngvel(new RAPIER.Vector3(0, 0, 0), true);
+              this.p2Vehicle.speedKmh = 0;
+              this.p2Vehicle.currentGear = 1;
+            }
           }
 
           // AI Opponents (Pure Pursuit)
           for (const bot of this.aiBots) {
             let botInputs = bot.update(dt, this.allVehicles);
             if (isCountingDown) {
-              botInputs = { throttle: 0.25, brake: 1.0, steer: 0, handbrake: true };
+              botInputs = { throttle: 0.25, brake: 0.0, steer: 0, handbrake: true };
             }
             bot.vehicle.updatePhysics(botInputs, dt, this.waypoints);
+            if (isCountingDown) {
+              bot.vehicle.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
+              bot.vehicle.rigidBody.setAngvel(new RAPIER.Vector3(0, 0, 0), true);
+              bot.vehicle.speedKmh = 0;
+              bot.vehicle.currentGear = 1;
+            }
           }
 
           // Track checkpoints & lap progression (M7 auto-recovery)

@@ -597,10 +597,13 @@ export class VehiclePhysics {
 
     // Braking Force (60% front, 40% rear bias)
     let brakeForceN = 0;
+    if (inputs.handbrake) {
+      brakeForceN += 28000.0;
+    }
     if (inputs.brake > 0) {
-      brakeForceN = inputs.brake * 16000.0;
-      if (forwardSpeed < 1.0 && inputs.brake > 0.4) {
-        // Reverse gear
+      brakeForceN += inputs.brake * 16000.0;
+      // Reverse gear: only engage if vehicle is completely stopped, player holds brake without throttle, and handbrake is released
+      if (forwardSpeed <= 0.05 && inputs.brake > 0.5 && inputs.throttle < 0.05 && !inputs.handbrake) {
         driveForceN = -inputs.brake * 5500.0;
         brakeForceN = 0;
       }
@@ -667,7 +670,7 @@ export class VehiclePhysics {
     forceWorld.addScaledVector(right, netLatForce);
 
     // Front steered lateral traction force (pulls vehicle front in steer direction)
-    const frontSteerLateralForce = (this.steerAngle * Math.sign(forwardSpeed || 1)) * Math.min(1.0, this.speedKmh / 14.0) * (frontNormalN * 0.85);
+    const frontSteerLateralForce = this.steerAngle * Math.min(1.0, this.speedKmh / 14.0) * (frontNormalN * 0.85);
     forceWorld.addScaledVector(right, frontSteerLateralForce);
 
     // 3. Downforce
@@ -682,11 +685,12 @@ export class VehiclePhysics {
     // 4. RESPONSIVE YAW & STEERING INTEGRATION (Kinematic + Dynamic)
     // Low speeds (< 24 km/h): Kinematic Ackermann steering ensures immediate, agile vehicle rotation
     const lowSpeedBlend = THREE.MathUtils.clamp(1.0 - (this.speedKmh / 24.0), 0.0, 1.0);
-    const targetAckermannYawRate = (forwardSpeed / this.wheelbase) * Math.tan(this.steerAngle) * 1.25;
+    const effSpeed = Math.max(0.1, Math.abs(forwardSpeed));
+    const targetAckermannYawRate = (effSpeed / this.wheelbase) * Math.tan(this.steerAngle) * 1.25;
 
     // High speeds: Dynamic yaw torque from tire slip difference + direct steering moment
     const dynamicYawTorque = (frontLateralForce * (this.wheelbase * 0.58)) - (rearLateralForce * (this.wheelbase * 0.42));
-    const directSteerTorque = this.steerAngle * Math.sign(forwardSpeed || 1) * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
+    const directSteerTorque = this.steerAngle * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
     const highSpeedYawTorque = dynamicYawTorque + directSteerTorque;
 
     // Compute yaw impulse and apply along local vehicle UP axis
@@ -728,10 +732,10 @@ export class VehiclePhysics {
     const finalDrive = this.specs.finalDrive;
 
     // Automatic gear shifting based on true drivetrain wheel load
-    if (forwardSpeed < -1.0) {
+    if (forwardSpeed < -0.8 && inputs.brake > 0.3) {
       this.currentGear = -1; // Reverse
     } else {
-      if (this.currentGear <= 0) this.currentGear = 1;
+      if (this.currentGear <= 0 && forwardSpeed >= -0.2) this.currentGear = 1;
 
       const currentGearRatio = this.specs.gearRatios[this.currentGear];
       const wheelLinkedRpm = wheelRps * currentGearRatio * finalDrive * 60;
