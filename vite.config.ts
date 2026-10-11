@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' ? '/masovian-drift/' : '/',
+  base: '/masovian-drift/',
   build: {
     target: 'esnext',
     outDir: 'dist',

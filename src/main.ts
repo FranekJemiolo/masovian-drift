@@ -15,7 +15,7 @@ import { RadianceCascadesPass } from './graphics/RadianceCascadesPass';
 import { ScreenSpaceReflectionsPass } from './graphics/ScreenSpaceReflectionsPass';
 import { PhotoMode } from './ui/PhotoMode';
 
-window.addEventListener('DOMContentLoaded', () => {
+function bootstrap(): void {
   (window as any).THREE = THREE;
   (window as any).ECSWorldManager = ECSWorldManager;
   (window as any).SurfaceNets = SurfaceNets;
@@ -30,6 +30,14 @@ window.addEventListener('DOMContentLoaded', () => {
   (window as any).RadianceCascadesPass = RadianceCascadesPass;
   (window as any).ScreenSpaceReflectionsPass = ScreenSpaceReflectionsPass;
   (window as any).PhotoMode = PhotoMode;
-  (window as any)._gameManager = new GameManager();
-});
+  if (!(window as any)._gameManager) {
+    (window as any)._gameManager = new GameManager();
+  }
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  bootstrap();
+}
 

@@ -105,7 +105,16 @@ export class GameManager {
 
   constructor() {
     (window as any).gameManager = this;
-    this.init();
+    this.init().catch((err) => {
+      console.error('[GameManager] Initialization failed:', err);
+      const txt = document.getElementById('loading-status-text');
+      if (txt) {
+        txt.textContent = `INIT ERROR: ${err?.message || err}. CLICK TO RETRY`;
+        txt.style.color = '#ef4444';
+        txt.style.cursor = 'pointer';
+        txt.onclick = () => location.reload();
+      }
+    });
   }
 
   private updateLoadingProgress(pct: number, text: string): void {
