@@ -1,6 +1,6 @@
 // Voxel Boxer: Masovian Drift Service Worker (P12)
-// Provides cache-first asset delivery for offline play and instant loading
-const CACHE_NAME = 'masovian-drift-v2';
+// Provides network-first navigation with offline fallback & asset caching
+const CACHE_NAME = 'masovian-drift-v3';
 
 const PRECACHE_ASSETS = [
   './',
@@ -28,16 +28,32 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
+  // 1. Navigation requests (HTML documents): NETWORK FIRST
+  // Ensures fresh asset hashes on updates, falls back to cached index.html offline
+  if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request).then((res) => res || caches.match('./index.html') || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // 2. Static Assets (JS chunks, CSS, textures, audio): Cache first, network fallback
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
       return fetch(event.request).then((networkResponse) => {
-        // Cache valid HTTP responses
         if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -45,11 +61,6 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return networkResponse;
-      }).catch(() => {
-        // If offline and request is an HTML navigation, serve cached index.html
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match('./index.html');
-        }
       });
     })
   );

@@ -10,7 +10,89 @@
     <title>Voxel Boxer: Masovian Drift</title>
     <link rel="icon" type="image/svg+xml" href="/masovian-drift/favicon.svg" />
     <link rel="manifest" href="manifest.json" />
-    <script type="module" crossorigin src="/masovian-drift/assets/index-DF0AzKYa.js"></script>
+    <style>
+      /* Critical pre-load styling preventing unstyled plain text flash */
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: #09090b;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .loading-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at center, #18181b 0%, #09090b 100%);
+        transition: opacity 0.42s ease, visibility 0.42s ease;
+      }
+      .loading-screen.loading-fade-out {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .loading-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        padding: 36px 44px;
+        text-align: center;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        max-width: 90vw;
+      }
+      .loading-brand {
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: 3px;
+        color: #fbbf24;
+        text-shadow: 0 0 16px rgba(251, 191, 36, 0.4);
+      }
+      .loading-sub {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 4px;
+        color: #94a3b8;
+        margin-top: 4px;
+        margin-bottom: 24px;
+      }
+      .loading-bar-wrap {
+        width: 260px;
+        max-width: 70vw;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+        margin: 0 auto 14px;
+      }
+      .loading-bar-fill {
+        height: 100%;
+        width: 15%;
+        background: linear-gradient(90deg, #f59e0b, #fbbf24);
+        border-radius: 3px;
+        transition: width 0.25s ease;
+        box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+      }
+      .loading-status-text {
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        letter-spacing: 1.5px;
+        color: #cbd5e1;
+      }
+    </style>
+    <script type="module" crossorigin src="/masovian-drift/assets/index-BFMCntdV.js"></script>
     <link rel="modulepreload" crossorigin href="/masovian-drift/assets/vendor-three-DgKYQpKF.js">
     <link rel="modulepreload" crossorigin href="/masovian-drift/assets/vendor-rapier-OnF19VgH.js">
     <link rel="modulepreload" crossorigin href="/masovian-drift/assets/vendor-net-qr-BAbwVoTA.js">
@@ -31,7 +113,9 @@
     <script>
       if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(() => {});
+          navigator.serviceWorker.register('./sw.js').then((reg) => {
+            reg.update();
+          }).catch(() => {});
         });
       }
     </script>
