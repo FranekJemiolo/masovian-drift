@@ -140,6 +140,12 @@ export class VehiclePhysics {
   private static readonly _vAccel = new THREE.Vector3();
   private static readonly _vForceWorld = new THREE.Vector3();
   private static readonly _vToCar = new THREE.Vector3();
+  private static readonly _vWheelFwd = new THREE.Vector3();
+  private static readonly _vWheelLat = new THREE.Vector3();
+  private static readonly _vLongForce = new THREE.Vector3();
+  private static readonly _vFrontLat = new THREE.Vector3();
+  private static readonly _vRearLat = new THREE.Vector3();
+  private static readonly _vFrontGuide = new THREE.Vector3();
 
   // Collision damage accumulator
   private lastVelocity = new THREE.Vector3();
@@ -487,8 +493,28 @@ export class VehiclePhysics {
       rearMaxGrip *= 0.20;
     }
 
-    // Rear slip angle (rad)
-    this.slipAngle = Math.atan2(lateralSpeed, Math.max(1.5, Math.abs(forwardSpeed)));
+    // Axle geometry & true rigid body velocities (v = vCOM + omega x r)
+    const lf = this.wheelbase * 0.58;
+    const lr = this.wheelbase * 0.42;
+
+    const cosSteer = Math.cos(this.steerAngle);
+    const sinSteer = Math.sin(this.steerAngle);
+
+    // Front wheel direction vectors in car local frame
+    const frontWheelForward = VehiclePhysics._vWheelFwd.copy(forward).multiplyScalar(cosSteer).addScaledVector(right, sinSteer);
+    const frontWheelLateral = VehiclePhysics._vWheelLat.copy(forward).multiplyScalar(-sinSteer).addScaledVector(right, cosSteer);
+
+    // True axle lateral velocities:
+    // Front: (lateralSpeed + omega.y * lf) projected onto steered front wheel lateral axis
+    const vFrontLat = (lateralSpeed + this.angularVelocity.y * lf) * cosSteer - forwardSpeed * sinSteer;
+    // Rear: unsteered rear axle lateral velocity
+    const vRearLat = lateralSpeed - this.angularVelocity.y * lr;
+
+    const effSpeedForSlip = Math.max(1.5, Math.abs(forwardSpeed));
+    const frontSlipAngle = Math.atan2(vFrontLat, effSpeedForSlip);
+    const rearSlipAngle = Math.atan2(vRearLat, effSpeedForSlip);
+    // Rear slip angle governs vehicle drift state and HUD telemetry
+    this.slipAngle = rearSlipAngle;
 
     // Trail-Braking Oversteer:
     // If braking into a turn, rearNormalN drops drastically (unloaded rear axle).
@@ -573,15 +599,14 @@ export class VehiclePhysics {
       }
     }
 
-    // 3-Zone Thermal Tire Simulation (Updates FL, FR, RL, RR)
-    const slipSpeed = Math.abs(lateralSpeed);
+    // 3-Zone Thermal Tire Simulation (Updates FL, FR, RL, RR with axle-specific slip velocities)
     const carSpeedMs = Math.abs(forwardSpeed);
     const isSliding = Math.abs(this.slipAngle) > 0.12 || this.isDrifting;
 
-    const tFL = this.tireThermals[0].update(frontNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
-    const tFR = this.tireThermals[1].update(frontNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
-    const tRL = this.tireThermals[2].update(rearNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
-    const tRR = this.tireThermals[3].update(rearNormalN * 0.5, slipSpeed, carSpeedMs, isSliding, dt);
+    const tFL = this.tireThermals[0].update(frontNormalN * 0.5, Math.abs(vFrontLat), carSpeedMs, isSliding, dt);
+    const tFR = this.tireThermals[1].update(frontNormalN * 0.5, Math.abs(vFrontLat), carSpeedMs, isSliding, dt);
+    const tRL = this.tireThermals[2].update(rearNormalN * 0.5, Math.abs(vRearLat), carSpeedMs, isSliding, dt);
+    const tRR = this.tireThermals[3].update(rearNormalN * 0.5, Math.abs(vRearLat), carSpeedMs, isSliding, dt);
 
     frontMaxGrip *= (tFL.gripMultiplier + tFR.gripMultiplier) * 0.5;
     rearMaxGrip *= (tRL.gripMultiplier + tRR.gripMultiplier) * 0.5;
@@ -619,34 +644,9 @@ export class VehiclePhysics {
       }
     }
 
-    // Lateral Tire Grip:
-    // Cancels lateral sliding cleanly when not drifting
-    const latCancelForce = -lateralSpeed * (this.specs.mass * 9.5);
-    const maxCombinedGrip = (frontMaxGrip + rearMaxGrip);
-    const clampedLatForce = THREE.MathUtils.clamp(latCancelForce, -maxCombinedGrip, maxCombinedGrip);
-
-    // Front lateral cornering force via Pacejka '94 Magic Formula (Section 7.2)
-    const frontSlipAngle = this.slipAngle - this.steerAngle;
-    const frontPacejka = VehiclePhysics.pacejka94LateralForce(
-      frontSlipAngle,
-      frontNormalN,
-      surfaceGrip,
-      this.isDrifting ? 0.88 : 1.18
-    );
-    const frontLateralForce = THREE.MathUtils.clamp(frontPacejka, -frontMaxGrip, frontMaxGrip);
-
-    // Rear lateral cornering force via Pacejka '94 Magic Formula (Section 7.2)
-    const rearPacejka = VehiclePhysics.pacejka94LateralForce(
-      this.slipAngle,
-      rearNormalN,
-      surfaceGrip,
-      this.isDrifting ? 0.75 : 1.25
-    );
-    const rearLateralForce = THREE.MathUtils.clamp(rearPacejka, -rearMaxGrip, rearMaxGrip);
-
-    // Detect Drift state
-    const driftThreshold = 0.15; // ~8.5 degrees
-    if (Math.abs(this.slipAngle) > driftThreshold && this.speedKmh > 22.0) {
+    // Detect Drift state: triggered when rear slip exceeds threshold or handbrake is engaged
+    const driftThreshold = 0.14; // ~8 degrees rear slip
+    if ((Math.abs(this.slipAngle) > driftThreshold || inputs.handbrake) && this.speedKmh > 18.0) {
       this.isDrifting = true;
       this.driftDuration += dt;
       const scoreGain = Math.floor(Math.abs(this.slipAngle) * (this.speedKmh / 20) * dt * 250 * this.tandemMultiplier);
@@ -656,6 +656,62 @@ export class VehiclePhysics {
       this.driftDuration = Math.max(0, this.driftDuration - dt * 2.0);
     }
 
+    // Axle Grip Partitioning:
+    // Front tires MAINTAIN high lateral grip (preventing nose wash-out; guides the car):
+    const effectiveFrontMaxGrip = frontMaxGrip * (this.isDrifting ? 0.98 : 1.0);
+
+    // Rear tires LOSE lateral grip under drift or handbrake (so only the back steps away!):
+    let rearDriftScale = 1.0;
+    if (inputs.handbrake) {
+      rearDriftScale = 0.18; // Handbrake cuts rear lateral traction
+    } else if (this.isDrifting) {
+      rearDriftScale = inputs.throttle > 0.25 ? 0.40 : 0.60;
+    }
+    const effectiveRearMaxGrip = rearMaxGrip * rearDriftScale;
+
+    // Pacejka '94 cornering forces
+    const frontPacejka = VehiclePhysics.pacejka94LateralForce(
+      frontSlipAngle,
+      frontNormalN,
+      surfaceGrip,
+      this.isDrifting ? 1.05 : 1.20
+    );
+    const rearPacejka = VehiclePhysics.pacejka94LateralForce(
+      rearSlipAngle,
+      rearNormalN,
+      surfaceGrip,
+      this.isDrifting ? 0.70 : 1.25
+    );
+
+    // Axle lateral slip cancellation (damping lateral slip velocity directly on each axle)
+    const frontLatCancel = -vFrontLat * (this.specs.mass * 5.5);
+    const rearLatCancel = -vRearLat * (this.specs.mass * 6.5);
+
+    // Net lateral axle forces clamped by effective max grip
+    const frontLateralForce = THREE.MathUtils.clamp(
+      frontPacejka * 0.45 + frontLatCancel * 0.55,
+      -effectiveFrontMaxGrip,
+      effectiveFrontMaxGrip
+    );
+    const rearLateralForce = THREE.MathUtils.clamp(
+      rearPacejka * 0.40 + rearLatCancel * 0.60,
+      -effectiveRearMaxGrip,
+      effectiveRearMaxGrip
+    );
+
+    // World-space lateral axle force vectors
+    const fFrontLatWorld = VehiclePhysics._vFrontLat.copy(frontWheelLateral).multiplyScalar(frontLateralForce);
+    const fRearLatWorld = VehiclePhysics._vRearLat.copy(right).multiplyScalar(rearLateralForce);
+
+    // Front Wheel Directional Rolling Guidance:
+    // Steered front wheels grip and pull the vehicle in the direction they are pointed!
+    const guideSpeed = THREE.MathUtils.clamp(forwardSpeed, -60, 60);
+    const frontGuideMultiplier = this.isDrifting ? 1.20 : 0.85;
+    const frontGuideForceN = Math.sign(guideSpeed || 1) *
+      Math.min(Math.abs(guideSpeed) * this.specs.mass * 0.65, frontNormalN * 0.88) *
+      frontGuideMultiplier;
+    const fFrontGuideWorld = VehiclePhysics._vFrontGuide.copy(frontWheelForward).multiplyScalar(frontGuideForceN);
+
     // Aerodynamic Drag & Downforce (degraded by damage)
     const effectiveCd = this.specs.dragCoefficient * this.damage.aerodynamicDragPenalty;
     const airDensity = 1.225;
@@ -663,27 +719,23 @@ export class VehiclePhysics {
     const aeroDragForce = 0.5 * airDensity * effectiveCd * frontalArea * (forwardSpeed * forwardSpeed);
     const aeroDownforce = 0.5 * airDensity * 0.45 * (forwardSpeed * forwardSpeed);
 
-    // Apply forces and torques to Rapier RigidBody
     // 1. Forward Net Force
-    let netLongForce = (driveForceN - Math.sign(forwardSpeed) * (brakeForceN + aeroDragForce));
+    let netLongForce = (driveForceN - Math.sign(forwardSpeed || 1) * (brakeForceN + aeroDragForce));
 
-    // Vector Redirection (Technique #2): Redirect lateral sliding force into forward speed during drifts
+    // Vector Redirection: redirect portion of rear lateral slide into forward thrust during drift
     if (this.isDrifting) {
-      const redirectedForwardN = Math.abs(clampedLatForce) * 0.38;
+      const redirectedForwardN = Math.abs(rearLateralForce) * 0.35;
       netLongForce += redirectedForwardN;
     }
-    const forceWorld = VehiclePhysics._vForceWorld.copy(forward).multiplyScalar(netLongForce);
+    const fLongWorld = VehiclePhysics._vLongForce.copy(forward).multiplyScalar(netLongForce);
 
-    // 2. Lateral Force (lateral tire adhesion holding car to corner line)
-    const driftGripScale = this.isDrifting ? 0.65 : 1.0;
-    const netLatForce = clampedLatForce * driftGripScale;
-    forceWorld.addScaledVector(right, netLatForce);
+    // Total Linear Force applied to vehicle
+    const forceWorld = VehiclePhysics._vForceWorld.set(0, 0, 0)
+      .add(fLongWorld)
+      .add(fFrontLatWorld)
+      .add(fRearLatWorld)
+      .add(fFrontGuideWorld);
 
-    // Front steered lateral traction force (pulls vehicle front in steer direction)
-    const frontSteerLateralForce = this.steerAngle * Math.min(1.0, this.speedKmh / 14.0) * (frontNormalN * 0.85);
-    forceWorld.addScaledVector(right, frontSteerLateralForce);
-
-    // 3. Downforce
     forceWorld.y -= aeroDownforce;
 
     // Apply linear impulse
@@ -694,25 +746,37 @@ export class VehiclePhysics {
 
     // 4. RESPONSIVE YAW & STEERING INTEGRATION (Kinematic + Dynamic)
     // Low speeds (< 24 km/h): Kinematic Ackermann steering ensures immediate, agile vehicle rotation
+    // Note: signed effSpeed ensures reverse steering rotates the car in the correct direction!
     const lowSpeedBlend = THREE.MathUtils.clamp(1.0 - (this.speedKmh / 24.0), 0.0, 1.0);
-    const effSpeed = Math.max(0.1, Math.abs(forwardSpeed));
-    const targetAckermannYawRate = (effSpeed / this.wheelbase) * Math.tan(this.steerAngle) * 1.25;
+    const effSpeedSigned = Math.abs(forwardSpeed) > 0.05 ? forwardSpeed : (0.05 * Math.sign(forwardSpeed || 1));
+    const targetAckermannYawRate = (effSpeedSigned / this.wheelbase) * Math.tan(this.steerAngle) * 1.25;
 
-    // High speeds: Dynamic yaw torque from tire slip difference + direct steering moment
-    const dynamicYawTorque = (frontLateralForce * (this.wheelbase * 0.58)) - (rearLateralForce * (this.wheelbase * 0.42));
-    const directSteerTorque = this.steerAngle * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 9.5);
-    const highSpeedYawTorque = dynamicYawTorque + directSteerTorque;
+    // High speeds: Dynamic yaw torque from axle lateral forces + direct steer moment
+    const tauFront = lf * (fFrontLatWorld.dot(right) + fFrontGuideWorld.dot(right) * 0.45);
+    const tauRear = -lr * fRearLatWorld.dot(right);
+
+    const driveDir = Math.sign(forwardSpeed || 1);
+    const directSteerMoment = driveDir * this.steerAngle * Math.min(1.0, this.speedKmh / 15.0) * (this.specs.mass * 4.8);
+
+    // Counter-steer stabilizing moment:
+    // When drifting, if driver counter-steers (steers against the slide), reward counter-steer to hold drift
+    const isCounterSteer = this.isDrifting && (Math.sign(this.steerAngle) !== Math.sign(this.slipAngle)) && (Math.abs(this.steerAngle) > 0.04);
+    const counterSteerBonus = isCounterSteer ? this.steerAngle * (this.specs.mass * 3.5) : 0;
+
+    const dynamicYawTorque = (tauFront + tauRear) + directSteerMoment + counterSteerBonus;
 
     // Compute yaw impulse and apply along local vehicle UP axis
     const currentYawRate = this.angularVelocity.y;
     const kinematicYawImpulse = (targetAckermannYawRate - currentYawRate) * (this.specs.mass * 1.6) * lowSpeedBlend;
-    const dynamicYawImpulse = (highSpeedYawTorque - currentYawRate * 1800.0) * (1.0 - lowSpeedBlend) * dt;
+    const yawDampingRate = this.isDrifting ? 1250.0 : 1800.0;
+    const dynamicYawImpulse = (dynamicYawTorque - currentYawRate * yawDampingRate) * (1.0 - lowSpeedBlend) * dt;
 
     const totalYawImpulse = THREE.MathUtils.clamp(
       kinematicYawImpulse + dynamicYawImpulse,
       -this.specs.mass * 3.5,
       this.specs.mass * 3.5
     );
+
     const yawImpulseWorld = up.clone().multiplyScalar(totalYawImpulse);
     this.rigidBody.applyTorqueImpulse(
       new RAPIER.Vector3(yawImpulseWorld.x, yawImpulseWorld.y, yawImpulseWorld.z),
