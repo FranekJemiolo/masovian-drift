@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { SpatialWaypointGrid } from '../physics/SpatialWaypointGrid';
+import { SurfaceNets } from '../voxel/SurfaceNets';
 
 export interface TrackMeshResult {
   trackGroup: THREE.Group;
@@ -680,14 +681,20 @@ export class TrackMeshBuilder {
     const postGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.1, 8);
     postGeo.translate(0, 0.55, 0);
     const postMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
-    const postRedStripe = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.125, 0.125, 0.28, 8),
-      new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 })
-    );
-    postRedStripe.position.set(0, 0.75, 0);
+    const postRedGeo = new THREE.CylinderGeometry(0.126, 0.126, 0.26, 8);
+    postRedGeo.translate(0, 0.78, 0);
+    const postRedMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0x991b1b,
+      emissiveIntensity: 0.35,
+      roughness: 0.25,
+    });
 
-    const postInstancedL = new THREE.InstancedMesh(postGeo, postMat, Math.floor(count / 2));
-    const postInstancedR = new THREE.InstancedMesh(postGeo, postMat, Math.floor(count / 2));
+    const postCount = Math.floor(count / 2);
+    const postInstancedL = new THREE.InstancedMesh(postGeo, postMat, postCount);
+    const postInstancedR = new THREE.InstancedMesh(postGeo, postMat, postCount);
+    const postRedInstancedL = new THREE.InstancedMesh(postRedGeo, postRedMat, postCount);
+    const postRedInstancedR = new THREE.InstancedMesh(postRedGeo, postRedMat, postCount);
     postInstancedL.castShadow = true;
     postInstancedR.castShadow = true;
 
@@ -703,19 +710,25 @@ export class TrackMeshBuilder {
       dummyPost.position.set(pL.x, wp.point.y + ROAD_ELEVATION, pL.z);
       dummyPost.updateMatrix();
       postInstancedL.setMatrixAt(postIdx, dummyPost.matrix);
+      postRedInstancedL.setMatrixAt(postIdx, dummyPost.matrix);
 
       // Right post
       const pR = wp.point.clone().addScaledVector(norm, halfW);
       dummyPost.position.set(pR.x, wp.point.y + ROAD_ELEVATION, pR.z);
       dummyPost.updateMatrix();
       postInstancedR.setMatrixAt(postIdx, dummyPost.matrix);
+      postRedInstancedR.setMatrixAt(postIdx, dummyPost.matrix);
 
       postIdx++;
     }
     postInstancedL.instanceMatrix.needsUpdate = true;
     postInstancedR.instanceMatrix.needsUpdate = true;
+    postRedInstancedL.instanceMatrix.needsUpdate = true;
+    postRedInstancedR.instanceMatrix.needsUpdate = true;
     trackGroup.add(postInstancedL);
     trackGroup.add(postInstancedR);
+    trackGroup.add(postRedInstancedL);
+    trackGroup.add(postRedInstancedR);
 
     // --- 8. Metal Armco Barriers & Motorsport Hoardings ---
     const barrierMat = new THREE.MeshStandardMaterial({
@@ -739,7 +752,8 @@ export class TrackMeshBuilder {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, 4.2), barrierMat);
       rail.position.set(pos.x, wp.point.y + ROAD_ELEVATION + 0.45, pos.z);
       if (wp.tangent) {
-        rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+        const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        rail.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       }
       rail.castShadow = true;
       rail.receiveShadow = true;
@@ -756,7 +770,8 @@ export class TrackMeshBuilder {
         const board = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.95, 3.8), hoardingMat);
         board.position.set(pos.x, wp.point.y + ROAD_ELEVATION + 0.55, pos.z);
         if (wp.tangent) {
-          board.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+          const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+          board.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         }
         board.castShadow = true;
         board.receiveShadow = true;
@@ -801,7 +816,7 @@ export class TrackMeshBuilder {
     for (const cIdx of chicaneWps) {
       const wp = waypoints[cIdx];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const hPos = wp.point.clone().addScaledVector(norm, wp.width * 0.5 + 1.2);
+      const hPos = wp.point.clone().addScaledVector(norm, wp.width * 0.5 + 2.4);
 
       const bale = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.4), hayMat);
       bale.position.set(hPos.x, wp.point.y + ROAD_ELEVATION + 0.55, hPos.z);
@@ -899,6 +914,22 @@ export class TrackMeshBuilder {
     riverMesh.position.set(235, -0.76, 0);
     trackGroup.add(riverMesh);
 
+    // --- 11b. Volumetric Surface Nets Sandy Shoals & Riverbank Dunes ---
+    const snMin = new THREE.Vector3(215, -1.6, -160);
+    const snMax = new THREE.Vector3(295, 1.4, 160);
+    const snField = SurfaceNets.generateMasovianTerrainField(24, 10, 32, snMin, snMax);
+    const snGeo = SurfaceNets.extractIsosurface(snField, 24, 10, 32, snMin, snMax, 0.0);
+    const snMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.9,
+      metalness: 0.02,
+      flatShading: false,
+    });
+    const snShoalMesh = new THREE.Mesh(snGeo, snMat);
+    snShoalMesh.position.set(0, -0.45, 0);
+    snShoalMesh.receiveShadow = true;
+    trackGroup.add(snShoalMesh);
+
     // 12. Wind-Animated Shoulder Grass InstancedMesh (G5)
     const grassPlane1 = new THREE.PlaneGeometry(0.65, 0.85);
     grassPlane1.translate(0, 0.425, 0);
@@ -987,38 +1018,44 @@ export class TrackMeshBuilder {
     for (let i = 0; i < count && grassIdx < totalGrassInstances; i++) {
       const wp = waypoints[i];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
+      const tang = wp.tangent ?? new THREE.Vector3(0, 0, 1);
       const halfW = wp.width * 0.5;
 
-      const hash1 = Math.abs(Math.sin(i * 12.9898)) % 1;
-      const hash2 = Math.abs(Math.cos(i * 78.233)) % 1;
-      const hash3 = Math.abs(Math.sin(i * 43.123)) % 1;
+      // Populate 5 tufts on left shoulder and 5 tufts on right shoulder per waypoint (140 * 10 = 1400)
+      for (let t = 0; t < 5; t++) {
+        const seed = i * 5 + t;
+        const hash1 = Math.abs(Math.sin(seed * 12.9898)) % 1;
+        const hash2 = Math.abs(Math.cos(seed * 78.233)) % 1;
+        const hash3 = Math.abs(Math.sin(seed * 43.123)) % 1;
+        const alongOffset = (t - 2) * 1.65;
 
-      // Left shoulder instance
-      if (grassIdx < totalGrassInstances) {
-        const distL = halfW + 1.2 + hash1 * 3.5;
-        const posX = wp.point.x - norm.x * distL;
-        const posZ = wp.point.z - norm.z * distL;
-        const hL = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints, spatialGrid);
-        const scale = 0.75 + hash2 * 0.5;
-        dummy.position.set(posX, hL + 0.05, posZ);
-        dummy.rotation.set(0, hash3 * Math.PI * 2, 0);
-        dummy.scale.set(scale, scale, scale);
-        dummy.updateMatrix();
-        grassMesh.setMatrixAt(grassIdx++, dummy.matrix);
-      }
+        // Left shoulder instance
+        if (grassIdx < totalGrassInstances) {
+          const distL = halfW + 1.15 + hash1 * 4.2;
+          const posX = wp.point.x - norm.x * distL + tang.x * alongOffset;
+          const posZ = wp.point.z - norm.z * distL + tang.z * alongOffset;
+          const hL = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints, spatialGrid);
+          const scale = 0.72 + hash2 * 0.58;
+          dummy.position.set(posX, hL + 0.05, posZ);
+          dummy.rotation.set(0, hash3 * Math.PI * 2, 0);
+          dummy.scale.set(scale, scale, scale);
+          dummy.updateMatrix();
+          grassMesh.setMatrixAt(grassIdx++, dummy.matrix);
+        }
 
-      // Right shoulder instance
-      if (grassIdx < totalGrassInstances) {
-        const distR = halfW + 1.2 + hash2 * 3.5;
-        const posX = wp.point.x + norm.x * distR;
-        const posZ = wp.point.z + norm.z * distR;
-        const hR = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints, spatialGrid);
-        const scale = 0.75 + hash1 * 0.5;
-        dummy.position.set(posX, hR + 0.05, posZ);
-        dummy.rotation.set(0, hash1 * Math.PI * 2, 0);
-        dummy.scale.set(scale, scale, scale);
-        dummy.updateMatrix();
-        grassMesh.setMatrixAt(grassIdx++, dummy.matrix);
+        // Right shoulder instance
+        if (grassIdx < totalGrassInstances) {
+          const distR = halfW + 1.15 + hash2 * 4.2;
+          const posX = wp.point.x + norm.x * distR + tang.x * alongOffset;
+          const posZ = wp.point.z + norm.z * distR + tang.z * alongOffset;
+          const hR = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints, spatialGrid);
+          const scale = 0.72 + hash1 * 0.58;
+          dummy.position.set(posX, hR + 0.05, posZ);
+          dummy.rotation.set(0, hash1 * Math.PI * 2, 0);
+          dummy.scale.set(scale, scale, scale);
+          dummy.updateMatrix();
+          grassMesh.setMatrixAt(grassIdx++, dummy.matrix);
+        }
       }
     }
     grassMesh.instanceMatrix.needsUpdate = true;
@@ -1031,7 +1068,7 @@ export class TrackMeshBuilder {
       checkpoints.push({
         position: waypoints[i].point.clone().add(new THREE.Vector3(0, TrackMeshBuilder.ROAD_ELEVATION, 0)),
         index: checkpoints.length,
-        radius: waypoints[i].width * 0.9,
+        radius: Math.max(26.0, waypoints[i].width * 2.0),
       });
     }
 

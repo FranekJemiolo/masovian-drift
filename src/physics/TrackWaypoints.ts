@@ -53,18 +53,19 @@ export class TrackWaypoints {
       { x: -155, z: -210, y: 0.3, s: 'gravel', w: 12, speed: 95 },
 
       // 7. Villa Veranda S-Bends (technical section through resort quarter)
-      { x: -165, z: -130, y: 0.2, s: 'asphalt', w: 11, speed: 85 },
+      { x: -165, z: -130, y: 0.2, s: 'asphalt', w: 12, speed: 85 },
       { x: -130, z: -50, y: 0.3, s: 'asphalt', w: 12, speed: 90 },
       { x: -140, z: 20, y: 0.5, s: 'asphalt', w: 12, speed: 85 },
-      { x: -110, z: 80, y: 0.6, s: 'asphalt', w: 12, speed: 95 },
+      { x: -110, z: 75, y: 0.5, s: 'asphalt', w: 13, speed: 90 },
 
       // 8. Hairpin looping back south to enter Main Straight smoothly
-      { x: -60, z: 100, y: 0.4, s: 'asphalt', w: 13, speed: 85 },
-      { x: -25, z: 60, y: 0.2, s: 'asphalt', w: 13, speed: 105 },
-      { x: -20, z: -20, y: 0.1, s: 'asphalt', w: 13, speed: 135 },
-      { x: -15, z: -80, y: 0.0, s: 'asphalt', w: 14, speed: 160 },
-      { x: -5, z: -130, y: 0.0, s: 'asphalt', w: 15, speed: 180 },
-      { x: 0, z: -100, y: 0.0, s: 'asphalt', w: 15, speed: 195 },
+      { x: -65, z: 85, y: 0.4, s: 'asphalt', w: 13, speed: 80 },
+      { x: -45, z: 35, y: 0.2, s: 'asphalt', w: 13, speed: 100 },
+      { x: -52, z: -25, y: 0.1, s: 'asphalt', w: 13, speed: 110 },
+      { x: -55, z: -90, y: 0.0, s: 'asphalt', w: 14, speed: 85 },
+      { x: -32, z: -135, y: 0.0, s: 'asphalt', w: 14, speed: 78 },
+      { x: -4, z: -105, y: 0.0, s: 'asphalt', w: 15, speed: 125 },
+      { x: 0, z: -72, y: 0.0, s: 'asphalt', w: 15, speed: 175 },
     ];
 
     // Build Catmull-Rom spline for super smooth high-density path

@@ -25,6 +25,8 @@ import { ECSPipeline } from '../ecs/ECSPipeline';
 import { SectorSplitTracker } from './SectorSplitTracker';
 import { RewindController } from './RewindController';
 import { PhotoMode } from '../ui/PhotoMode';
+import { TerrainDeformation } from '../physics/TerrainDeformation';
+import { TandemJudgingSystem } from './TandemJudgingSystem';
 
 interface GhostSample {
   time: number;
@@ -68,6 +70,8 @@ export class GameManager {
   private ghostSampleTimer = 0;
   private sectorSplitTracker = new SectorSplitTracker();
   private rewindController = new RewindController();
+  public terrainDeformation = new TerrainDeformation();
+  public tandemJudging = new TandemJudgingSystem();
 
   // Vehicles
   private playerVehicle!: VehiclePhysics;
@@ -339,14 +343,16 @@ export class GameManager {
 
     // In-game controls: Camera, Mute, Quick Reset, Pause
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyC') {
+      if (e.code === 'KeyV' || (e.code === 'KeyC' && !this.inputManager.isKeyPressed('KeyW') && !this.inputManager.isKeyPressed('ArrowUp'))) {
         this.p1Camera.cycleMode();
       } else if (e.code === 'KeyM') {
         this.audioManager.toggleMute();
-      } else if (e.code === 'KeyR') {
+      } else if (e.code === 'KeyR' && e.shiftKey) {
         if (this.isRacing && !this.isPaused) this.restartRace();
-      } else if (e.code === 'Escape' || e.code === 'KeyP') {
-        if (this.isRacing) {
+      } else if (e.code === 'Escape') {
+        if (this.photoMode?.isActive) {
+          this.togglePhotoMode();
+        } else if (this.isRacing) {
           this.isPaused = this.hud.togglePause();
           if (this.isPaused) {
             this.audioManager.pause();
@@ -477,11 +483,13 @@ export class GameManager {
       false,
       currentCar.damage
     );
+    this.playerVehicle.setUpgrades(currentCar.upgrades);
+    this.playerVehicle.setTuning(this.evolutionStore.getTuning(currentCar.id));
     this.allVehicles.push(this.playerVehicle);
     this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
 
     // Register Player Entity into bitECS
-    ecs.createVehicleEntity('player', p1Visual.root, spawnPos, spawnQuat);
+    this.playerVehicle.ecsEntityId = ecs.createVehicleEntity('player', p1Visual.root, spawnPos, spawnQuat);
 
     // Era-specific exhaust profile (A9)
     this.audioManager.setPlayerExhaustProfile(
@@ -527,13 +535,13 @@ export class GameManager {
           const d = aiSpawn.distanceTo(this.waypoints[w].point);
           if (d < minWpDist) {
             minWpDist = d;
+            closestWpIdx = w;
           }
-          closestWpIdx = w;
         }
         aiController.setTargetIndex(closestWpIdx);
         this.aiBots.push(aiController);
         this.allVehicles.push(aiVehicle);
-        ecs.createVehicleEntity('ai', aiVisual.root, aiSpawn, spawnQuat);
+        aiVehicle.ecsEntityId = ecs.createVehicleEntity('ai', aiVisual.root, aiSpawn, spawnQuat);
       }
       this.audioManager.startEngines();
       this.audioManager.startMusic();
@@ -562,7 +570,7 @@ export class GameManager {
       const p2Spawn = spawnWp.point.clone()
         .addScaledVector(tangent, -6.0)
         .addScaledVector(normal, -2.8);
-      p2Spawn.y += 0.85;
+      p2Spawn.y += TrackMeshBuilder.ROAD_ELEVATION;
 
       this.p2Vehicle = new VehiclePhysics(
         'player-2',
@@ -576,7 +584,7 @@ export class GameManager {
         false
       );
       this.allVehicles.push(this.p2Vehicle);
-      ecs.createVehicleEntity('p2', p2Visual.root, p2Spawn, spawnQuat);
+      this.p2Vehicle.ecsEntityId = ecs.createVehicleEntity('p2', p2Visual.root, p2Spawn, spawnQuat);
       this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
       this.audioManager.startSplitScreenEngines();
       this.audioManager.startMusic();
@@ -589,7 +597,7 @@ export class GameManager {
       const remoteSpawn = spawnWp.point.clone()
         .addScaledVector(tangent, -6.0)
         .addScaledVector(normal, -2.8);
-      remoteSpawn.y += 0.85;
+      remoteSpawn.y += TrackMeshBuilder.ROAD_ELEVATION;
 
       this.p2Vehicle = new VehiclePhysics(
         'peer-remote',
@@ -603,7 +611,7 @@ export class GameManager {
         false
       );
       this.allVehicles.push(this.p2Vehicle);
-      ecs.createVehicleEntity('peer', remoteVisual.root, remoteSpawn, spawnQuat);
+      this.p2Vehicle.ecsEntityId = ecs.createVehicleEntity('peer', remoteVisual.root, remoteSpawn, spawnQuat);
       this.audioManager.startEngines();
       this.audioManager.startMusic();
     }
@@ -658,7 +666,8 @@ export class GameManager {
     const wp = this.waypoints[this.playerVehicle.currentCheckpointIndex];
     const quat = new THREE.Quaternion();
     if (wp.tangent) {
-      quat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+      const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+      quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     }
     this.playerVehicle.resetPosition(wp.point.clone().add(new THREE.Vector3(0, TrackMeshBuilder.ROAD_ELEVATION, 0)), quat);
   }
@@ -746,8 +755,8 @@ export class GameManager {
         isCountingDown,
         delta,
         (dt) => {
-          // Player 1 inputs
-          let p1Inputs = this.inputManager.getPlayerInputs();
+          // Player 1 inputs (disable Arrow keys for P1 in split-screen so P2's Arrow keys don't steer P1)
+          let p1Inputs = this.inputManager.getPlayerInputs(this.currentMode !== 'split-screen');
           if (isCountingDown) {
             this.playerVehicle.setLinearVelocity({ x: 0, y: 0, z: 0 });
             this.playerVehicle.setAngularVelocity({ x: 0, y: 0, z: 0 });
@@ -856,13 +865,22 @@ export class GameManager {
 
             // Micro-Sector Split Delta Tracking (Trackmania-style)
             const splitEvent = this.sectorSplitTracker.update(
-              this.playerVehicle.currentCheckpointIndex,
+              this.playerVehicle.lastClosestWpIdx,
               this.playerVehicle.currentLapTime
             );
             if (splitEvent) {
               const sign = splitEvent.splitDelta <= 0 ? '-' : '+';
               const deltaStr = `${sign}${Math.abs(splitEvent.splitDelta).toFixed(3)}s`;
               this.hud.showSectorSplit(`⏱️ SECTOR ${splitEvent.sectorIndex}: ${deltaStr}`, splitEvent.isAhead);
+            }
+
+            // Destructible voxel fences & hay bales + dynamic sand/gravel rutting
+            EnvironmentGenerator.updateDestructibles(this.allVehicles, this.particleFX);
+            for (const v of this.allVehicles) {
+              if ((v.currentSurface === 'sand' || v.currentSurface === 'gravel') && (v.isDrifting || Math.abs(v.slipAngle) > 0.16) && v.speedKmh > 18) {
+                const latSlipSpeed = Math.abs(Math.sin(v.slipAngle)) * (v.speedKmh / 3.6);
+                this.terrainDeformation.carveRut(v.position, latSlipSpeed, v.specs.mass * 9.81 * 0.3, v.currentSurface);
+              }
             }
 
             // 10-Second Temporal Rewind Subsystem (KeyR)
@@ -908,7 +926,7 @@ export class GameManager {
             for (const v of this.allVehicles) {
               this.checkVehicleRecovery(v, dt);
             }
-            if (this.inputManager.isKeyJustPressed('KeyK')) {
+            if (this.currentMode !== 'split-screen' && this.inputManager.isKeyJustPressed('KeyK')) {
               this.respawnVehicleAtCheckpoint(this.playerVehicle);
             }
           }
@@ -1001,11 +1019,12 @@ export class GameManager {
         }
       }
 
-      // Post-Processing uniforms (time, high-speed lens warp, photographic bloom)
+      // Post-Processing uniforms (time, high-speed lens warp, photographic bloom, and DRS)
       this.postProcessor.update(
         this.clock.getElapsedTime(),
         this.playerVehicle.speedKmh
       );
+      this.postProcessor.updateDRS(rawDelta * 1000);
 
       // Exhaust backfire pop on high RPM throttle lift-off (>5,500 RPM) or justBackfired
       const currentThrottle = this.inputManager.getPlayerInputs().throttle;
@@ -1170,12 +1189,21 @@ export class GameManager {
 
       v.currentLapTime += dt;
       const nextCp = this.checkpoints[v.currentCheckpointIndex];
+      const stepWp = Math.floor(this.waypoints.length / cpCount);
+      const cpWpIdx = v.currentCheckpointIndex * stepWp;
+      const wpDelta = (v.lastClosestWpIdx - cpWpIdx + this.waypoints.length) % this.waypoints.length;
+      const passedAlongRoad =
+        v.currentCheckpointIndex > 0 &&
+        wpDelta >= 0 &&
+        wpDelta <= 18 &&
+        v.position.distanceTo(nextCp.position) < nextCp.radius * 2.2;
 
-      if (v.position.distanceTo(nextCp.position) < nextCp.radius) {
+      if (v.position.distanceTo(nextCp.position) < nextCp.radius || passedAlongRoad) {
+        const passedCpIdx = v.currentCheckpointIndex;
         v.currentCheckpointIndex = (v.currentCheckpointIndex + 1) % cpCount;
 
-        // Completed a full lap
-        if (v.currentCheckpointIndex === 0) {
+        // Completed a full lap when crossing the Start/Finish line (checkpoint 0) after traversing the circuit
+        if (passedCpIdx === 0 && v.currentLapTime > 8.0) {
           const completedLapTime = v.currentLapTime;
           if (completedLapTime < v.bestLapTime) {
             v.bestLapTime = completedLapTime;
@@ -1212,10 +1240,18 @@ export class GameManager {
       }
     }
 
-    // Calculate real-time rank
+    // Calculate real-time rank with checkpoint progress and distance tie-breaker
     const sorted = [...this.allVehicles].sort((a, b) => {
       if (a.currentLap !== b.currentLap) return b.currentLap - a.currentLap;
-      return b.currentCheckpointIndex - a.currentCheckpointIndex;
+      const progA = (a.currentCheckpointIndex === 0 && a.currentLapTime > 8.0) ? cpCount : a.currentCheckpointIndex;
+      const progB = (b.currentCheckpointIndex === 0 && b.currentLapTime > 8.0) ? cpCount : b.currentCheckpointIndex;
+      if (progA !== progB) return progB - progA;
+      const nextCpA = this.checkpoints[a.currentCheckpointIndex]?.position;
+      const nextCpB = this.checkpoints[b.currentCheckpointIndex]?.position;
+      if (nextCpA && nextCpB) {
+        return a.position.distanceToSquared(nextCpA) - b.position.distanceToSquared(nextCpB);
+      }
+      return 0;
     });
 
     sorted.forEach((veh, idx) => {
@@ -1235,14 +1271,14 @@ export class GameManager {
       veh.flipTimer = 0;
     }
 
-    if (veh.isOffTrack) {
+    if (veh.isOffTrack && veh.speedKmh < 20.0) {
       veh.offTrackTimer += dt;
-    } else {
+    } else if (!veh.isOffTrack) {
       veh.offTrackTimer = 0;
     }
 
     // Auto-recover if fallen below ground, flipped upside down, stranded far off track, or stuck against obstacle
-    if (veh.position.y < -0.90 || veh.flipTimer > 2.0 || veh.offTrackTimer > 5.0 || veh.stuckTimer > 4.0) {
+    if (veh.position.y < -0.90 || veh.flipTimer > 2.0 || veh.offTrackTimer > 6.0 || veh.stuckTimer > 4.0) {
       this.respawnVehicleAtCheckpoint(veh);
     }
   }
@@ -1263,9 +1299,16 @@ export class GameManager {
     const wp = this.waypoints[wpIdx];
     const spawnQuat = new THREE.Quaternion();
     if (wp && wp.tangent) {
-      spawnQuat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+      const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+      spawnQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     }
+    veh.lastClosestWpIdx = wpIdx;
     veh.resetPosition(cp.position.clone(), spawnQuat);
+    for (const bot of this.aiBots) {
+      if (bot.vehicle === veh) {
+        bot.setTargetIndex(wpIdx);
+      }
+    }
   }
 
   private handleRaceFinish(): void {
@@ -1311,6 +1354,10 @@ export class GameManager {
     this.hud.hidePauseModal();
     this.hud.hideRaceResults();
     this.particleFX.reset();
+    this.sectorSplitTracker.reset();
+    this.rewindController.reset();
+    this.terrainDeformation.reset();
+    EnvironmentGenerator.resetDestructibles();
 
     const spawnWp = this.waypoints[0];
     const tangent = spawnWp.tangent ?? new THREE.Vector3(0, 0, 1);
@@ -1320,7 +1367,7 @@ export class GameManager {
     const p1Spawn = spawnWp.point.clone()
       .addScaledVector(tangent, -6.0)
       .addScaledVector(normal, 2.8);
-    p1Spawn.y += 0.45;
+    p1Spawn.y += TrackMeshBuilder.ROAD_ELEVATION;
     this.playerVehicle.reset(p1Spawn, spawnQuat);
     this.p1Camera.snapToTarget(this.playerVehicle.position, this.playerVehicle.quaternion);
 
@@ -1328,7 +1375,7 @@ export class GameManager {
       const p2Spawn = spawnWp.point.clone()
         .addScaledVector(tangent, -6.0)
         .addScaledVector(normal, -2.8);
-      p2Spawn.y += 0.45;
+      p2Spawn.y += TrackMeshBuilder.ROAD_ELEVATION;
       this.p2Vehicle.reset(p2Spawn, spawnQuat);
       this.p2Camera.snapToTarget(this.p2Vehicle.position, this.p2Vehicle.quaternion);
     }
@@ -1340,7 +1387,8 @@ export class GameManager {
       const aiSpawn = spawnWp.point.clone()
         .addScaledVector(tangent, -distBack)
         .addScaledVector(normal, sideOffset);
-      aiSpawn.y += 0.45;
+      aiSpawn.y += TrackMeshBuilder.ROAD_ELEVATION;
+      this.aiBots[i].reset();
       this.aiBots[i].vehicle.reset(aiSpawn, spawnQuat);
 
       let closestWpIdx = 0;

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const BASE_URL = 'http://localhost:5173/';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:4173/masovian-drift/';
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 async function testCollisions() {

@@ -5,6 +5,7 @@ import { CarVisualElements } from '../graphics/VoxelCarBuilder';
 import { Waypoint } from './TrackWaypoints';
 import { PRNG } from '../utils/PRNG';
 import { TireThermalModel } from './TireThermalModel';
+import { PhysicsSyncSystem } from '../ecs/systems/PhysicsSyncSystem';
 
 export interface VehicleInputs {
   throttle: number; // 0.0 to 1.0
@@ -19,6 +20,7 @@ export class VehiclePhysics {
   public name: string;
   public isPlayer: boolean;
   public isAI: boolean;
+  public ecsEntityId = -1;
 
   public rigidBody!: RAPIER.RigidBody;
   public collider!: RAPIER.Collider;
@@ -107,7 +109,7 @@ export class VehiclePhysics {
   public isOnKerb = false;
   public isOffTrack = false;
   public isWrongWay = false;
-  private lastClosestWpIdx = 0;
+  public lastClosestWpIdx = 0;
 
   // V2 Garage Differential & Steering Angle Tuning
   public tuning = {
@@ -121,6 +123,21 @@ export class VehiclePhysics {
       steeringLockDeg: Math.max(42, Math.min(68, tuning.steeringLockDeg)),
       differentialType: tuning.differentialType,
       brakeBias: Math.max(0.40, Math.min(0.70, tuning.brakeBias)),
+    };
+  }
+
+  // Career / Garage performance upgrades
+  public upgrades = {
+    lightweightFlywheel: false,
+    sportSuspension: false,
+    openExhaust: false,
+    sandTires: false,
+  };
+
+  public setUpgrades(upgrades: Partial<typeof this.upgrades>): void {
+    this.upgrades = {
+      ...this.upgrades,
+      ...upgrades,
     };
   }
 
@@ -331,8 +348,10 @@ export class VehiclePhysics {
         const pointVel = chassisVel.clone().add(chassisAngVel.clone().cross(rArm));
         const suspVel = -pointVel.dot(up);
 
-        const k = isFront ? this.springStiffnessFront : this.springStiffnessRear;
-        const c = isFront ? this.damperCoeffFront : this.damperCoeffRear;
+        const suspMult = this.upgrades.sportSuspension ? 1.20 : 1.0;
+        const dampMult = this.upgrades.sportSuspension ? 1.18 : 1.0;
+        const k = (isFront ? this.springStiffnessFront : this.springStiffnessRear) * suspMult;
+        const c = (isFront ? this.damperCoeffFront : this.damperCoeffRear) * dampMult;
         const suspForceN = Math.max(0, k * compression + c * suspVel);
 
         const impulse = up.clone().multiplyScalar(suspForceN * dt);
@@ -349,9 +368,9 @@ export class VehiclePhysics {
     // 1c. AIRBORNE STABILIZATION (Angular Stability auto-alignment)
     const isAirborne = this.wheelGroundedCount <= 1;
     if (isAirborne) {
-      let targetNormal = new THREE.Vector3(0, 1, 0);
+      const targetNormal = new THREE.Vector3(0, 1, 0);
       const centerDownRay = new RAPIER.Ray(
-        new RAPIER.Vector3(this.position.x, this.position.y, this.position.z),
+        new RAPIER.Vector3(this.position.x, this.position.y + 0.5, this.position.z),
         new RAPIER.Vector3(0, -1, 0)
       );
       const groundHit = this.physicsWorld.castRayAndGetNormal(
@@ -363,19 +382,19 @@ export class VehiclePhysics {
         undefined,
         this.rigidBody
       );
-      if (groundHit && groundHit.normal) {
+      if (groundHit && groundHit.normal && groundHit.normal.y > 0.6) {
         targetNormal.set(groundHit.normal.x, groundHit.normal.y, groundHit.normal.z).normalize();
       }
 
-      const rollTilt = right.dot(targetNormal);
-      const pitchTilt = forward.dot(targetNormal);
-
       const mass = this.specs.mass;
-      const rollCorrection = -rollTilt * (mass * 24.0) - this.angularVelocity.z * (mass * 3.5);
-      const pitchCorrection = -pitchTilt * (mass * 20.0) - this.angularVelocity.x * (mass * 3.5);
+      // Exact coordinate-free restoring axis: up x targetNormal rotates up directly toward targetNormal
+      const alignAxis = up.clone().cross(targetNormal);
+      const rollVel = this.angularVelocity.dot(forward);
+      const pitchVel = this.angularVelocity.dot(right);
+      const dampTorque = forward.clone().multiplyScalar(-rollVel * mass * 3.5)
+        .addScaledVector(right, -pitchVel * mass * 3.5);
 
-      const airTorque = forward.clone().multiplyScalar(rollCorrection)
-        .add(right.clone().multiplyScalar(pitchCorrection));
+      const airTorque = alignAxis.multiplyScalar(mass * 22.0).add(dampTorque);
 
       this.rigidBody.applyTorqueImpulse(
         new RAPIER.Vector3(airTorque.x * dt, airTorque.y * dt, airTorque.z * dt),
@@ -387,15 +406,25 @@ export class VehiclePhysics {
     let surfaceGrip = 1.0;
     if (waypoints && waypoints.length > 0) {
       const n = waypoints.length;
-      let closestIdx = this.lastClosestWpIdx;
+      let closestIdx = this.lastClosestWpIdx % n;
       let minDistSq = this.position.distanceToSquared(waypoints[closestIdx].point);
 
-      for (let offset = -6; offset <= 12; offset++) {
-        const idx = (this.lastClosestWpIdx + offset + n) % n;
-        const dSq = this.position.distanceToSquared(waypoints[idx].point);
-        if (dSq < minDistSq) {
-          minDistSq = dSq;
-          closestIdx = idx;
+      if (minDistSq > 484.0) {
+        for (let i = 0; i < n; i++) {
+          const dSq = this.position.distanceToSquared(waypoints[i].point);
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            closestIdx = i;
+          }
+        }
+      } else {
+        for (let offset = -6; offset <= 12; offset++) {
+          const idx = (closestIdx + offset + n) % n;
+          const dSq = this.position.distanceToSquared(waypoints[idx].point);
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
+            closestIdx = idx;
+          }
         }
       }
       this.lastClosestWpIdx = closestIdx;
@@ -413,8 +442,8 @@ export class VehiclePhysics {
         this.isOffTrack = false;
         this.currentSurface = wp.surface;
         if (wp.surface === 'asphalt') surfaceGrip = 1.0;
-        else if (wp.surface === 'gravel') surfaceGrip = 0.74;
-        else if (wp.surface === 'sand') surfaceGrip = 0.44;
+        else if (wp.surface === 'gravel') surfaceGrip = this.upgrades.sandTires ? 0.85 : 0.74;
+        else if (wp.surface === 'sand') surfaceGrip = this.upgrades.sandTires ? 0.68 : 0.44;
       } else if (absOffset <= halfWidth + curbWidth) {
         this.isOnKerb = true;
         this.isOffTrack = false;
@@ -424,7 +453,10 @@ export class VehiclePhysics {
         this.isOnKerb = false;
         this.isOffTrack = true;
         this.currentSurface = 'grass';
-        surfaceGrip = 0.52;
+        surfaceGrip = this.upgrades.sandTires ? 0.66 : 0.52;
+      }
+      if (this.upgrades.sportSuspension) {
+        surfaceGrip *= 1.04;
       }
 
       // Wrong-way orientation check (U10)
@@ -583,7 +615,15 @@ export class VehiclePhysics {
 
       // Engine power output degradation tied to body/mechanical damage (M10)
       const engineHealthFactor = Math.max(0.68, 1.0 - this.damage.bodyDamage * 0.32);
-      const engineTorque = peakTorqueNm * torqueCurveFactor * engineHealthFactor;
+      const exhaustPowerBonus = this.upgrades.openExhaust ? 1.05 : 1.0;
+      const effectiveFlywheel = this.specs.flywheelInertia * (this.upgrades.lightweightFlywheel ? 0.65 : 1.0);
+      // Lighter flywheel accelerates faster on flat ground, but loses momentum faster on uphill slopes/dunes
+      let flywheelMomentumFactor = 1.0 + Math.max(-0.05, (0.20 - effectiveFlywheel) * 0.55);
+      if (forward.y > 0.015) {
+        flywheelMomentumFactor *= Math.max(0.76, 1.0 - (0.24 - effectiveFlywheel) * forward.y * 8.5);
+      }
+
+      const engineTorque = peakTorqueNm * torqueCurveFactor * engineHealthFactor * exhaustPowerBonus * flywheelMomentumFactor;
       const wheelTorque = engineTorque * gearRatio * this.specs.finalDrive * inputs.throttle;
       const tireRadius = 0.32;
       driveForceN = (wheelTorque / tireRadius);
@@ -630,16 +670,17 @@ export class VehiclePhysics {
       this.justBackfired = Math.random() < 0.28;
     }
 
-    // Braking Force (60% front, 40% rear bias)
+    // Braking Force modulated by tunable front/rear brake bias (default 0.55)
     let brakeForceN = 0;
     if (inputs.handbrake) {
       brakeForceN += 28000.0;
     }
     if (inputs.brake > 0) {
-      brakeForceN += inputs.brake * 16000.0;
-      // Reverse gear: only engage if vehicle is completely stopped, player holds brake without throttle, and handbrake is released
-      if (forwardSpeed <= 0.05 && inputs.brake > 0.5 && inputs.throttle < 0.05 && !inputs.handbrake) {
-        driveForceN = -inputs.brake * 5500.0;
+      const biasEfficiency = 1.0 - Math.abs(this.tuning.brakeBias - 0.56) * 0.35;
+      brakeForceN += inputs.brake * 16000.0 * biasEfficiency;
+      // Reverse gear: only engage if vehicle is nearly stopped, player holds brake without throttle, and handbrake is released
+      if (forwardSpeed <= 0.25 && inputs.brake > 0.5 && inputs.throttle < 0.05 && !inputs.handbrake) {
+        driveForceN = -inputs.brake * 6200.0;
         brakeForceN = 0;
       }
     }
@@ -766,7 +807,7 @@ export class VehiclePhysics {
     const dynamicYawTorque = (tauFront + tauRear) + directSteerMoment + counterSteerBonus;
 
     // Compute yaw impulse and apply along local vehicle UP axis
-    const currentYawRate = this.angularVelocity.y;
+    const currentYawRate = this.angularVelocity.dot(up);
     const kinematicYawImpulse = (targetAckermannYawRate - currentYawRate) * (this.specs.mass * 1.6) * lowSpeedBlend;
     const yawDampingRate = this.isDrifting ? 1250.0 : 1800.0;
     const dynamicYawImpulse = (dynamicYawTorque - currentYawRate * yawDampingRate) * (1.0 - lowSpeedBlend) * dt;
@@ -783,10 +824,15 @@ export class VehiclePhysics {
       true
     );
 
-    // Anti-roll & stabilization upright torque
-    const tiltDot = up.dot(new THREE.Vector3(0, 1, 0));
-    if (tiltDot < 0.98) {
-      const uprightCorrection = new THREE.Vector3(0, 1, 0).cross(up).multiplyScalar(-9500.0 * dt);
+    // Anti-roll & stabilization upright torque (critically damped)
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const tiltDot = up.dot(worldUp);
+    if (tiltDot < 0.995) {
+      const rollRate = this.angularVelocity.dot(forward);
+      const pitchRate = this.angularVelocity.dot(right);
+      const uprightCorrection = up.clone().cross(worldUp).multiplyScalar(12500.0 * dt)
+        .addScaledVector(forward, -rollRate * 1600.0 * dt)
+        .addScaledVector(right, -pitchRate * 1600.0 * dt);
       this.rigidBody.applyTorqueImpulse(
         new RAPIER.Vector3(uprightCorrection.x, uprightCorrection.y, uprightCorrection.z),
         true
@@ -830,7 +876,7 @@ export class VehiclePhysics {
     // Flywheel inertia model:
     // dRPM / dt = (Torque - Load) / I_flywheel
     // Lighter flywheel = faster rev response!
-    const flywheelInertia = this.specs.flywheelInertia;
+    const flywheelInertia = this.specs.flywheelInertia * (this.upgrades.lightweightFlywheel ? 0.65 : 1.0);
 
     // Clutch slip model: allows high launch revs off the line, locks up smoothly above 18 km/h
     const clutchSlip = Math.max(0, 1.0 - this.speedKmh / 18.0);
@@ -971,9 +1017,33 @@ export class VehiclePhysics {
     this.overrideInputs = null;
   }
 
+  /**
+   * Synchronizes position, rotation, and velocities from Rapier RigidBody after world.step()
+   */
+  public syncFromRigidBody(dt = 1 / 60): void {
+    if (!this.rigidBody) return;
+    const t = this.rigidBody.translation();
+    const r = this.rigidBody.rotation();
+    const lv = this.rigidBody.linvel();
+    const av = this.rigidBody.angvel();
+
+    this.position.set(t.x, t.y, t.z);
+    this.quaternion.set(r.x, r.y, r.z, r.w);
+    this.velocity.set(lv.x, lv.y, lv.z);
+    this.angularVelocity.set(av.x, av.y, av.z);
+
+    const forward = VehiclePhysics._vForward.set(0, 0, 1).applyQuaternion(this.quaternion);
+    this.speedKmh = Math.abs(this.velocity.dot(forward)) * 3.6;
+
+    this.visual.root.position.copy(this.position);
+    this.visual.root.quaternion.copy(this.quaternion);
+    void dt;
+  }
+
   public resetPosition(spawnPos: THREE.Vector3, spawnQuat: THREE.Quaternion): void {
+    const targetPos = new THREE.Vector3(spawnPos.x, spawnPos.y + 0.20, spawnPos.z);
     this.rigidBody.setTranslation(
-      new RAPIER.Vector3(spawnPos.x, spawnPos.y + 0.20, spawnPos.z),
+      new RAPIER.Vector3(targetPos.x, targetPos.y, targetPos.z),
       true
     );
     this.rigidBody.setRotation(
@@ -982,10 +1052,27 @@ export class VehiclePhysics {
     );
     this.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
     this.rigidBody.setAngvel(new RAPIER.Vector3(0, 0, 0), true);
+
+    this.position.copy(targetPos);
+    this.quaternion.copy(spawnQuat);
+    this.velocity.set(0, 0, 0);
+    this.angularVelocity.set(0, 0, 0);
+    this.visual.root.position.copy(targetPos);
+    this.visual.root.quaternion.copy(spawnQuat);
+
+    if (this.ecsEntityId > 0) {
+      PhysicsSyncSystem.resetVehicleBuffer(this.ecsEntityId, targetPos, spawnQuat);
+    }
+
     this.speedKmh = 0;
     this.rpm = this.specs.idleRpm;
     this.currentGear = 1;
     this.isDrifting = false;
+    this.isOffTrack = false;
+    this.isOnKerb = false;
+    this.flipTimer = 0;
+    this.offTrackTimer = 0;
+    this.stuckTimer = 0;
   }
 
   public getPosition(): THREE.Vector3 {
@@ -1023,6 +1110,8 @@ export class VehiclePhysics {
     this.stuckTimer = 0;
     this.currentSurface = 'asphalt';
     this.lastVelocity.set(0, 0, 0);
+    this.overrideInputs = null;
+    this.lastClosestWpIdx = 0;
 
     // Reset weight transfer
     this.weightTransfer.frontLeftLoad = 0.20;
@@ -1039,6 +1128,9 @@ export class VehiclePhysics {
     this.damage.aerodynamicDragPenalty = 1.0;
     this.damage.steeringAlignmentOffset = 0.0;
     this.spawnGraceTimer = 1.0;
+    for (const thermal of this.tireThermals) {
+      thermal.reset();
+    }
 
     // Reset visual rotations and emissives
     this.visual.bodyMesh.rotation.set(0, 0, 0);

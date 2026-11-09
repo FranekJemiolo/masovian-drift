@@ -47,9 +47,10 @@ export class PixelPostProcessor {
     this.depthTexture = new THREE.DepthTexture(this.width, this.height);
     this.depthTexture.type = THREE.UnsignedIntType;
 
+    const texFilter = this.pixelScale > 1.0 ? THREE.NearestFilter : THREE.LinearFilter;
     this.renderTarget = new THREE.WebGLRenderTarget(this.width, this.height, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
+      minFilter: texFilter,
+      magFilter: texFilter,
       format: THREE.RGBAFormat,
       type: THREE.HalfFloatType,
       depthTexture: this.depthTexture,
@@ -73,6 +74,8 @@ export class PixelPostProcessor {
     const fragmentShader = `
       uniform sampler2D tDiffuse;
       uniform sampler2D tDepth;
+      uniform sampler2D tRadiance;
+      uniform sampler2D tSSR;
       uniform vec2 uResolution;
       uniform float uCameraNear;
       uniform float uCameraFar;
@@ -165,6 +168,13 @@ export class PixelPostProcessor {
         float ao = clamp(1.0 - (aoSum * 0.25) * uAOIntensity, 0.35, 1.0);
         color *= ao;
 
+        // Radiance Cascades Multi-Bounce Indirect GI & Screen-Space Road Reflections (SSR)
+        vec3 giBounce = texture2D(tRadiance, vUv).rgb;
+        color += giBounce * (0.14 * uAOIntensity);
+
+        vec4 ssrSample = texture2D(tSSR, vUv);
+        color = mix(color, color + ssrSample.rgb, clamp(ssrSample.a * uSSRIntensity, 0.0, 0.65));
+
         // Crisp Geometric Voxel Edge Definition / Cavity Shader (Section 3.2)
         float depthDiff = length(vec2(dFdx(centerDepth), dFdy(centerDepth)));
         vec3 cLeft = texture2D(tDiffuse, vUv - vec2(texel.x, 0.0)).rgb;
@@ -214,6 +224,8 @@ export class PixelPostProcessor {
       uniforms: {
         tDiffuse: { value: this.renderTarget.texture },
         tDepth: { value: this.renderTarget.depthTexture },
+        tRadiance: { value: this.radiancePass.target.texture },
+        tSSR: { value: this.ssrPass.target.texture },
         uResolution: { value: new THREE.Vector2(this.width, this.height) },
         uCameraNear: { value: 0.1 },
         uCameraFar: { value: 1200.0 },
@@ -244,6 +256,10 @@ export class PixelPostProcessor {
 
   public setPixelScale(scale: number): void {
     this.pixelScale = Math.max(1, scale);
+    const texFilter = this.pixelScale > 1.0 ? THREE.NearestFilter : THREE.LinearFilter;
+    this.renderTarget.texture.minFilter = texFilter;
+    this.renderTarget.texture.magFilter = texFilter;
+    this.renderTarget.texture.needsUpdate = true;
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
     this.setSize(size.x, size.y);
@@ -300,6 +316,8 @@ export class PixelPostProcessor {
     this.height = Math.max(1, Math.floor(displayHeight / this.pixelScale));
 
     this.renderTarget.setSize(this.width, this.height);
+    this.radiancePass.setSize(this.width, this.height);
+    this.ssrPass.setSize(this.width, this.height);
     this.postMaterial.uniforms.uResolution.value.set(this.width, this.height);
   }
 
@@ -318,6 +336,10 @@ export class PixelPostProcessor {
     // Step 1: Render scene to offscreen buffer
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.render(this.scene, cam);
+
+    // Step 1.5: Compute Radiance Cascades GI and Screen-Space Reflections
+    this.radiancePass.render(this.renderer, this.renderTarget.texture, this.depthTexture);
+    this.ssrPass.render(this.renderer, this.renderTarget.texture, this.depthTexture);
 
     // Step 2: Render crisp post-processed frame to canvas
     this.renderer.setRenderTarget(null);
@@ -350,6 +372,10 @@ export class PixelPostProcessor {
     // Step 1: Render scene to offscreen buffer
     this.renderer.setRenderTarget(this.renderTarget);
     this.renderer.render(this.scene, cam);
+
+    // Step 1.5: Compute Radiance Cascades GI and Screen-Space Reflections
+    this.radiancePass.render(this.renderer, this.renderTarget.texture, this.depthTexture);
+    this.ssrPass.render(this.renderer, this.renderTarget.texture, this.depthTexture);
 
     // Step 2: Composite post-processed frame into the designated screen viewport
     this.renderer.setRenderTarget(null);

@@ -184,24 +184,46 @@ export class Atmosphere {
   public setPreset(preset: AtmospherePreset): void {
     this.currentPreset = preset;
     const u = this.skyMaterial.uniforms;
+    const fog = this.scene.fog as THREE.FogExp2 | null;
     if (preset === 'sunset') {
       u.topColor.value.setHex(0x3b0764);   // Twilight indigo
       u.midColor.value.setHex(0xf97316);   // Golden orange
       u.bottomColor.value.setHex(0xfef08a);// Horizon glow
       u.sunDir.value.set(-160, 45, -70).normalize();
       if (this.cloudMat) this.cloudMat.color.setHex(0xfed7aa); // Warm peach sunset clouds
+      if (fog && fog.color) fog.color.setHex(0xe0a96d);
+      this.scene.traverse((obj) => {
+        if (obj instanceof THREE.DirectionalLight) {
+          obj.color.setHex(0xfb923c);
+          obj.intensity = 2.6;
+        }
+      });
     } else if (preset === 'night') {
       u.topColor.value.setHex(0x020617);   // Pitch navy
       u.midColor.value.setHex(0x0f172a);   // Slate blue
       u.bottomColor.value.setHex(0x1e293b);// Distant dusk
       u.sunDir.value.set(0, -100, 0).normalize();
       if (this.cloudMat) this.cloudMat.color.setHex(0x334155); // Moonlight slate clouds
+      if (fog && fog.color) fog.color.setHex(0x0f172a);
+      this.scene.traverse((obj) => {
+        if (obj instanceof THREE.DirectionalLight) {
+          obj.color.setHex(0x64748b);
+          obj.intensity = 0.75;
+        }
+      });
     } else {
       u.topColor.value.setHex(0x1d4ed8);
       u.midColor.value.setHex(0x60a5fa);
       u.bottomColor.value.setHex(0xfef3c7);
       u.sunDir.value.set(-100, 170, -90).normalize();
       if (this.cloudMat) this.cloudMat.color.setHex(0xffffff);
+      if (fog && fog.color) fog.color.setHex(0xe0a96d);
+      this.scene.traverse((obj) => {
+        if (obj instanceof THREE.DirectionalLight) {
+          obj.color.setHex(0xfff7ed);
+          obj.intensity = 3.2;
+        }
+      });
     }
   }
 

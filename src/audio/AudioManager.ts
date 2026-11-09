@@ -254,6 +254,8 @@ export class AudioManager {
   ): void {
     if (this.isMuted || this.isPaused) return;
     this.playerSynth?.update(rpm, throttle, slipAngle, speedKmh, surface);
+    const slipSpeedMs = Math.abs(Math.sin(slipAngle)) * (speedKmh / 3.6);
+    this.granularTires?.update(slipSpeedMs, 0.75, surface);
   }
 
   public setPlayerExhaustProfile(era: 'Classic' | 'Golden' | 'Modern', openExhaust = false): void {
@@ -298,6 +300,7 @@ export class AudioManager {
   public playBackfire(): void {
     if (this.isMuted || this.isPaused) return;
     this.playerSynth?.playBackfirePop();
+    this.turboSynth?.triggerPop();
   }
 
   public playCurb(): void {

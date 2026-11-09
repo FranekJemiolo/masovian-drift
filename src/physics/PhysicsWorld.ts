@@ -136,6 +136,21 @@ export class PhysicsWorld {
         .setFriction(0.60)
         .setRestitution(0.02);
       this.world.createCollider(shoulderColDesc, segmentBody);
+
+      // 3c. Low-friction Armco guardrail collider along high-speed sweeping curves (waypoints 18..55)
+      if (i >= 18 && i <= 55) {
+        const railOffset = wp.width * 0.5 + 2.55;
+        const railColDesc = RAPIER.ColliderDesc.roundCuboid(
+          0.18,
+          0.45,
+          segmentLen * 0.5 + 0.25,
+          0.06
+        )
+          .setTranslation(railOffset, halfDepth + 0.42, 0)
+          .setFriction(0.10)
+          .setRestitution(0.15);
+        this.world.createCollider(railColDesc, segmentBody);
+      }
     }
     // Note: Environment obstacles (pine & birch trees, tire stacks, hay bales, fences,
     // grandstands, shrines, and Świdermajer villas) are generated with exact matching transforms
@@ -145,7 +160,11 @@ export class PhysicsWorld {
   /**
    * Deterministic fixed timestep update loop with strict max substep clamping (P8)
    */
-  public step(delta: number = 1 / 60, onFixedStep?: (dt: number) => void): void {
+  public step(
+    delta: number = 1 / 60,
+    onFixedStep?: (dt: number) => void,
+    onPostStep?: (dt: number) => void
+  ): void {
     if (!this.initialized) return;
 
     const safeDelta = Number.isFinite(delta) && delta > 0 ? Math.min(delta, 0.1) : this.fixedTimeStep;
@@ -158,6 +177,9 @@ export class PhysicsWorld {
         onFixedStep(this.fixedTimeStep);
       }
       this.world.step();
+      if (onPostStep) {
+        onPostStep(this.fixedTimeStep);
+      }
       this.accumulator -= this.fixedTimeStep;
       steps++;
     }

@@ -121,10 +121,15 @@ export class PurePursuitAI {
 
     if (this.recoveryTimer > 0) {
       this.recoveryTimer -= dt;
+      const wp = this.waypoints[this.currentTargetIndex];
+      const toWp = PurePursuitAI._toTargetWorld.copy(wp.point).sub(pos);
+      const invQ = PurePursuitAI._invQuat.copy(this.vehicle.quaternion).invert();
+      const localWp = PurePursuitAI._toTargetLocal.copy(toWp).applyQuaternion(invQ);
+      const revSteer = localWp.x >= 0 ? -0.75 : 0.75;
       return {
         throttle: 0,
         brake: 0.85, // Rapier reverses on brake when stopped
-        steer: 0.65,
+        steer: revSteer,
         handbrake: false,
       };
     }
@@ -158,13 +163,21 @@ export class PurePursuitAI {
     this.currentTargetIndex = closestIndex;
 
     // 2. ADAPTIVE LOOKAHEAD DISTANCE ALGORITHM
-    const minLookahead = 8.0;
-    const maxLookahead = 30.0;
+    const minLookahead = 7.0;
+    const maxLookahead = 15.0;
     const currentWp = this.waypoints[this.currentTargetIndex];
 
-    const cornerFactor = Math.min(1.0, currentWp.targetSpeedKmh / 160.0);
+    let minUpcomingSpeed = currentWp.targetSpeedKmh;
+    for (let s = 1; s <= 8; s++) {
+      const wpAhead = this.waypoints[(this.currentTargetIndex + s) % count];
+      if (wpAhead.targetSpeedKmh < minUpcomingSpeed) {
+        minUpcomingSpeed = wpAhead.targetSpeedKmh;
+      }
+    }
+
+    const cornerFactor = Math.min(1.0, minUpcomingSpeed / 160.0);
     const adaptiveLookahead = THREE.MathUtils.clamp(
-      minLookahead + (speedMs * this.profile.lookaheadGain * 3.8) * cornerFactor,
+      minLookahead + (speedMs * this.profile.lookaheadGain * 2.0) * cornerFactor,
       minLookahead,
       maxLookahead
     );
@@ -200,17 +213,17 @@ export class PurePursuitAI {
     // Candidate 1: Optimal Racing Line (Outside entry -> Clipping apex -> Wide exit)
     let dRacing = 0;
     if (Math.abs(upcomingCurvature) > 0.05) {
-      // Clip inside apex
-      dRacing = -Math.sign(upcomingCurvature) * Math.min(halfWidth * 0.72, Math.abs(upcomingCurvature) * 4.6);
+      // Clip inside apex while keeping safe margin from inside kerbs/trees
+      dRacing = -Math.sign(upcomingCurvature) * Math.min(halfWidth * 0.32, Math.abs(upcomingCurvature) * 2.8);
     }
     const candRacing = PurePursuitAI._candRacing.copy(basePoint).addScaledVector(lookNormal, dRacing);
 
     // Candidate 2: Defensive Inside Line (deny apex to trailing car)
     let dDefend = 0;
     if (Math.abs(upcomingCurvature) > 0.04) {
-      dDefend = -Math.sign(upcomingCurvature) * (halfWidth * 0.65);
+      dDefend = -Math.sign(upcomingCurvature) * (halfWidth * 0.30);
     } else {
-      dDefend = -1.2; // Hold inside lane on straight
+      dDefend = -0.8; // Hold inside lane on straight
     }
     const candDefend = PurePursuitAI._candDefend.copy(basePoint).addScaledVector(lookNormal, dDefend);
 
@@ -299,7 +312,7 @@ export class PurePursuitAI {
 
     const targetPoint = PurePursuitAI._targetPoint.copy(bestCand);
 
-    // 5. PURE PURSUIT LATERAL CONTROLLER
+    // 5. PURE PURSUIT + STANLEY CROSS-TRACK LATERAL CONTROLLER
     const toTargetWorld = PurePursuitAI._toTargetWorld.copy(targetPoint).sub(pos);
     const invQuat = PurePursuitAI._invQuat.copy(this.vehicle.quaternion).invert();
     const toTargetLocal = PurePursuitAI._toTargetLocal.copy(toTargetWorld).applyQuaternion(invQuat);
@@ -310,45 +323,68 @@ export class PurePursuitAI {
 
     // Pure pursuit curvature: kappa = (2 * sin(alpha)) / L_d
     const curvature = (2.0 * Math.sin(alpha)) / lookaheadDist;
-
-    // Required steering angle
     const rawSteerAngle = Math.atan(curvature * this.wheelbase);
-    const steerInput = THREE.MathUtils.clamp(rawSteerAngle / 0.55, -1.0, 1.0);
+
+    // Cross-track recentering correction if drifting toward road edge
+    const wpNormal = currentWp.normal ?? new THREE.Vector3(1, 0, 0);
+    const latOffset = PurePursuitAI._toOther.copy(pos).sub(currentWp.point).dot(wpNormal);
+    const edgeCorrection = Math.abs(latOffset) > halfWidth * 0.45 ? (-latOffset / halfWidth) * 0.35 : 0;
+
+    // Compensate for speed-sensitive steering attenuation in VehiclePhysics
+    const speedSteerBoost = 1.0 + Math.min(1.2, speedKmh / 110.0);
+    const steerInput = THREE.MathUtils.clamp(
+      (alpha * 1.65 + rawSteerAngle * 1.2 + edgeCorrection) * speedSteerBoost,
+      -1.0,
+      1.0
+    );
 
     // 6. KAMM'S FRICTION CIRCLE & PACEJKA-AWARE PREDICTIVE BRAKING
     // Effective surface friction coefficient (mu)
-    let muSurface = 1.05; // High-grip asphalt
-    if (currentWp.surface === 'gravel') muSurface = 0.75;
-    if (currentWp.surface === 'sand') muSurface = 0.50;
+    let muSurface = 1.0; // High-grip asphalt
+    if (currentWp.surface === 'gravel') muSurface = 0.72;
+    if (currentWp.surface === 'sand') muSurface = 0.48;
 
-    let adjustedTargetSpeed = currentWp.targetSpeedKmh * this.profile.aggression;
+    const effAggression = THREE.MathUtils.clamp(this.profile.aggression, 0.85, 1.02);
+    let adjustedTargetSpeed = currentWp.targetSpeedKmh * effAggression;
 
     // Tactical Slipstream boost on straights (reduced air drag in wake)
-    if (hasDraftCar && Math.abs(upcomingCurvature) < 0.05) {
-      adjustedTargetSpeed *= 1.08;
+    if (hasDraftCar && Math.abs(upcomingCurvature) < 0.04) {
+      adjustedTargetSpeed *= 1.05;
     }
 
-    // Predictive braking zone lookahead (up to 12 waypoints / 55 meters)
+    // Predictive braking zone lookahead (up to 22 waypoints / ~95 meters)
     let distAhead = 0;
-    const maxLookaheadDist = Math.max(34.0, speedMs * 1.85);
+    const maxLookaheadDist = Math.max(45.0, speedMs * 2.6);
 
-    for (let s = 1; s <= 12; s++) {
+    for (let s = 1; s <= 22; s++) {
       const idxA = (this.currentTargetIndex + s) % count;
       const wpA = this.waypoints[idxA];
       const prevA = this.waypoints[(idxA - 1 + count) % count];
       distAhead += prevA.point.distanceTo(wpA.point);
       if (distAhead > maxLookaheadDist) break;
 
-      // Friction circle cornering speed: v_corner = sqrt(mu * g * R / (1 - banking))
-      let wpMu = 1.05;
-      if (wpA.surface === 'gravel') wpMu = 0.75;
-      if (wpA.surface === 'sand') wpMu = 0.50;
+      // Estimate local spline curvature at wpA
+      const nextA = this.waypoints[(idxA + 3) % count];
+      let curvSpeedLimit = wpA.targetSpeedKmh;
+      if (wpA.tangent && nextA.tangent) {
+        const dAngle = wpA.tangent.angleTo(nextA.tangent);
+        const chordLen = Math.max(1.0, wpA.point.distanceTo(nextA.point));
+        const radius = chordLen / Math.max(0.005, dAngle);
+        const maxLatG = 1.25;
+        const physicsCornerKmh = Math.sqrt(maxLatG * 9.81 * radius) * 3.6;
+        curvSpeedLimit = Math.min(curvSpeedLimit, physicsCornerKmh);
+      }
 
-      const wpSpeedKmh = wpA.targetSpeedKmh * this.profile.aggression;
-      const cornerTargetMs = (wpSpeedKmh * Math.sqrt(wpMu / 1.05)) / 3.6;
+      // Friction circle cornering speed
+      let wpMu = 1.0;
+      if (wpA.surface === 'gravel') wpMu = 0.85;
+      if (wpA.surface === 'sand') wpMu = 0.72;
+
+      const wpSpeedKmh = Math.max(58, curvSpeedLimit * effAggression);
+      const cornerTargetMs = (wpSpeedKmh * Math.sqrt(wpMu)) / 3.6;
 
       // Allowable speed approaching corner: v = sqrt(v_target^2 + 2 * a_decel * dist)
-      const maxDecel = 8.8 * (wpMu / 1.0); // m/s^2 brake grip
+      const maxDecel = 6.2 * wpMu; // Conservative braking decel so AI slows before turn-in
       const allowableMs = Math.sqrt(cornerTargetMs * cornerTargetMs + 2 * maxDecel * distAhead);
       const allowableKmh = allowableMs * 3.6;
       if (allowableKmh < adjustedTargetSpeed) {
@@ -374,9 +410,11 @@ export class PurePursuitAI {
 
       // Sandy hairpins Scandinavian drift tap (deterministic PRNG, M4)
       if (
-        Math.abs(alpha) > 0.42 &&
+        Math.abs(alpha) > 0.55 &&
+        speedKmh < 55.0 &&
         currentWp.surface === 'sand' &&
-        PRNG.global.chance(0.08 * this.profile.driftEnthusiasm)
+        !this.vehicle.isOffTrack &&
+        PRNG.global.chance(0.03 * this.profile.driftEnthusiasm)
       ) {
         handbrake = true;
       }
@@ -388,6 +426,15 @@ export class PurePursuitAI {
       // Full throttle acceleration down straights!
       throttle = 1.0;
       brake = 0;
+    }
+
+    // Traction & Slide Control: modulate throttle below 0.25 when rear slip exceeds drift threshold
+    // so rear tires recover lateral grip instead of spinning out
+    if (Math.abs(this.vehicle.slipAngle) > 0.14) {
+      throttle = Math.min(throttle, 0.20);
+      handbrake = false;
+    } else if (Math.abs(alpha) > 0.22) {
+      throttle = Math.min(throttle, 0.55);
     }
 
     return {

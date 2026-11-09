@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VehiclePhysics } from '../physics/VehiclePhysics';
 import { PRNG } from '../utils/PRNG';
+import { ComputeParticlePipeline } from './ComputeParticlePipeline';
 
 interface SmokeParticle {
   active: boolean;
@@ -45,6 +46,7 @@ interface VoxelDebrisParticle {
 export class ParticleFX {
   private scene: THREE.Scene;
   private rng = new PRNG(9876);
+  public computePipeline = new ComputeParticlePipeline();
 
   // 1. Tire Smoke & Dust (Instanced Mesh with surface tint)
   private maxSmoke = 160;
@@ -266,6 +268,7 @@ export class ParticleFX {
 
     p.life = 0;
     p.maxLife = 0.65 + this.rng.next() * 0.45;
+    this.computePipeline.spawnParticle(p.position, p.velocity, p.color.getHex(), p.maxScale, p.maxLife);
   }
 
   /**
@@ -363,6 +366,7 @@ export class ParticleFX {
       db.life = 0;
       db.maxLife = 1.2 + this.rng.next() * 0.9;
       if (colorHex) db.color.setHex(colorHex);
+      this.computePipeline.spawnParticle(db.position, db.velocity, db.color.getHex(), db.scale, db.maxLife);
     }
   }
 
@@ -435,8 +439,10 @@ export class ParticleFX {
       this.smokeDummy.rotation.set(progress * 1.5, progress * 2.0, progress * 0.8);
       this.smokeDummy.updateMatrix();
       this.smokeMesh.setMatrixAt(i, this.smokeDummy.matrix);
+      this.smokeMesh.setColorAt(i, p.color);
     }
     this.smokeMesh.instanceMatrix.needsUpdate = true;
+    if (this.smokeMesh.instanceColor) this.smokeMesh.instanceColor.needsUpdate = true;
 
     // 3. Animate additive sparks (G8)
     for (let i = 0; i < this.maxSparks; i++) {
@@ -515,14 +521,18 @@ export class ParticleFX {
       this.debrisDummy.scale.set(db.scale, db.scale, db.scale);
       this.debrisDummy.updateMatrix();
       this.debrisMesh.setMatrixAt(i, this.debrisDummy.matrix);
+      this.debrisMesh.setColorAt(i, db.color);
     }
     this.debrisMesh.instanceMatrix.needsUpdate = true;
+    if (this.debrisMesh.instanceColor) this.debrisMesh.instanceColor.needsUpdate = true;
+    this.computePipeline.update(delta);
   }
 
   /**
    * M3: Comprehensive FX restart - removes leftover skidmarks, smoke, sparks, flames, and debris
    */
   public reset(): void {
+    this.computePipeline.reset();
     // Clear smoke
     for (let i = 0; i < this.maxSmoke; i++) {
       this.smokeParticles[i].active = false;

@@ -28,24 +28,32 @@ export class ECSPipeline {
     InputSystem.update(inputManager, isCountingDown);
 
     // Stage 2: Fixed Timestep Physics with Two-Sample Buffer Synchronization
-    physicsWorld.step(delta, (dt) => {
-      onPhysicsSubstep(dt);
+    physicsWorld.step(
+      delta,
+      (dt) => {
+        onPhysicsSubstep(dt);
+      },
+      (dt) => {
+        for (let i = 0; i < allVehicles.length; i++) {
+          allVehicles[i].syncFromRigidBody(dt);
+        }
 
-      // Sync physics transforms into bitECS components and advance two-sample buffer
-      if (ecs.playerEntity > 0 && allVehicles[0]) {
-        PhysicsSyncSystem.syncVehiclePhysics(ecs.playerEntity, allVehicles[0]);
-      }
-      if (ecs.p2Entity > 0 && allVehicles[1]) {
-        PhysicsSyncSystem.syncVehiclePhysics(ecs.p2Entity, allVehicles[1]);
-      }
-      for (let i = 0; i < ecs.aiEntities.length; i++) {
-        const aiEid = ecs.aiEntities[i];
-        const v = allVehicles[i + (ecs.p2Entity > 0 ? 2 : 1)];
-        if (v) {
-          PhysicsSyncSystem.syncVehiclePhysics(aiEid, v);
+        // Sync post-step integrated physics transforms into bitECS components and advance two-sample buffer
+        if (ecs.playerEntity > 0 && allVehicles[0]) {
+          PhysicsSyncSystem.syncVehiclePhysics(ecs.playerEntity, allVehicles[0]);
+        }
+        if (ecs.p2Entity > 0 && allVehicles[1]) {
+          PhysicsSyncSystem.syncVehiclePhysics(ecs.p2Entity, allVehicles[1]);
+        }
+        for (let i = 0; i < ecs.aiEntities.length; i++) {
+          const aiEid = ecs.aiEntities[i];
+          const v = allVehicles[i + (ecs.p2Entity > 0 ? 2 : 1)];
+          if (v) {
+            PhysicsSyncSystem.syncVehiclePhysics(aiEid, v);
+          }
         }
       }
-    });
+    );
 
     // Stage 3 & 4: Fractional Physics Alpha & Visual Mesh Interpolation (lerp & slerp)
     const alpha = physicsWorld.getInterpolationAlpha();

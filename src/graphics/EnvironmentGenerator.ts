@@ -3,10 +3,28 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { PRNG } from '../utils/PRNG';
 import { SSVDAG, SwidermajerVoxelBuilder } from '../voxel/SSVDAG';
+import { VoxelStructuralGraph } from '../voxel/VoxelStructuralGraph';
 import { TrackMeshBuilder } from './TrackMeshBuilder';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
+import { VehiclePhysics } from '../physics/VehiclePhysics';
+import { ParticleFX } from './ParticleFX';
+
+export interface DestructibleProp {
+  type: 'hay' | 'fence';
+  mesh: THREE.InstancedMesh;
+  instanceId: number;
+  position: THREE.Vector3;
+  originalMatrix: THREE.Matrix4;
+  radius: number;
+  colorHex: number;
+  nodeId: number;
+  destroyed: boolean;
+}
 
 export class EnvironmentGenerator {
+  public static destructibleProps: DestructibleProp[] = [];
+  public static structuralGraph: VoxelStructuralGraph = new VoxelStructuralGraph();
+  private static readonly _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
   /**
    * Procedurally generates dense pine forests, Mazovian birch groves,
    * tire barriers, hay bales, fences, and authentic Świdermajer wooden villas
@@ -22,6 +40,9 @@ export class EnvironmentGenerator {
     const envGroup = new THREE.Group();
     const wpCount = waypoints.length;
     const dummy = new THREE.Object3D();
+    this.destructibleProps = [];
+    this.structuralGraph = new VoxelStructuralGraph();
+    let nextGraphNodeId = 1;
 
     const rapierWorld = physicsWorld?.world;
     const envBody = rapierWorld
@@ -80,6 +101,28 @@ export class EnvironmentGenerator {
         }
       }
       return true;
+    };
+
+    // Push any roadside prop radially clear of all 140 road segments (including adjacent return loops)
+    const ensureClearOfAllWaypoints = (x: number, z: number, minExtraMargin: number): { x: number; z: number } => {
+      let curX = x;
+      let curZ = z;
+      for (let pass = 0; pass < 3; pass++) {
+        for (let k = 0; k < wpCount; k++) {
+          const wp = waypoints[k];
+          const dx = curX - wp.point.x;
+          const dz = curZ - wp.point.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          const req = wp.width * 0.5 + minExtraMargin;
+          if (dist < req) {
+            const nx = dist > 0.01 ? dx / dist : 1.0;
+            const nz = dist > 0.01 ? dz / dist : 0.0;
+            curX = wp.point.x + nx * (req + 1.0);
+            curZ = wp.point.z + nz * (req + 1.0);
+          }
+        }
+      }
+      return { x: curX, z: curZ };
     };
 
     let placedPines = 0;
@@ -318,8 +361,12 @@ export class EnvironmentGenerator {
     verandaArch.translate(0, 3.0, 8.4);
     const fretworkGeo = this.mergeGeometriesSimple([balustrade, verandaRoof, balconyRailing, verandaArch]);
 
+    const fretworkTex = this.createLaubzegaTexture();
     const fretworkMat = new THREE.MeshStandardMaterial({
       color: 0xf1f5f9, // Clean whitewashed pierced fretwork woodwork
+      map: fretworkTex,
+      alphaTest: 0.35,
+      side: THREE.DoubleSide,
       roughness: 0.55,
       flatShading: true,
     });
@@ -384,8 +431,11 @@ export class EnvironmentGenerator {
       const wp = waypoints[loc.wpIdx % wpCount];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
-      const posX = wp.point.x + normal.x * loc.dist * loc.side;
-      const posZ = wp.point.z + normal.z * loc.dist * loc.side;
+      const rawVillaX = wp.point.x + normal.x * loc.dist * loc.side;
+      const rawVillaZ = wp.point.z + normal.z * loc.dist * loc.side;
+      const safeVilla = ensureClearOfAllWaypoints(rawVillaX, rawVillaZ, 14.0);
+      const posX = safeVilla.x;
+      const posZ = safeVilla.z;
       const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ);
 
       dummy.position.set(posX, posY, posZ);
@@ -459,12 +509,15 @@ export class EnvironmentGenerator {
     for (let k = 10; k < wpCount - 10 && placedTires < tireStackCount; k += 3) {
       const wp = waypoints[k];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const halfW = wp.width * 0.5 + 2.8;
+      const halfW = wp.width * 0.5 + 4.2;
 
       // Place on outer runoff side
       const side = (k % 6 < 3) ? 1 : -1;
-      const posX = wp.point.x + norm.x * halfW * side;
-      const posZ = wp.point.z + norm.z * halfW * side;
+      const rawTireX = wp.point.x + norm.x * halfW * side;
+      const rawTireZ = wp.point.z + norm.z * halfW * side;
+      const safeTire = ensureClearOfAllWaypoints(rawTireX, rawTireZ, 4.0);
+      const posX = safeTire.x;
+      const posZ = safeTire.z;
       const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) + 0.02;
 
       dummy.position.set(posX, posY, posZ);
@@ -531,16 +584,35 @@ export class EnvironmentGenerator {
       hayInstanced.setColorAt(placedHay, hColor);
 
       if (envBody && rapierWorld) {
-        // Golden straw hay bale obstacle (box halfExtents 0.8m x (0.6 * scaleY) x 0.8m)
+        // Golden straw hay bale obstacle (sensor collider + destructible voxel cluster)
         const scaleY = 1.0 + (placedHay % 3) * 0.2;
         const q = dummy.quaternion;
         const baleCol = RAPIER.ColliderDesc.cuboid(0.8, 0.6 * scaleY, 0.8)
           .setTranslation(posX, posY + 0.6 * scaleY, posZ)
           .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setSensor(true)
           .setFriction(0.80)
           .setRestitution(0.12);
         rapierWorld.createCollider(baleCol, envBody);
       }
+
+      const baleAnchorId = nextGraphNodeId++;
+      const baleTopId = nextGraphNodeId++;
+      this.structuralGraph.addVoxel(baleAnchorId, new THREE.Vector3(posX, 0.2, posZ));
+      this.structuralGraph.addVoxel(baleTopId, new THREE.Vector3(posX, 0.9, posZ));
+      this.structuralGraph.addEdge(baleAnchorId, baleTopId);
+
+      this.destructibleProps.push({
+        type: 'hay',
+        mesh: hayInstanced,
+        instanceId: placedHay,
+        position: new THREE.Vector3(posX, posY + 0.5, posZ),
+        originalMatrix: dummy.matrix.clone(),
+        radius: 1.85,
+        colorHex: 0xeab308,
+        nodeId: baleAnchorId,
+        destroyed: false,
+      });
       placedHay++;
     }
     hayInstanced.instanceMatrix.needsUpdate = true;
@@ -586,7 +658,8 @@ export class EnvironmentGenerator {
 
       dummy.position.set(posX, posY, posZ);
       if (wp.tangent) {
-        dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+        const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        dummy.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       }
       dummy.scale.set(1.0, 1.0, 1.0);
       dummy.updateMatrix();
@@ -594,15 +667,34 @@ export class EnvironmentGenerator {
       fenceInstanced.setMatrixAt(placedFences, dummy.matrix);
 
       if (envBody && rapierWorld) {
-        // Rural split-rail timber fence section (halfExtents 0.15m x 0.65m x 1.9m)
+        // Rural split-rail timber fence section (sensor collider + destructible voxel cluster)
         const q = dummy.quaternion;
         const fenceCol = RAPIER.ColliderDesc.cuboid(0.15, 0.65, 1.9)
           .setTranslation(posX, posY + 0.65, posZ)
           .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setSensor(true)
           .setFriction(0.70)
           .setRestitution(0.05);
         rapierWorld.createCollider(fenceCol, envBody);
       }
+
+      const fenceAnchorId = nextGraphNodeId++;
+      const fenceRailId = nextGraphNodeId++;
+      this.structuralGraph.addVoxel(fenceAnchorId, new THREE.Vector3(posX, 0.2, posZ));
+      this.structuralGraph.addVoxel(fenceRailId, new THREE.Vector3(posX, 1.05, posZ));
+      this.structuralGraph.addEdge(fenceAnchorId, fenceRailId);
+
+      this.destructibleProps.push({
+        type: 'fence',
+        mesh: fenceInstanced,
+        instanceId: placedFences,
+        position: new THREE.Vector3(posX, posY + 0.6, posZ),
+        originalMatrix: dummy.matrix.clone(),
+        radius: 2.35,
+        colorHex: 0x785637,
+        nodeId: fenceAnchorId,
+        destroyed: false,
+      });
       placedFences++;
     }
     fenceInstanced.instanceMatrix.needsUpdate = true;
@@ -631,13 +723,17 @@ export class EnvironmentGenerator {
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
       const standGroup = new THREE.Group();
 
-      const posX = wp.point.x + norm.x * st.dist * st.side;
-      const posZ = wp.point.z + norm.z * st.dist * st.side;
+      const rawStandX = wp.point.x + norm.x * st.dist * st.side;
+      const rawStandZ = wp.point.z + norm.z * st.dist * st.side;
+      const safeStand = ensureClearOfAllWaypoints(rawStandX, rawStandZ, 11.0);
+      const posX = safeStand.x;
+      const posZ = safeStand.z;
       const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ);
       standGroup.position.set(posX, posY, posZ);
 
       if (wp.tangent) {
-        standGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+        const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        standGroup.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
         if (st.side === -1) standGroup.rotateY(Math.PI);
       }
 
@@ -813,8 +909,11 @@ export class EnvironmentGenerator {
       const wp = waypoints[sh.wpIdx];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
       const shGroup = new THREE.Group();
-      const shX = wp.point.x + norm.x * sh.dist * sh.side;
-      const shZ = wp.point.z + norm.z * sh.dist * sh.side;
+      const rawShX = wp.point.x + norm.x * sh.dist * sh.side;
+      const rawShZ = wp.point.z + norm.z * sh.dist * sh.side;
+      const safeSh = ensureClearOfAllWaypoints(rawShX, rawShZ, 10.0);
+      const shX = safeSh.x;
+      const shZ = safeSh.z;
       const shY = TrackMeshBuilder.getTerrainHeight(shX, shZ);
       shGroup.position.set(shX, shY, shZ);
 
@@ -866,8 +965,10 @@ export class EnvironmentGenerator {
 
     const villaSites = [
       { wpIdx: 35, dist: 34.0, side: 1, rotY: 0.2 },
+      { wpIdx: 65, dist: 36.0, side: 1, rotY: 1.4 },
       { wpIdx: 95, dist: 38.0, side: -1, rotY: Math.PI + 0.3 },
-      { wpIdx: 155, dist: 32.0, side: 1, rotY: -0.4 },
+      { wpIdx: 118, dist: 34.0, side: 1, rotY: -0.6 },
+      { wpIdx: 134, dist: 32.0, side: 1, rotY: -0.4 },
     ];
 
     for (const site of villaSites) {
@@ -875,8 +976,11 @@ export class EnvironmentGenerator {
         const wp = waypoints[site.wpIdx];
         const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
         const villaMesh = new THREE.Mesh(villaGeo, villaMat);
-        const vX = wp.point.x + norm.x * site.dist * site.side;
-        const vZ = wp.point.z + norm.z * site.dist * site.side;
+        const rawVX = wp.point.x + norm.x * site.dist * site.side;
+        const rawVZ = wp.point.z + norm.z * site.dist * site.side;
+        const safeV = ensureClearOfAllWaypoints(rawVX, rawVZ, 15.0);
+        const vX = safeV.x;
+        const vZ = safeV.z;
         const vY = TrackMeshBuilder.getTerrainHeight(vX, vZ);
         villaMesh.position.set(vX, vY, vZ);
         villaMesh.rotation.y = site.rotY;
@@ -899,8 +1003,88 @@ export class EnvironmentGenerator {
       }
     }
 
+    // -------------------------------------------------------------
+    // 11. SCENIC ŚWIDER RIVER TIMBER OVERLOOK PIER & BOARDWALK
+    // -------------------------------------------------------------
+    const pierWp = waypoints[56 % wpCount];
+    if (pierWp) {
+      const pierNorm = pierWp.normal ?? new THREE.Vector3(1, 0, 0);
+      const rawPierX = pierWp.point.x + pierNorm.x * 26.0;
+      const rawPierZ = pierWp.point.z + pierNorm.z * 26.0;
+      const safePier = ensureClearOfAllWaypoints(rawPierX, rawPierZ, 14.0);
+      const pierY = TrackMeshBuilder.getTerrainHeight(safePier.x, safePier.z);
+
+      const pierGroup = new THREE.Group();
+      pierGroup.position.set(safePier.x, pierY, safePier.z);
+      if (pierWp.tangent) {
+        pierGroup.rotation.y = Math.atan2(pierWp.tangent.x, pierWp.tangent.z);
+      }
+
+      const deckMesh = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.35, 16.0), fenceMat);
+      deckMesh.position.set(0, 1.1, 0);
+      deckMesh.castShadow = true;
+      deckMesh.receiveShadow = true;
+      pierGroup.add(deckMesh);
+
+      for (const px of [-3.8, 3.8]) {
+        const railMesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.95, 15.6), fretworkMat);
+        railMesh.position.set(px, 1.75, 0);
+        railMesh.castShadow = true;
+        pierGroup.add(railMesh);
+        for (let pz = -7.0; pz <= 7.0; pz += 3.5) {
+          const piling = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.6, 6), shrineWoodMat);
+          piling.position.set(px, 0.6, pz);
+          pierGroup.add(piling);
+        }
+      }
+      envGroup.add(pierGroup);
+    }
+
     scene.add(envGroup);
     return envGroup;
+  }
+
+  /**
+   * Generates a procedural Laubzega (pierced pine fretwork lace) texture with alpha cutouts
+   * for authentic Otwock/Świdermajer veranda balustrades and arches.
+   */
+  private static createLaubzegaTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.clearRect(0, 0, 128, 64);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, 128, 64);
+
+    // Carve pierced diamond and trefoil cutouts (transparent alpha)
+    ctx.globalCompositeOperation = 'destination-out';
+    for (let x = 8; x < 128; x += 16) {
+      // Center diamond cutout
+      ctx.beginPath();
+      ctx.moveTo(x, 16);
+      ctx.lineTo(x + 5, 32);
+      ctx.lineTo(x, 48);
+      ctx.lineTo(x - 5, 32);
+      ctx.closePath();
+      ctx.fill();
+
+      // Upper & lower trefoil eyelets
+      ctx.beginPath();
+      ctx.arc(x + 8, 18, 2.8, 0, Math.PI * 2);
+      ctx.arc(x + 8, 46, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(4, 1);
+    return tex;
   }
 
   public static turbineRotors: THREE.Group[] = [];
@@ -931,6 +1115,77 @@ export class EnvironmentGenerator {
     for (const fl of EnvironmentGenerator.flags) {
       fl.rotation.y = Math.sin(t * 4.5 + (fl.userData.phase || 0)) * 0.22;
     }
+  }
+
+  /**
+   * Evaluates vehicle impacts against destructible roadside fences and straw hay bales,
+   * collapsing voxel structural nodes, scattering 3D voxel splinters, and applying a light drag impulse.
+   */
+  public static updateDestructibles(vehicles: VehiclePhysics[], particleFX?: ParticleFX): void {
+    if (this.destructibleProps.length === 0) return;
+
+    let hayUpdated = false;
+    let fenceUpdated = false;
+    let hayMesh: THREE.InstancedMesh | null = null;
+    let fenceMesh: THREE.InstancedMesh | null = null;
+
+    for (let i = 0; i < this.destructibleProps.length; i++) {
+      const prop = this.destructibleProps[i];
+      if (prop.destroyed) continue;
+
+      for (let vIdx = 0; vIdx < vehicles.length; vIdx++) {
+        const v = vehicles[vIdx];
+        if (v.speedKmh < 8.0) continue;
+
+        const dx = v.position.x - prop.position.x;
+        const dz = v.position.z - prop.position.z;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < prop.radius * prop.radius) {
+          prop.destroyed = true;
+          prop.mesh.setMatrixAt(prop.instanceId, this._zeroMatrix);
+          if (prop.type === 'hay') {
+            hayUpdated = true;
+            hayMesh = prop.mesh;
+          } else {
+            fenceUpdated = true;
+            fenceMesh = prop.mesh;
+          }
+
+          this.structuralGraph.applyImpact(prop.position, prop.radius, v.velocity);
+          if (particleFX) {
+            particleFX.emitVoxelDebris(prop.position, v.velocity, 14, prop.colorHex);
+          }
+
+          // Apply slight momentum loss instead of stopping the car dead
+          const lv = v.rigidBody.linvel();
+          v.rigidBody.setLinvel(new RAPIER.Vector3(lv.x * 0.94, lv.y, lv.z * 0.94), true);
+          break;
+        }
+      }
+    }
+
+    if (hayUpdated && hayMesh) {
+      hayMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (fenceUpdated && fenceMesh) {
+      fenceMesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  public static resetDestructibles(): void {
+    let hayMesh: THREE.InstancedMesh | null = null;
+    let fenceMesh: THREE.InstancedMesh | null = null;
+
+    for (const prop of this.destructibleProps) {
+      if (prop.destroyed) {
+        prop.destroyed = false;
+        prop.mesh.setMatrixAt(prop.instanceId, prop.originalMatrix);
+        if (prop.type === 'hay') hayMesh = prop.mesh;
+        else fenceMesh = prop.mesh;
+      }
+    }
+    if (hayMesh) hayMesh.instanceMatrix.needsUpdate = true;
+    if (fenceMesh) fenceMesh.instanceMatrix.needsUpdate = true;
   }
 
   /**

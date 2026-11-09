@@ -65,4 +65,40 @@ export class PhysicsSyncSystem {
     VehicleTelemetry.lap[eid] = vehicle.currentLap;
     VehicleTelemetry.checkpoint[eid] = vehicle.currentCheckpointIndex;
   }
+
+  /**
+   * Resets both previous and current state buffer samples to avoid teleport interpolation streaks
+   */
+  public static resetVehicleBuffer(
+    eid: number,
+    pos: { x: number; y: number; z: number },
+    quat: { x: number; y: number; z: number; w: number }
+  ): void {
+    if (eid <= 0) return;
+
+    TwoSampleStateBuffer.prevPosX[eid] = pos.x;
+    TwoSampleStateBuffer.prevPosY[eid] = pos.y;
+    TwoSampleStateBuffer.prevPosZ[eid] = pos.z;
+    TwoSampleStateBuffer.currPosX[eid] = pos.x;
+    TwoSampleStateBuffer.currPosY[eid] = pos.y;
+    TwoSampleStateBuffer.currPosZ[eid] = pos.z;
+
+    TwoSampleStateBuffer.prevRotX[eid] = quat.x;
+    TwoSampleStateBuffer.prevRotY[eid] = quat.y;
+    TwoSampleStateBuffer.prevRotZ[eid] = quat.z;
+    TwoSampleStateBuffer.prevRotW[eid] = quat.w;
+    TwoSampleStateBuffer.currRotX[eid] = quat.x;
+    TwoSampleStateBuffer.currRotY[eid] = quat.y;
+    TwoSampleStateBuffer.currRotZ[eid] = quat.z;
+    TwoSampleStateBuffer.currRotW[eid] = quat.w;
+
+    Position.x[eid] = pos.x;
+    Position.y[eid] = pos.y;
+    Position.z[eid] = pos.z;
+
+    Rotation.x[eid] = quat.x;
+    Rotation.y[eid] = quat.y;
+    Rotation.z[eid] = quat.z;
+    Rotation.w[eid] = quat.w;
+  }
 }

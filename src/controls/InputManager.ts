@@ -5,6 +5,7 @@ export class InputManager {
 
   // Active keyboard state
   private keys: Record<string, boolean> = {};
+  private justPressedKeys: Set<string> = new Set();
 
   // Mobile DeviceOrientation (Gyroscope)
   public gyroActive = false;
@@ -53,12 +54,16 @@ export class InputManager {
 
   private setupKeyboardListeners(): void {
     window.addEventListener('keydown', (e) => {
+      if (!this.keys[e.code]) {
+        this.justPressedKeys.add(e.code);
+      }
       this.keys[e.code] = true;
       if (e.key) this.keys[e.key.toLowerCase()] = true;
     });
 
     window.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
+      this.justPressedKeys.delete(e.code);
       if (e.key) this.keys[e.key.toLowerCase()] = false;
     });
   }
@@ -112,21 +117,21 @@ export class InputManager {
   /**
    * Returns driving inputs for Single Player (or Player 1 in Split-Screen)
    */
-  public getPlayerInputs(): VehicleInputs {
+  public getPlayerInputs(allowArrowKeys = true): VehicleInputs {
     let throttle = 0;
     let brake = 0;
     let steer = 0;
     let handbrake = false;
     let clutch = false;
 
-    // Keyboard inputs (WASD or Arrow keys)
+    // Keyboard inputs (WASD, plus Arrow keys when not in split-screen mode)
     // Left steers left (-1.0 -> leftwards yaw towards -X), Right steers right (+1.0 -> rightwards yaw towards +X)
-    if (this.keys['KeyW'] || this.keys['ArrowUp'] || this.keys['w']) throttle = 1.0;
-    if (this.keys['KeyS'] || this.keys['ArrowDown'] || this.keys['s']) brake = 1.0;
-    if (this.keys['KeyA'] || this.keys['ArrowLeft'] || this.keys['a']) steer -= 1.0;
-    if (this.keys['KeyD'] || this.keys['ArrowRight'] || this.keys['d']) steer += 1.0;
+    if (this.keys['KeyW'] || (allowArrowKeys && this.keys['ArrowUp']) || this.keys['w']) throttle = 1.0;
+    if (this.keys['KeyS'] || (allowArrowKeys && this.keys['ArrowDown']) || this.keys['s']) brake = 1.0;
+    if (this.keys['KeyA'] || (allowArrowKeys && this.keys['ArrowLeft']) || this.keys['a']) steer -= 1.0;
+    if (this.keys['KeyD'] || (allowArrowKeys && this.keys['ArrowRight']) || this.keys['d']) steer += 1.0;
     if (this.keys['Space'] || this.keys[' ']) handbrake = true;
-    if (this.keys['KeyC'] || this.keys['c']) clutch = true;
+    if (this.keys['KeyC'] || this.keys['ShiftLeft'] || this.keys['c']) clutch = true;
 
     // Mobile Gyroscope tilt override
     if (this.gyroActive && Math.abs(this.filteredGamma) > 1.5) {
@@ -239,8 +244,11 @@ export class InputManager {
   }
 
   public isKeyJustPressed(code: string): boolean {
-    const isPressed = !!this.keys[code];
-    return isPressed;
+    if (this.justPressedKeys.has(code)) {
+      this.justPressedKeys.delete(code);
+      return true;
+    }
+    return false;
   }
 
   public isKeyPressed(code: string): boolean {

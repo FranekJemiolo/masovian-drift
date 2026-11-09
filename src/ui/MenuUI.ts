@@ -219,10 +219,39 @@ export class MenuUI {
 
           <div class="upgrade-card ${currentCar.upgrades.sandTires ? 'installed' : ''}">
             <h4>Mazovian Hybrid Sand Tires</h4>
-            <p>Increases lateral traction across Świder river dunes from 0.42 to 0.65.</p>
+            <p>Increases lateral traction across Świder river dunes from 0.44 to 0.68.</p>
             <button class="btn-buy-upgrade" data-upgrade="sandTires">
               ${currentCar.upgrades.sandTires ? 'INSTALLED' : 'BUY (3,200 PLN)'}
             </button>
+          </div>
+
+          <div class="upgrade-card ${currentCar.upgrades.sportSuspension ? 'installed' : ''}">
+            <h4>Sport Coilover Suspension</h4>
+            <p>Stiffens spring & damper rates by 20% for razor-sharp weight transfer response.</p>
+            <button class="btn-buy-upgrade" data-upgrade="sportSuspension">
+              ${currentCar.upgrades.sportSuspension ? 'INSTALLED' : 'BUY (4,200 PLN)'}
+            </button>
+          </div>
+        </div>
+
+        <div class="garage-section-title" style="margin-top: 14px;">DRIFT GEOMETRY & DIFFERENTIAL SETUP</div>
+        <div class="pause-settings-grid" style="padding: 8px 0;">
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>📐 STEERING ANGLE KIT (WISEFAB LOCK)</span>
+              <span id="val-steer-lock">${this.evolutionStore.getTuning(currentCar.id).steeringLockDeg}°</span>
+            </div>
+            <input type="range" id="slider-steer-lock" min="42" max="68" value="${this.evolutionStore.getTuning(currentCar.id).steeringLockDeg}" class="hud-slider" />
+          </div>
+          <div class="pause-setting-item">
+            <div class="setting-title-row">
+              <span>⚙️ REAR DIFFERENTIAL LOCK</span>
+            </div>
+            <div class="btn-group-toggle">
+              <button class="toggle-btn btn-diff-type ${this.evolutionStore.getTuning(currentCar.id).differentialType === 'open' ? 'active' : ''}" data-diff="open">OPEN</button>
+              <button class="toggle-btn btn-diff-type ${this.evolutionStore.getTuning(currentCar.id).differentialType === '1.5-way' ? 'active' : ''}" data-diff="1.5-way">1.5-WAY LSD</button>
+              <button class="toggle-btn btn-diff-type ${this.evolutionStore.getTuning(currentCar.id).differentialType === 'spool' ? 'active' : ''}" data-diff="spool">2-WAY SPOOL</button>
+            </div>
           </div>
         </div>
       </div>
@@ -257,8 +286,28 @@ export class MenuUI {
       btn.addEventListener('click', (e) => {
         const upType = (e.target as HTMLElement).getAttribute('data-upgrade') as any;
         if (upType) {
-          const res = this.evolutionStore.buyUpgrade(currentCar.id, upType);
-          alert(res.message);
+          this.evolutionStore.buyUpgrade(currentCar.id, upType);
+          modal.remove();
+          this.renderGarageModal();
+        }
+      });
+    });
+
+    const steerSlider = modal.querySelector('#slider-steer-lock') as HTMLInputElement | null;
+    const steerVal = modal.querySelector('#val-steer-lock');
+    steerSlider?.addEventListener('input', () => {
+      const deg = parseInt(steerSlider.value, 10);
+      if (steerVal) steerVal.textContent = `${deg}°`;
+      const curTuning = this.evolutionStore.getTuning(currentCar.id);
+      this.evolutionStore.setTuning(currentCar.id, { ...curTuning, steeringLockDeg: deg });
+    });
+
+    modal.querySelectorAll('.btn-diff-type').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const diff = (e.currentTarget as HTMLElement).getAttribute('data-diff') as 'open' | '1.5-way' | 'spool';
+        if (diff) {
+          const curTuning = this.evolutionStore.getTuning(currentCar.id);
+          this.evolutionStore.setTuning(currentCar.id, { ...curTuning, differentialType: diff });
           modal.remove();
           this.renderGarageModal();
         }
