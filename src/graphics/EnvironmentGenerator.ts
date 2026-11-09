@@ -85,18 +85,32 @@ export class EnvironmentGenerator {
     pineFoliageInstanced.castShadow = true;
     pineFoliageInstanced.receiveShadow = true;
 
-    // Rigorous clearance check against EVERY track waypoint:
-    // Guarantees zero trees spawn on or near the road surface or starting straight
+    // Helper: closest point on road segment k -> k+1
+    const closestPointOnRoadSegment = (x: number, z: number, k: number): { cx: number; cz: number; dist: number; halfW: number } => {
+      const wpA = waypoints[k];
+      const wpB = waypoints[(k + 1) % wpCount];
+      const ax = wpA.point.x;
+      const az = wpA.point.z;
+      const dx = wpB.point.x - ax;
+      const dz = wpB.point.z - az;
+      const lenSq = dx * dx + dz * dz;
+      const t = lenSq > 0.0001 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / lenSq)) : 0;
+      const cx = ax + t * dx;
+      const cz = az + t * dz;
+      const dist = Math.hypot(x - cx, z - cz);
+      const halfW = (wpA.width * (1 - t) + wpB.width * t) * 0.5;
+      return { cx, cz, dist, halfW };
+    };
+
+    // Rigorous clearance check against EVERY track road segment:
+    // Guarantees zero trees spawn on or near the road surface, curbs, shoulders, or starting straight
     const isPositionClearOfRoad = (x: number, z: number): boolean => {
       for (let k = 0; k < wpCount; k++) {
-        const wp = waypoints[k];
-        const dx = x - wp.point.x;
-        const dz = z - wp.point.z;
-        const distSq = dx * dx + dz * dz;
+        const seg = closestPointOnRoadSegment(x, z, k);
         // On starting straight (grid & launch area), enforce 25m clearance!
         const isStart = k < 18 || k > wpCount - 18;
-        const reqDist = isStart ? 25.0 : (wp.width * 0.5 + 5.2);
-        if (distSq < reqDist * reqDist) {
+        const reqDist = isStart ? 25.0 : (seg.halfW + 10.5);
+        if (seg.dist < reqDist) {
           return false;
         }
       }
@@ -109,16 +123,15 @@ export class EnvironmentGenerator {
       let curZ = z;
       for (let pass = 0; pass < 3; pass++) {
         for (let k = 0; k < wpCount; k++) {
-          const wp = waypoints[k];
-          const dx = curX - wp.point.x;
-          const dz = curZ - wp.point.z;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          const req = wp.width * 0.5 + minExtraMargin;
-          if (dist < req) {
-            const nx = dist > 0.01 ? dx / dist : 1.0;
-            const nz = dist > 0.01 ? dz / dist : 0.0;
-            curX = wp.point.x + nx * (req + 1.0);
-            curZ = wp.point.z + nz * (req + 1.0);
+          const seg = closestPointOnRoadSegment(curX, curZ, k);
+          const req = seg.halfW + minExtraMargin;
+          if (seg.dist < req) {
+            const dx = curX - seg.cx;
+            const dz = curZ - seg.cz;
+            const nx = seg.dist > 0.01 ? dx / seg.dist : 1.0;
+            const nz = seg.dist > 0.01 ? dz / seg.dist : 0.0;
+            curX = seg.cx + nx * (req + 0.8);
+            curZ = seg.cz + nz * (req + 0.8);
           }
         }
       }
@@ -127,14 +140,14 @@ export class EnvironmentGenerator {
 
     let placedPines = 0;
     let pineAttempts = 0;
-    while (placedPines < pineCount && pineAttempts < pineCount * 5) {
+    while (placedPines < pineCount && pineAttempts < pineCount * 10) {
       pineAttempts++;
       const wpIdx = Math.floor(rng.next() * wpCount);
       const wp = waypoints[wpIdx];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
       const isStartStraight = wpIdx < 18 || wpIdx > wpCount - 18;
-      const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 6.2);
+      const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 10.5);
       const side = rng.chance(0.5) ? -1 : 1;
       const distFromTrack = minClearance + rng.next() * 125.0;
       const alongOffset = (rng.next() - 0.5) * 16.0;
@@ -235,20 +248,20 @@ export class EnvironmentGenerator {
 
     let placedBirches = 0;
     let birchAttempts = 0;
-    while (placedBirches < birchCount && birchAttempts < birchCount * 4) {
+    while (placedBirches < birchCount && birchAttempts < birchCount * 10) {
       birchAttempts++;
       const wpIdx = Math.floor(rng.next() * wpCount);
       const wp = waypoints[wpIdx];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
 
       const isStartStraight = wpIdx < 18 || wpIdx > wpCount - 18;
-      const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 8.0);
+      const minClearance = isStartStraight ? 26.0 : (wp.width * 0.5 + 10.5);
       const side = rng.chance(0.5) ? -1 : 1;
       const distFromTrack = minClearance + rng.next() * 80.0;
 
       const posX = wp.point.x + normal.x * distFromTrack * side;
       const posZ = wp.point.z + normal.z * distFromTrack * side;
-      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) - 0.25;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints) - 0.25;
 
       if (!isPositionClearOfRoad(posX, posZ)) {
         continue;
@@ -404,7 +417,7 @@ export class EnvironmentGenerator {
     windowInstanced.receiveShadow = true;
 
     const villaLocations = [
-      { wpIdx: 6, dist: 35, side: 1, rot: 0.3 },     // Gurewicz Sanatorium villa
+      { wpIdx: 6, dist: 38, side: -1, rot: 0.3 },     // Gurewicz Sanatorium villa (East of main straight)
       { wpIdx: 18, dist: 38, side: -1, rot: -0.7 },
       { wpIdx: 30, dist: 34, side: 1, rot: 1.1 },
       { wpIdx: 42, dist: 36, side: -1, rot: -1.4 },
@@ -413,14 +426,14 @@ export class EnvironmentGenerator {
       { wpIdx: 78, dist: 36, side: -1, rot: -0.5 },
       { wpIdx: 90, dist: 38, side: 1, rot: -1.2 },
       { wpIdx: 102, dist: 32, side: -1, rot: 1.4 },
-      { wpIdx: 114, dist: 30, side: 1, rot: -0.6 },
+      { wpIdx: 114, dist: 36, side: -1, rot: -0.6 },
       { wpIdx: 126, dist: 36, side: -1, rot: 0.8 },
-      { wpIdx: 138, dist: 32, side: 1, rot: -0.3 },
-      { wpIdx: 14, dist: 55, side: 1, rot: 0.9 },
+      { wpIdx: 138, dist: 38, side: -1, rot: -0.3 },
+      { wpIdx: 14, dist: 55, side: -1, rot: 0.9 },
       { wpIdx: 38, dist: 58, side: -1, rot: -1.1 },
       { wpIdx: 62, dist: 50, side: 1, rot: 1.6 },
       { wpIdx: 86, dist: 54, side: -1, rot: 0.4 },
-      { wpIdx: 110, dist: 48, side: 1, rot: -1.8 },
+      { wpIdx: 110, dist: 48, side: -1, rot: -1.8 },
       { wpIdx: 122, dist: 52, side: -1, rot: 0.7 },
       { wpIdx: 26, dist: 46, side: -1, rot: -0.4 },
       { wpIdx: 74, dist: 50, side: 1, rot: 1.3 },
@@ -433,10 +446,10 @@ export class EnvironmentGenerator {
 
       const rawVillaX = wp.point.x + normal.x * loc.dist * loc.side;
       const rawVillaZ = wp.point.z + normal.z * loc.dist * loc.side;
-      const safeVilla = ensureClearOfAllWaypoints(rawVillaX, rawVillaZ, 14.0);
+      const safeVilla = ensureClearOfAllWaypoints(rawVillaX, rawVillaZ, 22.0);
       const posX = safeVilla.x;
       const posZ = safeVilla.z;
-      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ);
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints);
 
       dummy.position.set(posX, posY, posZ);
       dummy.rotation.set(0, loc.rot, 0);
@@ -509,16 +522,16 @@ export class EnvironmentGenerator {
     for (let k = 10; k < wpCount - 10 && placedTires < tireStackCount; k += 3) {
       const wp = waypoints[k];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const halfW = wp.width * 0.5 + 4.2;
+      const halfW = wp.width * 0.5 + 8.5;
 
       // Place on outer runoff side
       const side = (k % 6 < 3) ? 1 : -1;
       const rawTireX = wp.point.x + norm.x * halfW * side;
       const rawTireZ = wp.point.z + norm.z * halfW * side;
-      const safeTire = ensureClearOfAllWaypoints(rawTireX, rawTireZ, 4.0);
+      const safeTire = ensureClearOfAllWaypoints(rawTireX, rawTireZ, 8.2);
       const posX = safeTire.x;
       const posZ = safeTire.z;
-      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) + 0.02;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints) + 0.02;
 
       dummy.position.set(posX, posY, posZ);
       dummy.rotation.set(0, rng.next() * Math.PI * 2, 0);
@@ -568,11 +581,14 @@ export class EnvironmentGenerator {
       const wp = waypoints[k];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
       const side = (k % 8 < 4) ? -1 : 1;
-      const dist = wp.width * 0.5 + 3.8 + (k % 3) * 1.5;
+      const dist = wp.width * 0.5 + 5.6 + (k % 3) * 1.5;
 
-      const posX = wp.point.x + norm.x * dist * side;
-      const posZ = wp.point.z + norm.z * dist * side;
-      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) + 0.02;
+      const rawHayX = wp.point.x + norm.x * dist * side;
+      const rawHayZ = wp.point.z + norm.z * dist * side;
+      const safeHay = ensureClearOfAllWaypoints(rawHayX, rawHayZ, 5.5);
+      const posX = safeHay.x;
+      const posZ = safeHay.z;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints) + 0.02;
 
       dummy.position.set(posX, posY, posZ);
       dummy.rotation.set(0, rng.next() * Math.PI, 0);
@@ -608,7 +624,7 @@ export class EnvironmentGenerator {
         instanceId: placedHay,
         position: new THREE.Vector3(posX, posY + 0.5, posZ),
         originalMatrix: dummy.matrix.clone(),
-        radius: 1.85,
+        radius: 1.35,
         colorHex: 0xeab308,
         nodeId: baleAnchorId,
         destroyed: false,
@@ -649,12 +665,15 @@ export class EnvironmentGenerator {
 
       const wp = waypoints[k];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const dist = wp.width * 0.5 + 4.5;
+      const dist = wp.width * 0.5 + 6.0;
       const side = (k % 4 === 0) ? 1 : -1;
 
-      const posX = wp.point.x + norm.x * dist * side;
-      const posZ = wp.point.z + norm.z * dist * side;
-      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ) - 0.05;
+      const rawFenceX = wp.point.x + norm.x * dist * side;
+      const rawFenceZ = wp.point.z + norm.z * dist * side;
+      const safeFence = ensureClearOfAllWaypoints(rawFenceX, rawFenceZ, 5.8);
+      const posX = safeFence.x;
+      const posZ = safeFence.z;
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints) - 0.05;
 
       dummy.position.set(posX, posY, posZ);
       if (wp.tangent) {
@@ -690,7 +709,7 @@ export class EnvironmentGenerator {
         instanceId: placedFences,
         position: new THREE.Vector3(posX, posY + 0.6, posZ),
         originalMatrix: dummy.matrix.clone(),
-        radius: 2.35,
+        radius: 1.45,
         colorHex: 0x785637,
         nodeId: fenceAnchorId,
         destroyed: false,
@@ -705,12 +724,12 @@ export class EnvironmentGenerator {
     // 7. SPECTATOR PAVILIONS & CHEERING VOXEL FANS (8 Grandstands)
     // -------------------------------------------------------------
     const standLocations = [
-      { wpIdx: 2, side: 1, dist: 14.0 },  // Main straight spectator hub
+      { wpIdx: 2, side: -1, dist: 16.0 },  // Main straight spectator hub (East)
       { wpIdx: 12, side: -1, dist: 16.0 }, // Turn 1 braking zone
-      { wpIdx: 34, side: 1, dist: 15.0 },  // Lake curve arena
+      { wpIdx: 34, side: 1, dist: 16.0 },  // Lake curve arena
       { wpIdx: 68, side: -1, dist: 16.0 }, // Forest hairpin
-      { wpIdx: 98, side: 1, dist: 15.0 },  // High-speed S-bends
-      { wpIdx: 132, side: -1, dist: 14.0 }, // Final corner grandstand
+      { wpIdx: 98, side: 1, dist: 16.0 },  // High-speed S-bends
+      { wpIdx: 132, side: -1, dist: 16.0 }, // Final corner grandstand
     ];
 
     const standMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6, flatShading: true });
@@ -725,10 +744,10 @@ export class EnvironmentGenerator {
 
       const rawStandX = wp.point.x + norm.x * st.dist * st.side;
       const rawStandZ = wp.point.z + norm.z * st.dist * st.side;
-      const safeStand = ensureClearOfAllWaypoints(rawStandX, rawStandZ, 11.0);
+      const safeStand = ensureClearOfAllWaypoints(rawStandX, rawStandZ, 13.0);
       const posX = safeStand.x;
       const posZ = safeStand.z;
-      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ);
+      const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints);
       standGroup.position.set(posX, posY, posZ);
 
       if (wp.tangent) {
@@ -899,8 +918,8 @@ export class EnvironmentGenerator {
     // -------------------------------------------------------------
     const shrineLocations = [
       { wpIdx: 22, dist: 16.0, side: 1 },
-      { wpIdx: 82, dist: 15.0, side: -1 },
-      { wpIdx: 120, dist: 14.0, side: 1 },
+      { wpIdx: 82, dist: 16.0, side: -1 },
+      { wpIdx: 120, dist: 16.0, side: -1 },
     ];
     const shrineWoodMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.8, flatShading: true });
     const shrineRoofMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.6 });
@@ -911,10 +930,10 @@ export class EnvironmentGenerator {
       const shGroup = new THREE.Group();
       const rawShX = wp.point.x + norm.x * sh.dist * sh.side;
       const rawShZ = wp.point.z + norm.z * sh.dist * sh.side;
-      const safeSh = ensureClearOfAllWaypoints(rawShX, rawShZ, 10.0);
+      const safeSh = ensureClearOfAllWaypoints(rawShX, rawShZ, 12.0);
       const shX = safeSh.x;
       const shZ = safeSh.z;
-      const shY = TrackMeshBuilder.getTerrainHeight(shX, shZ);
+      const shY = TrackMeshBuilder.getTerrainHeight(shX, shZ, waypoints);
       shGroup.position.set(shX, shY, shZ);
 
       // Stone/Wood Column base
@@ -964,11 +983,11 @@ export class EnvironmentGenerator {
     });
 
     const villaSites = [
-      { wpIdx: 35, dist: 34.0, side: 1, rotY: 0.2 },
+      { wpIdx: 35, dist: 36.0, side: 1, rotY: 0.2 },
       { wpIdx: 65, dist: 36.0, side: 1, rotY: 1.4 },
       { wpIdx: 95, dist: 38.0, side: -1, rotY: Math.PI + 0.3 },
-      { wpIdx: 118, dist: 34.0, side: 1, rotY: -0.6 },
-      { wpIdx: 134, dist: 32.0, side: 1, rotY: -0.4 },
+      { wpIdx: 112, dist: 38.0, side: -1, rotY: -0.6 },
+      { wpIdx: 134, dist: 36.0, side: -1, rotY: -0.4 },
     ];
 
     for (const site of villaSites) {
@@ -978,10 +997,10 @@ export class EnvironmentGenerator {
         const villaMesh = new THREE.Mesh(villaGeo, villaMat);
         const rawVX = wp.point.x + norm.x * site.dist * site.side;
         const rawVZ = wp.point.z + norm.z * site.dist * site.side;
-        const safeV = ensureClearOfAllWaypoints(rawVX, rawVZ, 15.0);
+        const safeV = ensureClearOfAllWaypoints(rawVX, rawVZ, 22.0);
         const vX = safeV.x;
         const vZ = safeV.z;
-        const vY = TrackMeshBuilder.getTerrainHeight(vX, vZ);
+        const vY = TrackMeshBuilder.getTerrainHeight(vX, vZ, waypoints);
         villaMesh.position.set(vX, vY, vZ);
         villaMesh.rotation.y = site.rotY;
         villaMesh.scale.set(0.48, 0.48, 0.48);
@@ -1011,8 +1030,8 @@ export class EnvironmentGenerator {
       const pierNorm = pierWp.normal ?? new THREE.Vector3(1, 0, 0);
       const rawPierX = pierWp.point.x + pierNorm.x * 26.0;
       const rawPierZ = pierWp.point.z + pierNorm.z * 26.0;
-      const safePier = ensureClearOfAllWaypoints(rawPierX, rawPierZ, 14.0);
-      const pierY = TrackMeshBuilder.getTerrainHeight(safePier.x, safePier.z);
+      const safePier = ensureClearOfAllWaypoints(rawPierX, rawPierZ, 18.0);
+      const pierY = TrackMeshBuilder.getTerrainHeight(safePier.x, safePier.z, waypoints);
 
       const pierGroup = new THREE.Group();
       pierGroup.position.set(safePier.x, pierY, safePier.z);

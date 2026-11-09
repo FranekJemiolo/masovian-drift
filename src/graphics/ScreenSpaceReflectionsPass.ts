@@ -98,7 +98,7 @@ export class ScreenSpaceReflectionsPass {
           vec2 rayStep = vec2(0.0, uStepSize);
           vec2 rayUv = vUv + rayStep;
 
-          for (int i = 1; i <= 16; i++) {
+          for (int i = 1; i <= 6; i++) {
             if (rayUv.y > 0.98 || rayUv.y < 0.02) break;
 
             float sampleDepth = linearizeDepth(texture2D(tDepth, rayUv).r);
@@ -107,13 +107,13 @@ export class ScreenSpaceReflectionsPass {
             // Hit test: ray intersects an occluder
             if (depthDiff > 0.0005 && depthDiff < 0.045) {
               vec3 hitColor = texture2D(tDiffuse, rayUv).rgb;
-              float stepWeight = 1.0 - (float(i) / 16.0);
+              float stepWeight = 1.0 - (float(i) / 6.0);
               ssrColor += hitColor * stepWeight;
               totalWeight += stepWeight;
               break;
             }
 
-            rayUv += rayStep * (1.0 + float(i) * 0.08);
+            rayUv += rayStep * (1.0 + float(i) * 0.18);
           }
 
           if (totalWeight > 0.0) {

@@ -220,8 +220,25 @@ async function runFullCircuitTest() {
       let minHeightY = Infinity;
       let minUpY = 1.0;
       let maxSpeedKmh = 0;
+      let crashEventsOnRoad = 0;
+      const crashDetails = [];
+      let prevStepContacts = [];
       let totalFrames = 0;
       const maxFrames = 60 * 115; // Max 115 seconds simulated driving time
+
+      // Verify zero polygon rib crossings across all 140 waypoints (outer shoulder +-10.65m)
+      let minRibFwdProj = Infinity;
+      for (let i = 0; i < wpCount; i++) {
+        const w0 = waypoints[i];
+        const w1 = waypoints[(i + 1) % wpCount];
+        const dir = w1.point.clone().sub(w0.point).normalize();
+        for (const offset of [-10.65, 10.65]) {
+          const p0 = w0.point.clone().addScaledVector(w0.normal, offset);
+          const p1 = w1.point.clone().addScaledVector(w1.normal, offset);
+          const fwdProj = p1.sub(p0).dot(dir);
+          if (fwdProj < minRibFwdProj) minRibFwdProj = fwdProj;
+        }
+      }
 
       // Helper to compute smooth player steering/throttle/brake inputs to follow the road
       let playerTargetWp = 0;
@@ -259,35 +276,39 @@ async function runFullCircuitTest() {
         const speedSteerBoost = 1.0 / (1.0 - speedNorm * 0.62);
         const steer = Math.max(-1.0, Math.min(1.0, alpha * 1.65 * speedSteerBoost));
 
-        // Target speed based on upcoming spline curvature (up to 16 waypoints ahead)
+        // Target speed based on upcoming spline curvature (up to 18 waypoints ahead)
         let targetSpeed = waypoints[bestIdx].targetSpeedKmh;
-        for (let s = 1; s <= 16; s++) {
+        for (let s = 0; s <= 18; s++) {
+          const idxPrev = (bestIdx + s - 1 + wpCount) % wpCount;
           const idxA = (bestIdx + s) % wpCount;
           const idxB = (bestIdx + s + 1) % wpCount;
+          const wpPrev = waypoints[idxPrev];
           const wpA = waypoints[idxA];
           const wpB = waypoints[idxB];
+          const seg1 = wpA.point.clone().sub(wpPrev.point).normalize();
+          const seg2 = wpB.point.clone().sub(wpA.point).normalize();
           const chord = Math.max(1.0, wpA.point.distanceTo(wpB.point));
-          const dTheta = wpA.tangent.angleTo(wpB.tangent);
+          const dTheta = Math.max(seg1.angleTo(seg2), wpA.tangent.angleTo(wpB.tangent));
           const turnRadius = dTheta > 0.002 ? chord / dTheta : 9999;
-          const surfGrip = wpA.surface === 'sand' ? 0.85 : wpA.surface === 'gravel' ? 1.10 : 1.40;
+          const surfGrip = wpA.surface === 'sand' ? 0.52 : wpA.surface === 'gravel' ? 0.82 : 1.15;
           const cornerMaxKmh = Math.min(wpA.targetSpeedKmh, Math.sqrt(surfGrip * 9.81 * turnRadius) * 3.6);
-          const distAhead = s * 11.2;
-          const decel = 11.5;
+          const distAhead = s * 11.0;
+          const decel = 9.5;
           const vEntryMs = cornerMaxKmh / 3.6;
           const allowedNowKmh = Math.sqrt(vEntryMs * vEntryMs + 2 * decel * distAhead) * 3.6;
           if (allowedNowKmh < targetSpeed) {
             targetSpeed = allowedNowKmh;
           }
         }
-        targetSpeed = Math.max(58, Math.min(targetSpeed, 145));
+        targetSpeed = Math.max(46, Math.min(targetSpeed, 142));
 
         let throttle = 0.92;
         let brake = 0;
-        if (p.speedKmh > targetSpeed + 5) {
+        if (p.speedKmh > targetSpeed + 4) {
           throttle = 0;
-          brake = Math.min(0.95, (p.speedKmh - targetSpeed) / 18.0);
+          brake = Math.min(0.90, (p.speedKmh - targetSpeed) / 16.0);
         } else if (p.speedKmh > targetSpeed) {
-          throttle = 0.35;
+          throttle = 0.30;
         }
         if (Math.abs(p.slipAngle) > 0.13) {
           throttle = Math.min(throttle, 0.20);
@@ -325,6 +346,17 @@ async function runFullCircuitTest() {
         if (p.position.y < minHeightY) minHeightY = p.position.y;
         if (p.upVector.y < minUpY) minUpY = p.upVector.y;
         if (p.speedKmh > maxSpeedKmh) maxSpeedKmh = p.speedKmh;
+        if (p.justCrashed > 0) {
+          crashEventsOnRoad++;
+          const wpObj = waypoints[p.lastClosestWpIdx];
+          const centerOff = wpObj ? Math.hypot(p.position.x - wpObj.point.x, p.position.z - wpObj.point.z) : -1;
+          crashDetails.push({
+            frame: totalFrames,
+            wp: p.lastClosestWpIdx,
+            centerOff: Math.round(centerOff * 100) / 100,
+            pos: { x: Math.round(p.position.x * 10) / 10, y: Math.round(p.position.y * 100) / 100, z: Math.round(p.position.z * 10) / 10 },
+          });
+        }
       }
 
       gm.isPaused = false;
@@ -347,12 +379,22 @@ async function runFullCircuitTest() {
         minHeightY: Math.round(minHeightY * 100) / 100,
         minUpY: Math.round(minUpY * 100) / 100,
         maxSpeedKmh: Math.round(maxSpeedKmh * 10) / 10,
+        minRibFwdProj: Math.round(minRibFwdProj * 100) / 100,
+        crashEventsOnRoad,
+        crashDetails,
+        finalBodyDamage: Math.round(p.damage.bodyDamage * 1000) / 1000,
         displacedSandVolumeM3: Math.round(gm.terrainDeformation.totalDisplacedVolumeM3 * 1000) / 1000,
         aiProgress,
       };
     });
 
-    console.log('  ✓ Full-Circuit Driven Lap Result:', fullLapDriveResult);
+    console.log('  ✓ Full-Circuit Driven Lap Result:', JSON.stringify(fullLapDriveResult, null, 2));
+    if (fullLapDriveResult.minRibFwdProj <= 2.0) {
+      throw new Error(`Track polygon ribs crossed or folded! minRibFwdProj=${fullLapDriveResult.minRibFwdProj}m`);
+    }
+    if (fullLapDriveResult.crashEventsOnRoad > 0 || fullLapDriveResult.finalBodyDamage > 0) {
+      throw new Error(`Phantom collision detected while following road! crashEvents=${fullLapDriveResult.crashEventsOnRoad}, damage=${fullLapDriveResult.finalBodyDamage}`);
+    }
     if (!fullLapDriveResult.lapCompleted) {
       throw new Error(`Player car failed to complete full circuit lap within time limit: visited ${fullLapDriveResult.checkpointsVisited}/${fullLapDriveResult.totalCheckpoints} checkpoints, ${fullLapDriveResult.waypointsVisited}/140 waypoints`);
     }

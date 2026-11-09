@@ -79,10 +79,17 @@ export class TrackMeshBuilder {
       }
     }
 
-    // CARVE TRACK BED: near road, smoothly carve terrain below roadbed
-    if (minTrackDist < 26.0) {
-      const blend = minTrackDist / 26.0;
-      h = Math.min(h, closestWpY - 0.22) * (1.0 - blend) + h * blend;
+    // SMOOTH TRACK EMBANKMENT & BED: near road, both raise low terrain and carve high dunes
+    // so terrain always meets the road shoulder flush with zero cliff drop-offs or polygon pokethrough!
+    if (minTrackDist < 54.0) {
+      const targetBedY = closestWpY + TrackMeshBuilder.ROAD_ELEVATION - 0.28;
+      if (minTrackDist <= 22.0) {
+        h = targetBedY;
+      } else {
+        const t = (minTrackDist - 22.0) / 32.0;
+        const smoothBlend = t * t * (3.0 - 2.0 * t);
+        h = targetBedY * (1.0 - smoothBlend) + h * smoothBlend;
+      }
     }
 
     if (!isRiverBed && h < -0.35) {
@@ -175,10 +182,10 @@ export class TrackMeshBuilder {
       const vergeColorL = new THREE.Color(0xd97706); // #D97706 Fine sandy dune verge tone
       const vergeColorR = new THREE.Color(0xfbbf24); // #FBBF24 Sandy verge tone
 
-      const pVergeL = pt.clone().addScaledVector(normal, -(halfWidth + 1.2));
-      const pVergeR = pt.clone().addScaledVector(normal, halfWidth + 1.2);
-      const pLeft = pt.clone().addScaledVector(normal, -halfWidth);
-      const pRight = pt.clone().addScaledVector(normal, halfWidth);
+      const pVergeL = pt.clone().addScaledVector(normal, -halfWidth);
+      const pVergeR = pt.clone().addScaledVector(normal, halfWidth);
+      const pLeft = pt.clone().addScaledVector(normal, -(halfWidth * 0.86));
+      const pRight = pt.clone().addScaledVector(normal, halfWidth * 0.86);
       const pRaceL = pt.clone().addScaledVector(normal, -halfWidth * 0.45);
       const pRaceR = pt.clone().addScaledVector(normal, halfWidth * 0.45);
 
@@ -186,15 +193,15 @@ export class TrackMeshBuilder {
       const yRaceR = yRoad + bankOffsetRight * 0.45 + crown * 0.65;
       const yCenter = yRoad + crown;
 
-      // 7 Roadbed cross-section vertices
+      // 7 Roadbed cross-section vertices (terminating cleanly at +-halfWidth where curbsMesh begins, zero overlap!)
       const slicePts = [
-        { p: pVergeL, y: yLeft - 0.03, c: vergeColorL, u: 0.0 },
-        { p: pLeft, y: yLeft, c: baseColor, u: 0.1 },
+        { p: pVergeL, y: yLeft, c: vergeColorL, u: 0.0 },
+        { p: pLeft, y: yLeft + crown * 0.2, c: baseColor, u: 0.1 },
         { p: pRaceL, y: yRaceL, c: racingLineColor, u: 0.3 },
         { p: pt, y: yCenter, c: oxidizedCenter, u: 0.5 },
         { p: pRaceR, y: yRaceR, c: racingLineColor, u: 0.7 },
-        { p: pRight, y: yRight, c: baseColor, u: 0.9 },
-        { p: pVergeR, y: yRight - 0.03, c: vergeColorR, u: 1.0 },
+        { p: pRight, y: yRight + crown * 0.2, c: baseColor, u: 0.9 },
+        { p: pVergeR, y: yRight, c: vergeColorR, u: 1.0 },
       ];
 
       for (const sp of slicePts) {
@@ -251,17 +258,17 @@ export class TrackMeshBuilder {
       const yCurbRight = yRight + curbHeight;
 
       curbNodes.push({
-        pL: pLeft,
+        pL: pVergeL,
         cLO: cLeftOuter,
         sLB: sLeftBase,
-        pR: pRight,
+        pR: pVergeR,
         cRO: cRightOuter,
         sRB: sRightBase,
         yL: yLeft,
         ycL: yCurbLeft,
         yR: yRight,
         ycR: yCurbRight,
-        yBase: pt.y - 0.05,
+        yBase: yRoad - 0.08,
         isCorner,
       });
 
@@ -397,8 +404,8 @@ export class TrackMeshBuilder {
     curbsMesh.receiveShadow = true;
     trackGroup.add(curbsMesh);
 
-    // --- 4. Carved Terrain Heightfield (Guaranteed below road!) ---
-    const terrainGeo = new THREE.PlaneGeometry(1600, 1600, 80, 80);
+    // --- 4. Carved Terrain Heightfield (Guaranteed below road & smoothly banked!) ---
+    const terrainGeo = new THREE.PlaneGeometry(1600, 1600, 160, 160);
     terrainGeo.rotateX(-Math.PI / 2);
     const pos = terrainGeo.attributes.position;
     const terrainColors: number[] = [];
@@ -746,7 +753,7 @@ export class TrackMeshBuilder {
     for (let i = 18; i < 55; i += 2) {
       const wp = waypoints[i];
       const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const pos = wp.point.clone().addScaledVector(normal, -(wp.width * 0.5 + 2.2));
+      const pos = wp.point.clone().addScaledVector(normal, -(wp.width * 0.5 + 6.5));
 
       // Guardrail
       const rail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, 4.2), barrierMat);
@@ -790,12 +797,13 @@ export class TrackMeshBuilder {
     for (const bm of brakeMarkers) {
       const wp = waypoints[bm.wpIdx];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const bPos = wp.point.clone().addScaledVector(norm, -(wp.width * 0.5 + 3.2));
+      const bPos = wp.point.clone().addScaledVector(norm, -(wp.width * 0.5 + 4.8));
 
       const bMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.4, 2.2), boardMat);
       bMesh.position.set(bPos.x, wp.point.y + ROAD_ELEVATION + 0.9, bPos.z);
       if (wp.tangent) {
-        bMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+        const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        bMesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       }
       bMesh.castShadow = true;
       bMesh.receiveShadow = true;
@@ -805,7 +813,8 @@ export class TrackMeshBuilder {
       const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.3, 1.8), boardStripeMat);
       stripe.position.set(bPos.x, wp.point.y + ROAD_ELEVATION + 0.9, bPos.z);
       if (wp.tangent) {
-        stripe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp.tangent);
+        const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        stripe.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       }
       trackGroup.add(stripe);
     }
@@ -816,7 +825,7 @@ export class TrackMeshBuilder {
     for (const cIdx of chicaneWps) {
       const wp = waypoints[cIdx];
       const norm = wp.normal ?? new THREE.Vector3(1, 0, 0);
-      const hPos = wp.point.clone().addScaledVector(norm, wp.width * 0.5 + 2.4);
+      const hPos = wp.point.clone().addScaledVector(norm, wp.width * 0.5 + 5.8);
 
       const bale = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.4), hayMat);
       bale.position.set(hPos.x, wp.point.y + ROAD_ELEVATION + 0.55, hPos.z);

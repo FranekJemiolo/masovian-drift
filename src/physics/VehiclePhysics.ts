@@ -166,7 +166,7 @@ export class VehiclePhysics {
 
   // Collision damage accumulator
   private lastVelocity = new THREE.Vector3();
-  public spawnGraceTimer = 1.0;
+  public spawnGraceTimer = 0.10;
   private overrideInputs: VehicleInputs | null = null;
 
   constructor(
@@ -214,11 +214,11 @@ export class VehiclePhysics {
     this.rigidBody = world.createRigidBody(rbDesc);
 
     // Chassis collision box (raised clearance with rounded filleted edges so nose pitch dive and seams never snag)
-    const colDesc = RAPIER.ColliderDesc.roundCuboid(0.74, 0.16, 1.60, 0.06)
-      .setTranslation(0, 0.32, 0)
+    const colDesc = RAPIER.ColliderDesc.roundCuboid(0.66, 0.14, 1.38, 0.04)
+      .setTranslation(0, 0.50, 0)
       .setMass(this.specs.mass)
       .setFriction(0.0)
-      .setRestitution(0.05);
+      .setRestitution(0.02);
 
     this.position.copy(spawnPos);
     this.quaternion.copy(spawnQuat);
@@ -287,15 +287,16 @@ export class VehiclePhysics {
       this.stuckTimer = 0;
     }
 
-    // Detect impact shock & accumulate damage (horizontal only, with spawn grace period)
+    // Detect true external rigid-body contact shock & accumulate damage (horizontal only, with spawn grace period)
     if (this.spawnGraceTimer > 0) {
       this.spawnGraceTimer -= dt;
     }
     const accelVector = VehiclePhysics._vAccel.copy(this.velocity).sub(this.lastVelocity).divideScalar(dt);
-    const horizAccel = Math.hypot(accelVector.x, accelVector.z);
-    const impactG = horizAccel / 9.81;
-    if (this.spawnGraceTimer <= 0 && impactG > 14.0) {
-      const damageAmount = Math.min(0.25, (impactG - 14.0) * 0.015);
+    const horizContactG = Math.hypot(accelVector.x, accelVector.z) / 9.81;
+    const isContactDecel = (this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z) <
+                           (this.lastVelocity.x * this.lastVelocity.x + this.lastVelocity.z * this.lastVelocity.z) * 0.85;
+    if (this.spawnGraceTimer <= 0 && horizContactG > 14.0 && isContactDecel) {
+      const damageAmount = Math.min(0.25, (horizContactG - 14.0) * 0.015);
       this.damage.bodyDamage = Math.min(1.0, this.damage.bodyDamage + damageAmount);
       // Aerodynamic penalty increases with body crumpling
       this.damage.aerodynamicDragPenalty = 1.0 + this.damage.bodyDamage * 1.1; // up to 2.1x drag!
@@ -306,11 +307,10 @@ export class VehiclePhysics {
         -0.045,
         0.045
       );
-      this.justCrashed = Math.min(1.0, (impactG - 14.0) / 18.0);
+      this.justCrashed = Math.min(1.0, (horizContactG - 14.0) / 18.0);
     } else {
       this.justCrashed = 0;
     }
-    this.lastVelocity.copy(this.velocity);
 
     // 1b. FOUR-POINT RAYCAST VEHICLE SUSPENSION (Hovercraft Physics: F = -kx - cv)
     this.wheelGroundedCount = 0;
@@ -549,11 +549,11 @@ export class VehiclePhysics {
     this.slipAngle = rearSlipAngle;
 
     // Trail-Braking Oversteer:
-    // If braking into a turn, rearNormalN drops drastically (unloaded rear axle).
-    // The unloaded rear tires lose lateral capacity, causing the classic Boxer oversteer pendulum!
-    const isTrailBraking = inputs.brake > 0.2 && Math.abs(this.steerAngle) > 0.08;
+    // If braking hard into a turn, rearNormalN drops (unloaded rear axle) and progressive
+    // slip-ratio coupling reduces lateral rear capacity, initiating a controllable Boxer pendulum!
+    const isTrailBraking = inputs.brake > 0.45 && Math.abs(this.steerAngle) > 0.14;
     if (isTrailBraking) {
-      rearMaxGrip *= 0.65; // Massive lift-off / trail-braking oversteer!
+      rearMaxGrip *= Math.max(0.75, 1.0 - (inputs.brake - 0.45) * 0.40);
     }
 
     // Differential Lock Dynamics (V2 Garage Tuning: Open vs 1.5-Way vs 2-Way Spool)
@@ -839,6 +839,11 @@ export class VehiclePhysics {
       );
     }
 
+    // Record post-tire/suspension velocity right before world.step() so next frame's
+    // (velocity - lastVelocity) isolates external rigid-body collision impulses from tire forces!
+    const postTireLv = this.rigidBody.linvel();
+    this.lastVelocity.set(postTireLv.x, postTireLv.y, postTireLv.z);
+
     // 6. UPDATE 3D VISUALS (Chassis and Wheels)
     this.updateVisuals(inputs, dt);
   }
@@ -1073,6 +1078,8 @@ export class VehiclePhysics {
     this.flipTimer = 0;
     this.offTrackTimer = 0;
     this.stuckTimer = 0;
+    this.lastVelocity.set(0, 0, 0);
+    this.spawnGraceTimer = 0.10;
   }
 
   public getPosition(): THREE.Vector3 {

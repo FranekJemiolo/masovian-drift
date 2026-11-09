@@ -55,17 +55,17 @@ export class TrackWaypoints {
       // 7. Villa Veranda S-Bends (technical section through resort quarter)
       { x: -165, z: -130, y: 0.2, s: 'asphalt', w: 12, speed: 85 },
       { x: -130, z: -50, y: 0.3, s: 'asphalt', w: 12, speed: 90 },
-      { x: -140, z: 20, y: 0.5, s: 'asphalt', w: 12, speed: 85 },
-      { x: -110, z: 75, y: 0.5, s: 'asphalt', w: 13, speed: 90 },
+      { x: -140, z: 20, y: 0.5, s: 'asphalt', w: 12, speed: 80 },
+      { x: -110, z: 75, y: 0.5, s: 'asphalt', w: 13, speed: 66 },
 
       // 8. Hairpin looping back south to enter Main Straight smoothly
-      { x: -65, z: 85, y: 0.4, s: 'asphalt', w: 13, speed: 80 },
-      { x: -45, z: 35, y: 0.2, s: 'asphalt', w: 13, speed: 100 },
-      { x: -52, z: -25, y: 0.1, s: 'asphalt', w: 13, speed: 110 },
-      { x: -55, z: -90, y: 0.0, s: 'asphalt', w: 14, speed: 85 },
-      { x: -32, z: -135, y: 0.0, s: 'asphalt', w: 14, speed: 78 },
-      { x: -4, z: -105, y: 0.0, s: 'asphalt', w: 15, speed: 125 },
-      { x: 0, z: -72, y: 0.0, s: 'asphalt', w: 15, speed: 175 },
+      { x: -68, z: 78, y: 0.4, s: 'asphalt', w: 13, speed: 62 },
+      { x: -48, z: 32, y: 0.2, s: 'asphalt', w: 13, speed: 85 },
+      { x: -54, z: -25, y: 0.1, s: 'asphalt', w: 13, speed: 105 },
+      { x: -56, z: -82, y: 0.0, s: 'asphalt', w: 14, speed: 78 },
+      { x: -38, z: -124, y: 0.0, s: 'asphalt', w: 14, speed: 66 },
+      { x: -10, z: -116, y: 0.0, s: 'asphalt', w: 15, speed: 110 },
+      { x: 0, z: -80, y: 0.0, s: 'asphalt', w: 15, speed: 175 },
     ];
 
     // Build Catmull-Rom spline for super smooth high-density path
@@ -73,17 +73,25 @@ export class TrackWaypoints {
     const curve = new THREE.CatmullRomCurve3(points, true, 'centripetal');
 
     const totalSamples = 140;
+    const samplePoints: THREE.Vector3[] = [];
+    for (let i = 0; i < totalSamples; i++) {
+      samplePoints.push(curve.getPointAt(i / totalSamples));
+    }
+
     const waypoints: Waypoint[] = [];
 
     for (let i = 0; i < totalSamples; i++) {
-      const t = i / totalSamples;
-      const pt = curve.getPointAt(t);
-      const tangent = curve.getTangentAt(t).normalize();
+      const pt = samplePoints[i];
+      const prevPt = samplePoints[(i - 1 + totalSamples) % totalSamples];
+      const nextPt = samplePoints[(i + 1) % totalSamples];
+      const nextNextPt = samplePoints[(i + 2) % totalSamples];
+
+      // Smooth secant tangent prevents local derivative spikes and guarantees non-crossing cross-section ribs
+      const tangent = nextPt.clone().sub(prevPt).normalize();
       const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
       // Sample upcoming tangent to determine corner curvature and calculate authentic banking
-      const nextT = ((i + 1) % totalSamples) / totalSamples;
-      const nextTangent = curve.getTangentAt(nextT).normalize();
+      const nextTangent = nextNextPt.clone().sub(pt).normalize();
       const dCurv = tangent.x * nextTangent.z - tangent.z * nextTangent.x;
 
       // Maintain completely flat banking on main straight (start grid & sprint zone)

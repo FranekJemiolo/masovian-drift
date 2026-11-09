@@ -227,8 +227,13 @@ export class GameManager {
     this.riverMesh = trackData.riverMesh;
     this.grassMesh = trackData.grassMesh ?? null;
 
-    // Build World Physics Colliders (synchronizing with 3D terrainMesh)
-    this.physicsWorld.buildWorldColliders(this.waypoints, trackData.terrainMesh);
+    // Build World Physics Colliders (synchronizing with 3D roadMesh, curbsMesh & terrainMesh)
+    this.physicsWorld.buildWorldColliders(
+      this.waypoints,
+      trackData.terrainMesh,
+      trackData.roadMesh,
+      trackData.curbsMesh
+    );
 
     // Generate Forests & Villas with InstancedMesh & Solid Rapier Colliders (trees, barriers, bales, fences)
     EnvironmentGenerator.generateEnvironment(this.scene, this.waypoints, this.physicsWorld);
