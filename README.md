@@ -18,7 +18,9 @@
 
 | Main Menu & Garage | Starting Grid & Świdermajer Setting |
 | :---: | :---: |
-| <img src="docs/screenshots/menu.png" alt="Main Menu" width="450" /> | <img src="docs/screenshots/track_start.png" alt="Starting Grid" width="450" /> |
+| <img src="docs/screenshots/menu.png" alt="Main Menu" width="450" /> | <img src="docs/screenshots/circuit_1_start.png" alt="Starting Grid" width="450" /> |
+| **Świdermajer Villas Chicane** | **Świder Riverbank Hairpin** |
+| <img src="docs/screenshots/circuit_3_villa_chicane.png" alt="Świdermajer Villas Chicane" width="450" /> | <img src="docs/screenshots/circuit_4_river_hairpin.png" alt="Świder Riverbank Hairpin" width="450" /> |
 
 
 ---
@@ -72,6 +74,9 @@
 The repository features comprehensive automated regression suites:
 
 ```bash
+# Full-circuit 1.6 km E2E autonomous lap, checkpoint & terrain deformation verification
+node tests/full-circuit-e2e.mjs
+
 # Isolated Playwright smoke suite (all 7 sections: menu, garage, race, pause, split-screen, lobby, time-trial)
 npm test
 
@@ -103,10 +108,14 @@ node tests/unit-tests.mjs
 | <kbd>A</kbd> / <kbd>◀ Left</kbd> | Steer Left |
 | <kbd>D</kbd> / <kbd>▶ Right</kbd> | Steer Right |
 | <kbd>Space</kbd> | Handbrake (Induce Drift) |
-| <kbd>C</kbd> | Cycle Camera Mode |
-| <kbd>R</kbd> | Reset / Recover Car |
+| <kbd>C</kbd> | Clutch Kick (Spike Rear Wheel Torque) |
+| <kbd>V</kbd> | Cycle Camera Mode (Chase / Hood / Bumper / Drone) |
+| <kbd>R</kbd> | Temporal Rewind (Hold to Rewind up to 10s) |
+| <kbd>K</kbd> | Respawn at Last Checkpoint |
+| <kbd>T</kbd> | Toggle 4-Point Suspension & Tire Thermal Telemetry |
+| <kbd>P</kbd> | Toggle Free-Cam Photo Mode |
 | <kbd>M</kbd> | Toggle Audio Mute |
-| <kbd>P</kbd> | Pause Game |
+| <kbd>Esc</kbd> | Pause Game |
 
 ### Desktop (Split-Screen Duel)
 - **Player 1 (Left Screen)**: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> + <kbd>Space</kbd> (Handbrake)

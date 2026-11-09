@@ -1,5 +1,11 @@
 {
   "name": "masovian-drift",
+  "description": "Voxel Boxer: Masovian Drift — Procedural 3D voxel rally & drift simulator set in the Świdermajer pine valleys around Warsaw, powered by Three.js, Rapier3D WASM, Pacejka '94 tire physics, Web Audio synthesis, and serverless WebRTC P2P.",
+  "homepage": "https://franekjemiolo.github.io/masovian-drift/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FranekJemiolo/masovian-drift.git"
+  },
   "private": true,
   "version": "1.0.0",
   "type": "module",
