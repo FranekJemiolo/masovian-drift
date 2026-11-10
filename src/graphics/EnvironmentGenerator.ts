@@ -204,6 +204,8 @@ export class EnvironmentGenerator {
       placedPines++;
     }
 
+    trunkInstanced.count = placedPines;
+    pineFoliageInstanced.count = placedPines;
     trunkInstanced.instanceMatrix.needsUpdate = true;
     pineFoliageInstanced.instanceMatrix.needsUpdate = true;
     if (pineFoliageInstanced.instanceColor) pineFoliageInstanced.instanceColor.needsUpdate = true;
@@ -301,6 +303,8 @@ export class EnvironmentGenerator {
       placedBirches++;
     }
 
+    birchTrunkInstanced.count = placedBirches;
+    birchFoliageInstanced.count = placedBirches;
     birchTrunkInstanced.instanceMatrix.needsUpdate = true;
     birchFoliageInstanced.instanceMatrix.needsUpdate = true;
     if (birchFoliageInstanced.instanceColor) birchFoliageInstanced.instanceColor.needsUpdate = true;
@@ -510,7 +514,7 @@ export class EnvironmentGenerator {
     const tireStackGeo = this.mergeGeometriesSimple([tire1, tire2, tire3]);
 
     const tireStackMat = new THREE.MeshStandardMaterial({
-      color: 0xdc2626, // Vivid motorsport red
+      color: 0xffffff, // Base white so per-instance red/white colors render accurately
       roughness: 0.8,
       flatShading: true,
     });
@@ -556,6 +560,7 @@ export class EnvironmentGenerator {
       }
       placedTires++;
     }
+    tireStackInstanced.count = placedTires;
     tireStackInstanced.instanceMatrix.needsUpdate = true;
     if (tireStackInstanced.instanceColor) tireStackInstanced.instanceColor.needsUpdate = true;
     tireStackInstanced.computeBoundingSphere();
@@ -568,7 +573,7 @@ export class EnvironmentGenerator {
     const hayGeo = new THREE.BoxGeometry(1.6, 1.2, 1.6);
     hayGeo.translate(0, 0.6, 0);
     const hayMat = new THREE.MeshStandardMaterial({
-      color: 0xca8a04, // Warm Mazovian golden harvest straw
+      color: 0xffffff, // Let per-instance golden harvest straw colors shine accurately
       roughness: 0.95,
       flatShading: true,
     });
@@ -631,6 +636,7 @@ export class EnvironmentGenerator {
       });
       placedHay++;
     }
+    hayInstanced.count = placedHay;
     hayInstanced.instanceMatrix.needsUpdate = true;
     if (hayInstanced.instanceColor) hayInstanced.instanceColor.needsUpdate = true;
     hayInstanced.computeBoundingSphere();
@@ -640,14 +646,16 @@ export class EnvironmentGenerator {
     // 6. RURAL SPLIT-RAIL TIMBER FENCES (140 Fence Sections)
     // -------------------------------------------------------------
     const fenceCount = 140;
-    // Wooden post + two horizontal rails
-    const postBox = new THREE.BoxGeometry(0.18, 1.3, 0.18);
-    postBox.translate(0, 0.65, 0);
+    // Wooden end posts + two centered horizontal rails (aligned 1:1 with fenceCol half-extents 0.15 x 0.65 x 1.9)
+    const postBoxL = new THREE.BoxGeometry(0.18, 1.3, 0.18);
+    postBoxL.translate(0, 0.65, -1.81);
+    const postBoxR = new THREE.BoxGeometry(0.18, 1.3, 0.18);
+    postBoxR.translate(0, 0.65, 1.81);
     const railTop = new THREE.BoxGeometry(0.12, 0.14, 3.8);
-    railTop.translate(0, 1.05, 1.9);
+    railTop.translate(0, 1.05, 0);
     const railBottom = new THREE.BoxGeometry(0.12, 0.14, 3.8);
-    railBottom.translate(0, 0.55, 1.9);
-    const fenceSectionGeo = this.mergeGeometriesSimple([postBox, railTop, railBottom]);
+    railBottom.translate(0, 0.55, 0);
+    const fenceSectionGeo = this.mergeGeometriesSimple([postBoxL, postBoxR, railTop, railBottom]);
 
     const fenceMat = new THREE.MeshStandardMaterial({
       color: 0x785637, // Weathered pine timber
@@ -716,6 +724,7 @@ export class EnvironmentGenerator {
       });
       placedFences++;
     }
+    fenceInstanced.count = placedFences;
     fenceInstanced.instanceMatrix.needsUpdate = true;
     fenceInstanced.computeBoundingSphere();
     envGroup.add(fenceInstanced);
@@ -976,6 +985,7 @@ export class EnvironmentGenerator {
     );
 
     const villaGeo = SwidermajerVoxelBuilder.greedyMesh(villaVolume, 32, 24, 24);
+    villaGeo.translate(-16, 0, -12); // Center local X/Z around origin to align 1:1 with Rapier cuboid collider
     const villaMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.85,

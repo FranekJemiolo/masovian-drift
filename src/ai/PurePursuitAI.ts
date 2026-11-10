@@ -214,14 +214,14 @@ export class PurePursuitAI {
     let dRacing = 0;
     if (Math.abs(upcomingCurvature) > 0.05) {
       // Clip inside apex while keeping safe margin from inside kerbs/trees
-      dRacing = -Math.sign(upcomingCurvature) * Math.min(halfWidth * 0.32, Math.abs(upcomingCurvature) * 2.8);
+      dRacing = Math.sign(upcomingCurvature) * Math.min(halfWidth * 0.28, Math.abs(upcomingCurvature) * 2.5);
     }
     const candRacing = PurePursuitAI._candRacing.copy(basePoint).addScaledVector(lookNormal, dRacing);
 
     // Candidate 2: Defensive Inside Line (deny apex to trailing car)
     let dDefend = 0;
     if (Math.abs(upcomingCurvature) > 0.04) {
-      dDefend = -Math.sign(upcomingCurvature) * (halfWidth * 0.30);
+      dDefend = Math.sign(upcomingCurvature) * (halfWidth * 0.28);
     } else {
       dDefend = -0.8; // Hold inside lane on straight
     }
@@ -231,20 +231,19 @@ export class PurePursuitAI {
     let dOvertake = dRacing;
     let hasDraftCar = false;
     let closestAheadDist = Infinity;
-    let carAheadOffset = 0;
+    let blockingCar: VehiclePhysics | null = null;
 
     for (const other of otherVehicles) {
       if (other.id === this.vehicle.id) continue;
       const toOther = PurePursuitAI._toOther.copy(other.position).sub(pos);
-      const dist = toOther.length();
       const dotFwd = forward.dot(toOther);
       const dotRight = right.dot(toOther);
 
       // Check if car is ahead in longitudinal slipstream corridor
-      if (dotFwd > 1.5 && dotFwd < 16.0 && Math.abs(dotRight) < 3.2) {
+      if (dotFwd > 1.0 && dotFwd < 18.0 && Math.abs(dotRight) < 3.4) {
         if (dotFwd < closestAheadDist) {
           closestAheadDist = dotFwd;
-          carAheadOffset = dotRight;
+          blockingCar = other;
         }
         // Aerodynamic slipstream detection on straights
         if (Math.abs(dotRight) < 1.6 && Math.abs(upcomingCurvature) < 0.06) {
@@ -253,31 +252,54 @@ export class PurePursuitAI {
       }
     }
 
-    // If car ahead is blocking, switch to alternate lane
-    if (closestAheadDist < 14.0) {
-      const avoidSide = carAheadOffset > 0 ? -1 : 1;
-      dOvertake = THREE.MathUtils.clamp(carAheadOffset + avoidSide * 2.6, -(halfWidth - 1.2), halfWidth - 1.2);
+    // If car ahead is blocking, project its centerline offset onto lookNormal and pick clear passing lane
+    if (blockingCar && closestAheadDist < 16.0) {
+      let bestIdx = this.currentTargetIndex;
+      let bestD2 = Infinity;
+      for (let s = 0; s <= 4; s++) {
+        const idx = (this.currentTargetIndex + s) % count;
+        const d2 = blockingCar.position.distanceToSquared(this.waypoints[idx].point);
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          bestIdx = idx;
+        }
+      }
+      const bWp = this.waypoints[bestIdx];
+      const bNorm = bWp.normal ?? lookNormal;
+      const otherFrenetD = PurePursuitAI._toTargetWorld.copy(blockingCar.position).sub(bWp.point).dot(bNorm);
+      const avoidSide = otherFrenetD >= 0 ? -1 : 1;
+      dOvertake = THREE.MathUtils.clamp(otherFrenetD + avoidSide * 4.0, -(halfWidth - 1.4), halfWidth - 1.4);
     }
     const candOvertake = PurePursuitAI._candOvertake.copy(basePoint).addScaledVector(lookNormal, dOvertake);
 
     // Evaluate Trajectory Cost Function J(c)
     // J = w_collision * Penalty_collision + w_curv * Curvature + w_track * TrackBoundary
     let bestCand = candRacing;
-    let bestCost = Infinity;
 
-    const evaluateCandidate = (cand: THREE.Vector3, isDefensive: boolean, isOvertake: boolean): number => {
+    const evaluateCandidate = (cand: THREE.Vector3, _isDefensive: boolean, isOvertake: boolean): number => {
       let cost = 0;
-      // Curvature penalty
+      // Curvature / distance cost
       cost += Math.abs(cand.distanceTo(pos) - adaptiveLookahead) * 0.15;
 
-      // Opponent collision & spatial bubble penalties
+      // Trajectory-segment collision & spatial safety bubble penalties
+      const sx = cand.x - pos.x;
+      const sy = cand.y - pos.y;
+      const sz = cand.z - pos.z;
+      const segLen2 = sx * sx + sy * sy + sz * sz;
       for (const other of otherVehicles) {
         if (other.id === this.vehicle.id) continue;
-        const dOther = cand.distanceTo(other.position);
-        if (dOther < 4.2) {
-          cost += (4.2 - dOther) * 120.0; // Severe collision penalty
-        } else if (dOther < 7.0) {
-          cost += (7.0 - dOther) * 15.0; // Spatial safety bubble
+        const ox = other.position.x - pos.x;
+        const oy = other.position.y - pos.y;
+        const oz = other.position.z - pos.z;
+        const t = segLen2 > 1e-4 ? Math.max(0, Math.min(1, (ox * sx + oy * sy + oz * sz) / segLen2)) : 0;
+        const dx = ox - t * sx;
+        const dy = oy - t * sy;
+        const dz = oz - t * sz;
+        const dOther = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dOther < 3.8) {
+          cost += (3.8 - dOther) * 140.0; // Severe collision penalty
+        } else if (dOther < 6.0) {
+          cost += (6.0 - dOther) * 18.0; // Spatial safety bubble
         }
       }
 
@@ -291,7 +313,7 @@ export class PurePursuitAI {
       if (hasDraftCar && !isOvertake && Math.abs(upcomingCurvature) < 0.05) {
         cost -= 12.0; // Stay locked in slipstream tunnel
       }
-      if (isOvertake && closestAheadDist < 9.0) {
+      if (isOvertake && closestAheadDist < 12.0) {
         cost -= 18.0; // Aggressive passing incentive
       }
 
@@ -302,7 +324,7 @@ export class PurePursuitAI {
     const costDefend = evaluateCandidate(candDefend, true, false);
     const costOvertake = evaluateCandidate(candOvertake, false, true);
 
-    if (costOvertake < costRacing && costOvertake < costDefend && closestAheadDist < 12.0) {
+    if (costOvertake < costRacing && costOvertake < costDefend && closestAheadDist < 15.0) {
       bestCand = candOvertake;
     } else if (costDefend < costRacing && this.profile.aggression < 1.0) {
       bestCand = candDefend;
@@ -350,6 +372,24 @@ export class PurePursuitAI {
     // Tactical Slipstream boost on straights (reduced air drag in wake)
     if (hasDraftCar && Math.abs(upcomingCurvature) < 0.04) {
       adjustedTargetSpeed *= 1.05;
+    }
+
+    // Longitudinal gap control: never rear-end a slower car that overlaps our lane.
+    // Steering alone can't clear a car when side-by-side, so cap speed to keep a safe following gap.
+    if (blockingCar) {
+      const toBlock = PurePursuitAI._toOther.copy(blockingCar.position).sub(pos);
+      const gap = forward.dot(toBlock) - 2.8; // bumper-to-bumper (car length ~2.8m)
+      const lateral = Math.abs(right.dot(toBlock));
+      if (lateral < 2.4) {
+        const otherFwdKmh = Math.max(0, blockingCar.velocity.dot(forward)) * 3.6;
+        const desiredGap = 2.5 + speedMs * 0.30;
+        if (gap < desiredGap) {
+          const squeeze = (desiredGap - Math.max(0, gap)) * 6.0;
+          // Keep a creep speed while a gap remains so the bot can still steer out and pass a parked/slow car
+          const creepKmh = gap > 3.0 ? 22.0 : 0.0;
+          adjustedTargetSpeed = Math.min(adjustedTargetSpeed, Math.max(creepKmh, otherFwdKmh - squeeze));
+        }
+      }
     }
 
     // Predictive braking zone lookahead (up to 22 waypoints / ~95 meters)

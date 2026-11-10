@@ -74,78 +74,77 @@ export class PhysicsWorld {
     const westWall = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(-mapBounds, wallH * 0.5, 0));
     this.world.createCollider(RAPIER.ColliderDesc.cuboid(10, wallH * 0.5, 850), westWall);
 
-    // 3. Smooth convex road & shoulder support segments + exact visual-matched Armco guardrails
+    // 3. Watertight 3D convex road + curbstone prism segments (shared rib vertices: zero V-notch gaps or crossings!)
     const wpCount = waypoints.length;
-    const roadDepth = 5.0;
-    const halfDepth = roadDepth * 0.5;
+    const roadDepth = 3.2;
+    const borderRadius = 0.06;
 
     for (let i = 0; i < wpCount; i++) {
-      const wp = waypoints[i];
-      const nextWp = waypoints[(i + 1) % wpCount];
-      const midPoint = wp.point.clone().lerp(nextWp.point, 0.5);
-      const segmentLen = wp.point.distanceTo(nextWp.point);
+      const wp0 = waypoints[i];
+      const wp1 = waypoints[(i + 1) % wpCount];
+      const midPoint = wp0.point.clone().lerp(wp1.point, 0.5);
 
-      const segmentDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(
-        midPoint.x,
-        midPoint.y + TrackMeshBuilder.ROAD_ELEVATION - halfDepth + 0.02,
-        midPoint.z
+      const segmentBody = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed().setTranslation(midPoint.x, midPoint.y, midPoint.z)
       );
-      const segmentBody = this.world.createRigidBody(segmentDesc);
-
-      // Orient segment towards next waypoint with guaranteed upright orthonormal basis (right, up, dir)
-      // Note: Do NOT apply banking roll to wide ground/shoulder cuboids, as rolling a 22m-wide cuboid
-      // raises its outer wing by +1.6m on S-bends and creates sawtooth wall steps between segments!
-      const dir = nextWp.point.clone().sub(wp.point).normalize();
-      const worldUp = new THREE.Vector3(0, 1, 0);
-      const right = new THREE.Vector3().crossVectors(worldUp, dir).normalize();
-      const up = new THREE.Vector3().crossVectors(dir, right).normalize();
-      const matrix = new THREE.Matrix4().makeBasis(right, up, dir);
-      const quat = new THREE.Quaternion().setFromRotationMatrix(matrix);
-      segmentBody.setRotation(new RAPIER.Quaternion(quat.x, quat.y, quat.z, quat.w), true);
 
       let friction = 0.95;
-      if (wp.surface === 'gravel') friction = 0.75;
-      if (wp.surface === 'sand') friction = 0.45;
+      if (wp0.surface === 'gravel') friction = 0.75;
+      if (wp0.surface === 'sand') friction = 0.45;
 
-      let minOtherDist = Infinity;
-      for (let j = 0; j < wpCount; j++) {
-        const diff = Math.min(Math.abs(i - j), wpCount - Math.abs(i - j));
-        if (diff > 8) {
-          const d = wp.point.distanceTo(waypoints[j].point);
-          if (d < minOtherDist) minOtherDist = d;
-        }
+      const n0 = wp0.normal ?? new THREE.Vector3(1, 0, 0);
+      const n1 = wp1.normal ?? new THREE.Vector3(1, 0, 0);
+      const hw0 = wp0.width * 0.5 + 1.35 - borderRadius;
+      const hw1 = wp1.width * 0.5 + 1.35 - borderRadius;
+
+      const p0L = wp0.point.clone().addScaledVector(n0, -hw0).sub(midPoint);
+      const p0R = wp0.point.clone().addScaledVector(n0, hw0).sub(midPoint);
+      const p1R = wp1.point.clone().addScaledVector(n1, hw1).sub(midPoint);
+      const p1L = wp1.point.clone().addScaledVector(n1, -hw1).sub(midPoint);
+
+      const topY0 = (wp0.point.y - midPoint.y) + TrackMeshBuilder.ROAD_ELEVATION - borderRadius;
+      const topY1 = (wp1.point.y - midPoint.y) + TrackMeshBuilder.ROAD_ELEVATION - borderRadius;
+      const botY0 = topY0 - roadDepth;
+      const botY1 = topY1 - roadDepth;
+
+      const hullVerts = new Float32Array([
+        p0L.x, topY0, p0L.z,
+        p0R.x, topY0, p0R.z,
+        p1R.x, topY1, p1R.z,
+        p1L.x, topY1, p1L.z,
+        p0L.x, botY0, p0L.z,
+        p0R.x, botY0, p0R.z,
+        p1R.x, botY1, p1R.z,
+        p1L.x, botY1, p1L.z,
+      ]);
+
+      let surfaceColDesc = RAPIER.ColliderDesc.roundConvexHull(hullVerts, borderRadius);
+      if (!surfaceColDesc) {
+        // Fallback segment cuboid if degenerate
+        const segmentLen = wp0.point.distanceTo(wp1.point);
+        surfaceColDesc = RAPIER.ColliderDesc.roundCuboid(
+          Math.min(hw0, hw1),
+          1.0,
+          segmentLen * 0.5 + 0.35,
+          borderRadius
+        ).setTranslation(0, TrackMeshBuilder.ROAD_ELEVATION - 1.0 - borderRadius, 0);
       }
-      const roadHalfWidth = wp.width * 0.5 + 1.8;
-      // Keep segment cuboid width strictly below minimum turn radius (18.89m) so segments never fold or cross!
-      const shoulderHalfWidth = Math.max(
-        roadHalfWidth + 1.0,
-        Math.min(wp.width * 0.5 + 8.5, minOtherDist * 0.42)
-      );
-
-      // Single unified flush surface cuboid per segment (zero step between road and shoulder!)
-      const surfaceColDesc = RAPIER.ColliderDesc.roundCuboid(
-        shoulderHalfWidth,
-        halfDepth - 0.04,
-        segmentLen * 0.5 + 0.45,
-        0.04
-      )
-        .setFriction(friction)
-        .setRestitution(0.0);
+      surfaceColDesc.setFriction(friction).setRestitution(0.0);
       this.world.createCollider(surfaceColDesc, segmentBody);
 
       // 3c. Armco guardrail collider matching exact visual placement in TrackMeshBuilder (i = 18..54 step 2)
       if (i >= 18 && i < 55 && i % 2 === 0) {
-        const normal = wp.normal ?? new THREE.Vector3(1, 0, 0);
-        const railPos = wp.point.clone().addScaledVector(normal, -(wp.width * 0.5 + 6.5));
+        const normal = wp0.normal ?? new THREE.Vector3(1, 0, 0);
+        const railPos = wp0.point.clone().addScaledVector(normal, -(wp0.width * 0.5 + 6.5));
         const railBody = this.world.createRigidBody(
           RAPIER.RigidBodyDesc.fixed().setTranslation(
             railPos.x,
-            wp.point.y + TrackMeshBuilder.ROAD_ELEVATION + 0.45,
+            wp0.point.y + TrackMeshBuilder.ROAD_ELEVATION + 0.45,
             railPos.z
           )
         );
-        if (wp.tangent) {
-          const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        if (wp0.tangent) {
+          const yaw = Math.atan2(wp0.tangent.x, wp0.tangent.z);
           const rQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
           railBody.setRotation(new RAPIER.Quaternion(rQuat.x, rQuat.y, rQuat.z, rQuat.w), true);
         }

@@ -194,6 +194,7 @@ export class ParticleFX {
         opacity: 0,
       });
       this.skidDummy.position.set(0, -999, 0);
+      this.skidDummy.scale.set(0, 0, 0);
       this.skidDummy.updateMatrix();
       this.skidMesh.setMatrixAt(i, this.skidDummy.matrix);
     }
