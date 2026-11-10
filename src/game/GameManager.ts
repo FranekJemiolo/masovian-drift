@@ -848,10 +848,9 @@ export class GameManager {
 
           // AI Opponents (Pure Pursuit)
           for (const bot of this.aiBots) {
-            let botInputs = bot.update(dt, this.allVehicles);
-            if (isCountingDown) {
-              botInputs = { throttle: 0.25, brake: 0.0, steer: 0, handbrake: true };
-            }
+            const botInputs = isCountingDown
+              ? { throttle: 0.25, brake: 0.0, steer: 0, handbrake: true }
+              : bot.update(dt, this.allVehicles);
             bot.vehicle.updatePhysics(botInputs, dt, this.waypoints);
             if (isCountingDown) {
               bot.vehicle.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
