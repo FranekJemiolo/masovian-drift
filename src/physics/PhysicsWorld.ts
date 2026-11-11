@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { Waypoint } from './TrackWaypoints';
 import { TrackMeshBuilder } from '../graphics/TrackMeshBuilder';
+import { StaticObstacleRegistry } from './StaticObstacleRegistry';
 
 export class PhysicsWorld {
   public world!: RAPIER.World;
@@ -27,6 +28,7 @@ export class PhysicsWorld {
     curbsMesh?: THREE.Mesh
   ): void {
     if (!this.initialized) return;
+    StaticObstacleRegistry.clearSource('world');
 
     const addMeshTrimeshCollider = (mesh: THREE.Mesh | undefined, friction: number) => {
       if (!mesh || !mesh.geometry) return false;
@@ -132,27 +134,87 @@ export class PhysicsWorld {
       surfaceColDesc.setFriction(friction).setRestitution(0.0);
       this.world.createCollider(surfaceColDesc, segmentBody);
 
-      // 3c. Armco guardrail collider matching exact visual placement in TrackMeshBuilder (i = 18..54 step 2)
+      // 3c. Solid Metal Armco guardrail collider matching exact visual placement in TrackMeshBuilder (i = 18..54 step 2)
       if (i >= 18 && i < 55 && i % 2 === 0) {
         const normal = wp0.normal ?? new THREE.Vector3(1, 0, 0);
         const railPos = wp0.point.clone().addScaledVector(normal, -(wp0.width * 0.5 + 6.5));
-        const railBody = this.world.createRigidBody(
-          RAPIER.RigidBodyDesc.fixed().setTranslation(
-            railPos.x,
-            wp0.point.y + TrackMeshBuilder.ROAD_ELEVATION + 0.45,
-            railPos.z
-          )
-        );
-        if (wp0.tangent) {
-          const yaw = Math.atan2(wp0.tangent.x, wp0.tangent.z);
-          const rQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-          railBody.setRotation(new RAPIER.Quaternion(rQuat.x, rQuat.y, rQuat.z, rQuat.w), true);
+
+        // Verify barrier stays clear of every track loop segment (prevents blocking any return lane)
+        let minEdgeClearance = Infinity;
+        for (let k = 0; k < wpCount; k++) {
+          const wa = waypoints[k];
+          const wb = waypoints[(k + 1) % wpCount];
+          const dx = wb.point.x - wa.point.x;
+          const dz = wb.point.z - wa.point.z;
+          const l2 = dx * dx + dz * dz;
+          const t = l2 > 1e-4 ? Math.max(0, Math.min(1, ((railPos.x - wa.point.x) * dx + (railPos.z - wa.point.z) * dz) / l2)) : 0;
+          const cx = wa.point.x + t * dx;
+          const cz = wa.point.z + t * dz;
+          const segHalfW = (wa.width * (1 - t) + wb.width * t) * 0.5;
+          const edgeClearance = Math.hypot(railPos.x - cx, railPos.z - cz) - segHalfW;
+          if (edgeClearance < minEdgeClearance) minEdgeClearance = edgeClearance;
         }
-        const railColDesc = RAPIER.ColliderDesc.roundCuboid(0.14, 0.42, 2.05, 0.04)
-          .setSensor(true)
-          .setFriction(0.08)
-          .setRestitution(0.12);
-        this.world.createCollider(railColDesc, railBody);
+
+        if (minEdgeClearance > 3.5) {
+          const railBody = this.world.createRigidBody(
+            RAPIER.RigidBodyDesc.fixed().setTranslation(
+              railPos.x,
+              wp0.point.y + TrackMeshBuilder.ROAD_ELEVATION + 0.45,
+              railPos.z
+            )
+          );
+          if (wp0.tangent) {
+            const yaw = Math.atan2(wp0.tangent.x, wp0.tangent.z);
+            const rQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+            railBody.setRotation(new RAPIER.Quaternion(rQuat.x, rQuat.y, rQuat.z, rQuat.w), true);
+          }
+          // Solid metal Armco beam with low sliding friction & low restitution for clean glancing deflection
+          const railColDesc = RAPIER.ColliderDesc.roundCuboid(0.14, 0.42, 2.05, 0.04)
+            .setFriction(0.06)
+            .setRestitution(0.14);
+          this.world.createCollider(railColDesc, railBody);
+
+          // Register panel footprint along tangent for AI hazard avoidance
+          const tx = wp0.tangent ? wp0.tangent.x : 0;
+          const tz = wp0.tangent ? wp0.tangent.z : 1;
+          for (const span of [-1.35, 0, 1.35]) {
+            StaticObstacleRegistry.add({
+              x: railPos.x + tx * span,
+              z: railPos.z + tz * span,
+              radius: 0.45,
+              kind: 'armco',
+              source: 'world',
+            });
+          }
+        }
+      }
+    }
+
+    // 4. Start/Finish Motorsport Gantry Lattice Pillars (matched 1:1 with TrackMeshBuilder)
+    if (wpCount > 0) {
+      const startWp = waypoints[0];
+      const tangent = startWp.tangent ?? new THREE.Vector3(0, 0, 1);
+      const gantryPos = startWp.point.clone().addScaledVector(tangent, 38.0);
+      const gantryQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
+
+      for (const sideX of [-11.5, 11.5]) {
+        const localPillar = new THREE.Vector3(sideX, 5.25, 0).applyQuaternion(gantryQuat).add(gantryPos);
+        const pillarBody = this.world.createRigidBody(
+          RAPIER.RigidBodyDesc.fixed()
+            .setTranslation(localPillar.x, localPillar.y, localPillar.z)
+            .setRotation(new RAPIER.Quaternion(gantryQuat.x, gantryQuat.y, gantryQuat.z, gantryQuat.w))
+        );
+        this.world.createCollider(
+          RAPIER.ColliderDesc.cuboid(0.34, 5.25, 0.34).setFriction(0.35).setRestitution(0.12),
+          pillarBody
+        );
+        StaticObstacleRegistry.add({
+          x: localPillar.x,
+          z: localPillar.z,
+          radius: 0.65,
+          kind: 'gantry',
+          source: 'world',
+        });
       }
     }
     // Note: Environment obstacles (pine & birch trees, tire stacks, hay bales, fences,

@@ -8,6 +8,7 @@ import { TrackMeshBuilder } from './TrackMeshBuilder';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { VehiclePhysics } from '../physics/VehiclePhysics';
 import { ParticleFX } from './ParticleFX';
+import { StaticObstacleKind, StaticObstacleRegistry } from '../physics/StaticObstacleRegistry';
 
 export interface DestructibleProp {
   type: 'hay' | 'fence';
@@ -16,6 +17,7 @@ export interface DestructibleProp {
   position: THREE.Vector3;
   originalMatrix: THREE.Matrix4;
   radius: number;
+  yaw?: number;
   colorHex: number;
   nodeId: number;
   destroyed: boolean;
@@ -25,6 +27,7 @@ export class EnvironmentGenerator {
   public static destructibleProps: DestructibleProp[] = [];
   public static structuralGraph: VoxelStructuralGraph = new VoxelStructuralGraph();
   private static readonly _zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+  private static readonly _vFwd = new THREE.Vector3();
   /**
    * Procedurally generates dense pine forests, Mazovian birch groves,
    * tire barriers, hay bales, fences, and authentic Świdermajer wooden villas
@@ -42,6 +45,7 @@ export class EnvironmentGenerator {
     const dummy = new THREE.Object3D();
     this.destructibleProps = [];
     this.structuralGraph = new VoxelStructuralGraph();
+    StaticObstacleRegistry.clearSource('env');
     let nextGraphNodeId = 1;
 
     const rapierWorld = physicsWorld?.world;
@@ -138,6 +142,22 @@ export class EnvironmentGenerator {
       return { x: curX, z: curZ };
     };
 
+    const registerNearTrackObstacle = (
+      x: number,
+      z: number,
+      radius: number,
+      kind: StaticObstacleKind,
+      maxRoadMargin = 24.0
+    ): void => {
+      for (let k = 0; k < wpCount; k++) {
+        const seg = closestPointOnRoadSegment(x, z, k);
+        if (seg.dist <= seg.halfW + maxRoadMargin) {
+          StaticObstacleRegistry.add({ x, z, radius, kind, source: 'env' });
+          return;
+        }
+      }
+    };
+
     let placedPines = 0;
     let pineAttempts = 0;
     while (placedPines < pineCount && pineAttempts < pineCount * 10) {
@@ -192,6 +212,7 @@ export class EnvironmentGenerator {
           .setFriction(0.75)
           .setRestitution(0.08);
         rapierWorld.createCollider(treeCol, envBody);
+        registerNearTrackObstacle(posX, posZ, radius, 'tree');
       }
 
       // Deterministic color variation for organic Mazovian forest
@@ -292,6 +313,7 @@ export class EnvironmentGenerator {
           .setFriction(0.70)
           .setRestitution(0.08);
         rapierWorld.createCollider(birchCol, envBody);
+        registerNearTrackObstacle(posX, posZ, radius, 'tree');
       }
 
       const bCol = new THREE.Color().setHSL(
@@ -476,6 +498,7 @@ export class EnvironmentGenerator {
           .setFriction(0.65)
           .setRestitution(0.05);
         rapierWorld.createCollider(villaCol, envBody);
+        registerNearTrackObstacle(posX, posZ, 9.0, 'structure', 30.0);
       }
     }
 
@@ -557,6 +580,7 @@ export class EnvironmentGenerator {
           .setFriction(0.85)
           .setRestitution(0.28);
         rapierWorld.createCollider(tireCol, envBody);
+        registerNearTrackObstacle(posX, posZ, 0.62, 'tire');
       }
       placedTires++;
     }
@@ -684,9 +708,10 @@ export class EnvironmentGenerator {
       const posY = TrackMeshBuilder.getTerrainHeight(posX, posZ, waypoints) - 0.05;
 
       dummy.position.set(posX, posY, posZ);
+      let fenceYaw = 0;
       if (wp.tangent) {
-        const yaw = Math.atan2(wp.tangent.x, wp.tangent.z);
-        dummy.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        fenceYaw = Math.atan2(wp.tangent.x, wp.tangent.z);
+        dummy.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fenceYaw);
       }
       dummy.scale.set(1.0, 1.0, 1.0);
       dummy.updateMatrix();
@@ -717,7 +742,8 @@ export class EnvironmentGenerator {
         instanceId: placedFences,
         position: new THREE.Vector3(posX, posY + 0.6, posZ),
         originalMatrix: dummy.matrix.clone(),
-        radius: 1.45,
+        radius: 1.95,
+        yaw: fenceYaw,
         colorHex: 0x785637,
         nodeId: fenceAnchorId,
         destroyed: false,
@@ -842,6 +868,7 @@ export class EnvironmentGenerator {
           .setFriction(0.70)
           .setRestitution(0.05);
         rapierWorld.createCollider(standCol, envBody);
+        registerNearTrackObstacle(posX, posZ, 5.2, 'structure', 28.0);
       }
 
       envGroup.add(standGroup);
@@ -969,6 +996,7 @@ export class EnvironmentGenerator {
           .setFriction(0.60)
           .setRestitution(0.05);
         rapierWorld.createCollider(shrineCol, envBody);
+        registerNearTrackObstacle(shX, shZ, 0.65, 'structure');
       }
 
       envGroup.add(shGroup);
@@ -1026,6 +1054,7 @@ export class EnvironmentGenerator {
             .setFriction(0.65)
             .setRestitution(0.05);
           rapierWorld.createCollider(ssvdagCol, envBody);
+          registerNearTrackObstacle(vX, vZ, 8.6, 'structure', 30.0);
         }
 
         envGroup.add(villaMesh);
@@ -1164,12 +1193,54 @@ export class EnvironmentGenerator {
 
       for (let vIdx = 0; vIdx < vehicles.length; vIdx++) {
         const v = vehicles[vIdx];
-        if (v.speedKmh < 8.0) continue;
+        if (v.speedKmh < 5.0) continue;
+        if (Math.abs(v.position.y - prop.position.y) > 2.2) continue;
 
-        const dx = v.position.x - prop.position.x;
-        const dz = v.position.z - prop.position.z;
-        const distSq = dx * dx + dz * dz;
-        if (distSq < prop.radius * prop.radius) {
+        // Broad-phase check around vehicle length (~2.0m half-length + prop radius + 0.85m half-width)
+        const dxCenter = v.position.x - prop.position.x;
+        const dzCenter = v.position.z - prop.position.z;
+        const maxReach = prop.radius + 2.4;
+        if (dxCenter * dxCenter + dzCenter * dzCenter > maxReach * maxReach) continue;
+
+        const fwd = this._vFwd.set(0, 0, 1).applyQuaternion(v.quaternion);
+        const fLen = Math.hypot(fwd.x, fwd.z) || 1;
+        const fx = fwd.x / fLen;
+        const fz = fwd.z / fLen;
+
+        // Test 3 hull discs (front nose +1.35m, center 0m, rear bumper -1.35m) with car half-width ~0.84m
+        let hit = false;
+        const hullRadius = 0.84;
+        for (const sOff of [1.35, 0.0, -1.35]) {
+          const hx = v.position.x + fx * sOff;
+          const hz = v.position.z + fz * sOff;
+          if (prop.type === 'fence' && prop.yaw !== undefined) {
+            const relX = hx - prop.position.x;
+            const relZ = hz - prop.position.z;
+            const sinY = Math.sin(prop.yaw);
+            const cosY = Math.cos(prop.yaw);
+            // Local coordinates along fence bar (Z along rail length, X across thickness)
+            const localAlong = relX * sinY + relZ * cosY;
+            const localPerp = relX * cosY - relZ * sinY;
+            const clampedAlong = Math.max(-1.90, Math.min(1.90, localAlong));
+            const dPerp = Math.abs(localPerp);
+            const dAlong = localAlong - clampedAlong;
+            const dThick = Math.max(0, dPerp - 0.16);
+            if (dAlong * dAlong + dThick * dThick <= hullRadius * hullRadius) {
+              hit = true;
+              break;
+            }
+          } else {
+            const dx = hx - prop.position.x;
+            const dz = hz - prop.position.z;
+            const hitRad = hullRadius + 0.82; // matches 1.6m hay bale half-extent
+            if (dx * dx + dz * dz <= hitRad * hitRad) {
+              hit = true;
+              break;
+            }
+          }
+        }
+
+        if (hit) {
           prop.destroyed = true;
           prop.mesh.setMatrixAt(prop.instanceId, this._zeroMatrix);
           if (prop.type === 'hay') {
@@ -1185,9 +1256,10 @@ export class EnvironmentGenerator {
             particleFX.emitVoxelDebris(prop.position, v.velocity, 14, prop.colorHex);
           }
 
-          // Apply slight momentum loss instead of stopping the car dead
+          // Apply proportional slight momentum drag without dead-stopping the car
           const lv = v.rigidBody.linvel();
-          v.rigidBody.setLinvel(new RAPIER.Vector3(lv.x * 0.94, lv.y, lv.z * 0.94), true);
+          const dragKeep = prop.type === 'hay' ? 0.95 : 0.92;
+          v.rigidBody.setLinvel(new RAPIER.Vector3(lv.x * dragKeep, lv.y, lv.z * dragKeep), true);
           break;
         }
       }

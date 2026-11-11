@@ -15,6 +15,8 @@ import { TurboBlowOffSynth } from './audio/TurboBlowOffSynth';
 import { RadianceCascadesPass } from './graphics/RadianceCascadesPass';
 import { ScreenSpaceReflectionsPass } from './graphics/ScreenSpaceReflectionsPass';
 import { PhotoMode } from './ui/PhotoMode';
+import { EnvironmentGenerator } from './graphics/EnvironmentGenerator';
+import { StaticObstacleRegistry } from './physics/StaticObstacleRegistry';
 
 function bootstrap(): void {
   (window as any).THREE = THREE;
@@ -32,6 +34,8 @@ function bootstrap(): void {
   (window as any).RadianceCascadesPass = RadianceCascadesPass;
   (window as any).ScreenSpaceReflectionsPass = ScreenSpaceReflectionsPass;
   (window as any).PhotoMode = PhotoMode;
+  (window as any).EnvironmentGenerator = EnvironmentGenerator;
+  (window as any).StaticObstacleRegistry = StaticObstacleRegistry;
   if (!(window as any)._gameManager) {
     (window as any)._gameManager = new GameManager();
   }

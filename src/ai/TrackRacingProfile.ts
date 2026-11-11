@@ -1,5 +1,21 @@
 import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
+import { StaticObstacleKind, StaticObstacleRegistry } from '../physics/StaticObstacleRegistry';
+
+export interface FrenetStaticHazard {
+  s: number;
+  d: number;
+  radius: number;
+  kind: StaticObstacleKind;
+  wpIdx: number;
+}
+
+export interface NearbyStaticHazardSample {
+  deltaS: number;
+  d: number;
+  radius: number;
+  kind: StaticObstacleKind;
+}
 
 export interface TrackProjection {
   idx: number;        // Segment start waypoint index [0, count - 1]
@@ -42,6 +58,27 @@ export class TrackRacingProfile {
   public readonly raceKappa: Float64Array;
   public readonly raceRadius: Float64Array;
   public readonly centerRadius: Float64Array;
+
+  // Spatial bucketed cache of trackside static hazards projected into Frenet (s, d)
+  private _hazardBuckets: FrenetStaticHazard[][] = [];
+  private _syncedObstacleVersion = -1;
+  private readonly _hazardProj: TrackProjection = {
+    idx: 0,
+    closestIdx: 0,
+    t: 0,
+    s: 0,
+    d: 0,
+    halfWidth: 6.5,
+    surface: 'asphalt',
+    sinGrade: 0,
+    centerX: 0,
+    centerY: 0,
+    centerZ: 0,
+    normX: 1,
+    normZ: 0,
+    tangX: 0,
+    tangZ: 1,
+  };
 
   private static readonly _cache = new WeakMap<Waypoint[], TrackRacingProfile>();
 
@@ -403,6 +440,80 @@ export class TrackRacingProfile {
     if (d > L * 0.5) d -= L;
     if (d < -L * 0.5) d += L;
     return d;
+  }
+
+  private ensureHazardsSynced(): void {
+    const ver = StaticObstacleRegistry.version;
+    if (ver === this._syncedObstacleVersion) return;
+
+    const N = this.count;
+    if (this._hazardBuckets.length !== N) {
+      this._hazardBuckets = Array.from({ length: N }, () => []);
+    } else {
+      for (let i = 0; i < N; i++) {
+        this._hazardBuckets[i].length = 0;
+      }
+    }
+
+    if (N > 0) {
+      const obsList = StaticObstacleRegistry.obstacles;
+      const proj = this._hazardProj;
+      for (let i = 0; i < obsList.length; i++) {
+        const obs = obsList[i];
+        this.projectToTrack(obs.x, obs.z, -1, proj);
+        // Ignore obstacles far outside the recovery/off-track corridor
+        if (Math.abs(proj.d) > proj.halfWidth + obs.radius + 32.0) continue;
+        this._hazardBuckets[proj.closestIdx].push({
+          s: proj.s,
+          d: proj.d,
+          radius: obs.radius,
+          kind: obs.kind,
+          wpIdx: proj.closestIdx,
+        });
+      }
+    }
+
+    this._syncedObstacleVersion = ver;
+  }
+
+  /**
+   * Zero-allocation query of trackside static hazards near [sSelf + sMinDelta, sSelf + sMaxDelta].
+   * Populates pre-allocated `out` slots and returns the populated count.
+   */
+  public queryStaticHazardsNear(
+    sSelf: number,
+    closestIdxHint: number,
+    sMinDelta: number,
+    sMaxDelta: number,
+    maxAbsD: number,
+    out: NearbyStaticHazardSample[]
+  ): number {
+    if (this.count === 0) return 0;
+    this.ensureHazardsSynced();
+
+    const N = this.count;
+    const baseIdx = ((closestIdxHint % N) + N) % N;
+    const maxSlots = out.length;
+    let count = 0;
+
+    // Step across +/- 5 waypoint buckets (~75m each side) so segment length variations never clip hazards
+    for (let offset = -5; offset <= 5; offset++) {
+      const bIdx = (baseIdx + offset + N) % N;
+      const bucket = this._hazardBuckets[bIdx];
+      for (let j = 0; j < bucket.length; j++) {
+        const h = bucket[j];
+        if (Math.abs(h.d) > maxAbsD + h.radius) continue;
+        const deltaS = this.signedArcDelta(sSelf, h.s);
+        if (deltaS < sMinDelta || deltaS > sMaxDelta) continue;
+        if (count >= maxSlots) return count;
+        const slot = out[count++];
+        slot.deltaS = deltaS;
+        slot.d = h.d;
+        slot.radius = h.radius;
+        slot.kind = h.kind;
+      }
+    }
+    return count;
   }
 }
 

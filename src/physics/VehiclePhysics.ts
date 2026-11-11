@@ -60,7 +60,9 @@ export class VehiclePhysics {
   public driftScore = 0;
   private driftDuration = 0;
 
-  // Dynamic weight transfer state
+  // Dynamic weight transfer state & smoothed suspension G filters
+  private filteredLongAccel = 0;
+  private filteredLatAccel = 0;
   public weightTransfer: WeightTransferState = {
     frontLeftLoad: 0.20,
     frontRightLoad: 0.20,
@@ -155,6 +157,7 @@ export class VehiclePhysics {
   private static readonly _vRight = new THREE.Vector3();
   private static readonly _vUp = new THREE.Vector3();
   private static readonly _vAccel = new THREE.Vector3();
+  private static readonly _vTotalAccel = new THREE.Vector3();
   private static readonly _vForceWorld = new THREE.Vector3();
   private static readonly _vToCar = new THREE.Vector3();
   private static readonly _vWheelFwd = new THREE.Vector3();
@@ -164,8 +167,10 @@ export class VehiclePhysics {
   private static readonly _vRearLat = new THREE.Vector3();
   private static readonly _vFrontGuide = new THREE.Vector3();
 
-  // Collision damage accumulator
+  // Collision damage accumulator & previous-frame total velocity for dynamic weight transfer
   private lastVelocity = new THREE.Vector3();
+  private prevFrameVelocity = new THREE.Vector3();
+  private hasPrevFrameVelocity = false;
   public spawnGraceTimer = 0.10;
   private overrideInputs: VehicleInputs | null = null;
 
@@ -213,12 +218,13 @@ export class VehiclePhysics {
 
     this.rigidBody = world.createRigidBody(rbDesc);
 
-    // Chassis collision box (raised clearance with rounded filleted edges so nose pitch dive and seams never snag)
-    const colDesc = RAPIER.ColliderDesc.roundCuboid(0.66, 0.14, 1.38, 0.04)
-      .setTranslation(0, 0.50, 0)
+    // Chassis collision box matched closely to visual body width/length (1.58m x 3.80m)
+    // with +0.34m local / +0.426m road clearance and rounded filleted edges so pitch dive & seams never snag
+    const colDesc = RAPIER.ColliderDesc.roundCuboid(0.75, 0.17, 1.86, 0.04)
+      .setTranslation(0, 0.55, 0)
       .setMass(this.specs.mass)
-      .setFriction(0.0)
-      .setRestitution(0.02);
+      .setFriction(0.025)
+      .setRestitution(0.07);
 
     this.position.copy(spawnPos);
     this.quaternion.copy(spawnQuat);
@@ -295,7 +301,7 @@ export class VehiclePhysics {
     const horizContactG = Math.hypot(accelVector.x, accelVector.z) / 9.81;
     const isContactDecel = (this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z) <
                            (this.lastVelocity.x * this.lastVelocity.x + this.lastVelocity.z * this.lastVelocity.z) * 0.85;
-    if (this.spawnGraceTimer <= 0 && horizContactG > 14.0 && isContactDecel) {
+    if (this.spawnGraceTimer <= 0 && horizContactG > 14.0 && (isContactDecel || horizContactG > 20.0)) {
       const damageAmount = Math.min(0.25, (horizContactG - 14.0) * 0.015);
       this.damage.bodyDamage = Math.min(1.0, this.damage.bodyDamage + damageAmount);
       // Aerodynamic penalty increases with body crumpling
@@ -312,10 +318,19 @@ export class VehiclePhysics {
       this.justCrashed = 0;
     }
 
+    // Total frame-to-frame vehicle acceleration (tires + drivetrain + gravity + impacts)
+    // Used by Section 2 for longitudinal/lateral dynamic weight transfer and chassis roll/pitch
+    const totalAccel = this.hasPrevFrameVelocity
+      ? VehiclePhysics._vTotalAccel.copy(this.velocity).sub(this.prevFrameVelocity).divideScalar(dt)
+      : VehiclePhysics._vTotalAccel.set(0, 0, 0);
+    this.prevFrameVelocity.copy(this.velocity);
+    this.hasPrevFrameVelocity = true;
+
     // 1b. FOUR-POINT RAYCAST VEHICLE SUSPENSION (Hovercraft Physics: F = -kx - cv)
     this.wheelGroundedCount = 0;
     const chassisVel = this.velocity;
     const chassisAngVel = this.angularVelocity;
+    const groundRayFlags = RAPIER.QueryFilterFlags.EXCLUDE_SENSORS | RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC;
 
     for (let i = 0; i < 4; i++) {
       const isFront = i < 2;
@@ -331,7 +346,7 @@ export class VehiclePhysics {
         ray,
         this.suspensionMaxLen,
         false,
-        undefined,
+        groundRayFlags,
         undefined,
         undefined,
         this.rigidBody
@@ -377,7 +392,7 @@ export class VehiclePhysics {
         centerDownRay,
         15.0,
         false,
-        undefined,
+        groundRayFlags,
         undefined,
         undefined,
         this.rigidBody
@@ -467,24 +482,27 @@ export class VehiclePhysics {
     }
 
     // 2. DYNAMIC WEIGHT TRANSFER CALCULATIONS (Porsche Unleashed Inspiration)
-    // Longitudinal acceleration
-    const longAccel = accelVector.dot(forward);
-    // Lateral acceleration
-    const latAccel = accelVector.dot(right);
+    // Filter longitudinal & lateral G's through suspension compliance (~80ms) to avoid 1-frame bump/solver spikes
+    const maxWeightG = 2.4 * 9.81;
+    const rawLongAccel = THREE.MathUtils.clamp(totalAccel.dot(forward), -maxWeightG, maxWeightG);
+    const rawLatAccel = THREE.MathUtils.clamp(totalAccel.dot(right), -maxWeightG, maxWeightG);
+    const weightBlend = Math.min(1.0, dt * 12.0);
+    this.filteredLongAccel = THREE.MathUtils.lerp(this.filteredLongAccel, rawLongAccel, weightBlend);
+    this.filteredLatAccel = THREE.MathUtils.lerp(this.filteredLatAccel, rawLatAccel, weightBlend);
 
     // Static distribution: 40% Front, 60% Rear
     const staticFront = 0.40;
     const staticRear = 0.60;
 
     // Longitudinal weight transfer: dFz = (m * a_x * h_cog) / wheelbase
-    // Acceleration (longAccel > 0) transfers mass from front to rear!
-    // Braking (longAccel < 0) violently shifts weight to the front!
-    const weightShiftLong = (longAccel * this.cogHeight) / (this.wheelbase * 9.81);
-    const dynamicFrontBias = THREE.MathUtils.clamp(staticFront - weightShiftLong, 0.15, 0.85);
+    // Anti-dive / anti-squat rally suspension geometry keeps axle normal grip balance in [0.35, 0.49]
+    // while retaining full visual pitch dive/squat and crisp trail-brake rotation.
+    const weightShiftLong = (this.filteredLongAccel * this.cogHeight) / (this.wheelbase * 9.81);
+    const dynamicFrontBias = THREE.MathUtils.clamp(staticFront - weightShiftLong * 0.42, 0.35, 0.49);
     const dynamicRearBias = 1.0 - dynamicFrontBias;
 
     // Lateral weight transfer: dFz_lat = (m * a_y * h_cog) / trackWidth
-    const weightShiftLat = (latAccel * this.cogHeight) / (this.trackWidth * 9.81);
+    const weightShiftLat = (this.filteredLatAccel * this.cogHeight) / (this.trackWidth * 9.81);
 
     // Calculate individual wheel loads (relative to total mass)
     // Lateral weight shift transfers load to OUTSIDE tires during cornering:
@@ -549,11 +567,10 @@ export class VehiclePhysics {
     this.slipAngle = rearSlipAngle;
 
     // Trail-Braking Oversteer:
-    // If braking hard into a turn, rearNormalN drops (unloaded rear axle) and progressive
-    // slip-ratio coupling reduces lateral rear capacity, initiating a controllable Boxer pendulum!
-    const isTrailBraking = inputs.brake > 0.45 && Math.abs(this.steerAngle) > 0.14;
+    // Weight transfer already unloads the rear axle; progressive slip coupling adds subtle yaw bite on heavy late brakes
+    const isTrailBraking = inputs.brake > 0.50 && Math.abs(this.steerAngle) > 0.14;
     if (isTrailBraking) {
-      rearMaxGrip *= Math.max(0.75, 1.0 - (inputs.brake - 0.45) * 0.40);
+      rearMaxGrip *= Math.max(0.84, 1.0 - (inputs.brake - 0.50) * 0.28);
     }
 
     // Differential Lock Dynamics (V2 Garage Tuning: Open vs 1.5-Way vs 2-Way Spool)
@@ -1079,6 +1096,10 @@ export class VehiclePhysics {
     this.offTrackTimer = 0;
     this.stuckTimer = 0;
     this.lastVelocity.set(0, 0, 0);
+    this.prevFrameVelocity.set(0, 0, 0);
+    this.hasPrevFrameVelocity = false;
+    this.filteredLongAccel = 0;
+    this.filteredLatAccel = 0;
     this.spawnGraceTimer = 0.10;
   }
 
@@ -1117,6 +1138,10 @@ export class VehiclePhysics {
     this.stuckTimer = 0;
     this.currentSurface = 'asphalt';
     this.lastVelocity.set(0, 0, 0);
+    this.prevFrameVelocity.set(0, 0, 0);
+    this.hasPrevFrameVelocity = false;
+    this.filteredLongAccel = 0;
+    this.filteredLatAccel = 0;
     this.overrideInputs = null;
     this.lastClosestWpIdx = 0;
 
