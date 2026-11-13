@@ -266,6 +266,157 @@ body > canvas:not(#hud-minimap) {
   100% { transform: translateX(-50%) scale(1.08); opacity: 1; box-shadow: 0 0 50px rgba(239, 68, 68, 1); }
 }
 
+/* COLIN MCRAE RALLY CO-DRIVER PACENOTE CARD */
+.hud-pacenote {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-radius: 14px;
+  min-width: 215px;
+  border: 1.5px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.52);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.pacenote-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.72);
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+.pacenote-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pacenote-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pacenote-grade {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+  color: #38bdf8;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+}
+
+.pacenote-dir {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--text-main);
+}
+
+.pacenote-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pacenote-dist {
+  color: var(--text-muted);
+}
+
+.pacenote-alert {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+}
+
+.pacenote-guide-badge {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #34d399;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.pacenote-guide-badge.guide-off {
+  background: rgba(100, 116, 139, 0.22);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #94a3b8;
+}
+
+.hud-pacenote.grade-1 {
+  border-color: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 22px rgba(239, 68, 68, 0.42);
+}
+.hud-pacenote.grade-1 .pacenote-icon,
+.hud-pacenote.grade-1 .pacenote-grade {
+  color: #ef4444;
+  text-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+}
+
+.hud-pacenote.grade-2 {
+  border-color: rgba(249, 115, 22, 0.8);
+}
+.hud-pacenote.grade-2 .pacenote-icon,
+.hud-pacenote.grade-2 .pacenote-grade {
+  color: #f97316;
+  text-shadow: 0 0 10px rgba(249, 115, 22, 0.6);
+}
+
+.hud-pacenote.grade-3 {
+  border-color: rgba(250, 204, 21, 0.75);
+}
+.hud-pacenote.grade-3 .pacenote-icon,
+.hud-pacenote.grade-3 .pacenote-grade {
+  color: #facc15;
+  text-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+}
+
+.hud-pacenote.grade-4 {
+  border-color: rgba(163, 230, 53, 0.65);
+}
+.hud-pacenote.grade-4 .pacenote-icon,
+.hud-pacenote.grade-4 .pacenote-grade {
+  color: #a3e635;
+}
+
+.hud-pacenote.grade-5,
+.hud-pacenote.grade-6 {
+  border-color: rgba(34, 211, 238, 0.55);
+}
+.hud-pacenote.grade-5 .pacenote-icon,
+.hud-pacenote.grade-5 .pacenote-grade,
+.hud-pacenote.grade-6 .pacenote-icon,
+.hud-pacenote.grade-6 .pacenote-grade {
+  color: #22d3ee;
+}
+
+.hud-pacenote.brake-urgent {
+  animation: pacenoteBrakePulse 0.3s infinite alternate ease-in-out;
+}
+
+@keyframes pacenoteBrakePulse {
+  from { transform: scale(1.0); box-shadow: 0 0 16px rgba(239, 68, 68, 0.45); }
+  to { transform: scale(1.03); box-shadow: 0 0 28px rgba(239, 68, 68, 0.85); }
+}
+
 /* BOTTOM BAR (Strictly Pinned to Bottom Edge, U6 safe area insets) */
 .hud-bottom-bar {
   position: absolute;

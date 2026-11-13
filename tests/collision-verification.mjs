@@ -410,6 +410,126 @@ async function testCollisions() {
     }
     console.log(`  ✓ Car-to-car bumper contact stops cleanly at ${carBumperResult.minCarSeparationM}m center separation (3.80m visual body aligned)`);
 
+    // 8. Test River Overlook Pier, Chicane Hay Bale & Shallow Grazing Scrape Hygiene
+    const envAndScrapeResult = await page.evaluate(() => {
+      const gm = window._gameManager;
+      gm.isPaused = true;
+      const p = gm.playerVehicle;
+      const wp = gm.waypoints;
+      const world = gm.physicsWorld.world;
+      const THREE = window.THREE;
+      const track = gm.aiBots[0].getRacingLineProfile();
+      const dt = 1 / 60;
+
+      // 8A: Pier obstacle collider & StaticObstacleRegistry entry near wp[56]
+      const hazOut = Array.from({ length: 16 }, () => ({ s: 0, d: 0, deltaS: 0, radius: 0, kind: 'tree' }));
+      const hazCount = track.queryStaticHazardsNear(track.cumDist[56], 56, -24, 24, 48, hazOut);
+      let pierHaz = null;
+      for (let i = 0; i < hazCount; i++) {
+        if (hazOut[i].kind === 'structure' && hazOut[i].d > 12) {
+          pierHaz = { deltaS: hazOut[i].deltaS, d: hazOut[i].d, radius: hazOut[i].radius };
+          break;
+        }
+      }
+      let pierBlocked = false;
+      let pierDamage = 0;
+      let pierMinDist = Infinity;
+      if (pierHaz) {
+        const samp = { x: 0, y: 0, z: 0, normX: 1, normZ: 0, tangX: 0, tangZ: 1, halfWidth: 6.5, racingD: 0, surface: 'asphalt', sinGrade: 0, idx: 56 };
+        track.sampleAtArcDistance(track.cumDist[56] + pierHaz.deltaS, 56, samp);
+        const tgt = new THREE.Vector3(samp.x + samp.normX * pierHaz.d, wp[56].point.y, samp.z + samp.normZ * pierHaz.d);
+        const startPier = tgt.clone().addScaledVector(wp[56].normal, -14.0);
+        startPier.y = wp[56].point.y + 0.15;
+        const aimDir = tgt.clone().sub(startPier).setY(0).normalize();
+        const aimQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), aimDir);
+        p.reset(startPier, aimQ);
+        p.rigidBody.setLinvel({ x: aimDir.x * 20.0, y: 0, z: aimDir.z * 20.0 }, true);
+        p.lastVelocity.set(aimDir.x * 20.0, 0, aimDir.z * 20.0);
+        p.spawnGraceTimer = 0.05;
+        p.damage.bodyDamage = 0;
+        for (let f = 0; f < 45; f++) {
+          p.updatePhysics({ throttle: 0.6, brake: 0, steer: 0, handbrake: false }, dt, wp);
+          world.step();
+          p.syncFromRigidBody(dt);
+          const d = Math.hypot(p.position.x - tgt.x, p.position.z - tgt.z);
+          if (d < pierMinDist) pierMinDist = d;
+        }
+        pierDamage = +p.damage.bodyDamage.toFixed(3);
+        pierBlocked = pierDamage > 0 && pierMinDist > 2.0;
+      }
+
+      // 8B: Static chicane hay bale collider at wp[35] (width * 0.5 + 5.8)
+      const wp35 = wp[35];
+      const hayPos = wp35.point.clone().addScaledVector(wp35.normal, wp35.width * 0.5 + 5.8);
+      const startHay = hayPos.clone().addScaledVector(wp35.tangent, -8.5);
+      startHay.y = wp35.point.y + 0.55;
+      const hayDir = hayPos.clone().sub(startHay).setY(0).normalize();
+      const hayQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), hayDir);
+      p.reset(startHay, hayQ);
+      p.rigidBody.setLinvel({ x: hayDir.x * 16.0, y: 0, z: hayDir.z * 16.0 }, true);
+      p.lastVelocity.set(hayDir.x * 16.0, 0, hayDir.z * 16.0);
+      p.spawnGraceTimer = 0.05;
+      p.damage.bodyDamage = 0;
+      let hayMinDist = Infinity;
+      for (let f = 0; f < 40; f++) {
+        p.updatePhysics({ throttle: 0.5, brake: 0, steer: 0, handbrake: false }, dt, wp);
+        world.step();
+        p.syncFromRigidBody(dt);
+        const d = Math.hypot(p.position.x - hayPos.x, p.position.z - hayPos.z);
+        if (d < hayMinDist) hayMinDist = d;
+      }
+      const hayDamage = +p.damage.bodyDamage.toFixed(3);
+
+      // 8C: Shallow 5-deg Armco scrape should deflect smoothly without phantom high-G crash damage
+      const wp24 = wp[24];
+      const n24 = wp24.normal.clone();
+      const t24 = wp24.tangent.clone();
+      const railPos = wp24.point.clone().addScaledVector(n24, -(wp24.width * 0.5 + 6.5));
+      const scrapeStart = railPos.clone().addScaledVector(n24, 1.35).addScaledVector(t24, -2.0);
+      scrapeStart.y = wp24.point.y + 0.45;
+      const scrapeDir = t24.clone().addScaledVector(n24, -0.07).normalize();
+      const scrapeQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), scrapeDir);
+      p.reset(scrapeStart, scrapeQ);
+      p.rigidBody.setLinvel({ x: scrapeDir.x * 11.5, y: 0, z: scrapeDir.z * 11.5 }, true);
+      p.lastVelocity.set(scrapeDir.x * 11.5, 0, scrapeDir.z * 11.5);
+      p.spawnGraceTimer = 0.05;
+      p.damage.bodyDamage = 0;
+      let scrapeJustCrashedMax = 0;
+      for (let f = 0; f < 30; f++) {
+        p.updatePhysics({ throttle: 0.2, brake: 0, steer: 0, handbrake: false }, dt, wp);
+        world.step();
+        p.syncFromRigidBody(dt);
+        if (p.justCrashed > scrapeJustCrashedMax) scrapeJustCrashedMax = p.justCrashed;
+      }
+      const scrapeDamage = +p.damage.bodyDamage.toFixed(4);
+      const scrapeSpeedAfter = +p.speedKmh.toFixed(1);
+
+      gm.isPaused = false;
+      return {
+        pierHazFound: !!pierHaz,
+        pierBlocked,
+        pierMinDist: +pierMinDist.toFixed(2),
+        pierDamage,
+        hayMinDist: +hayMinDist.toFixed(2),
+        hayDamage,
+        scrapeDamage,
+        scrapeJustCrashedMax,
+        scrapeSpeedAfter,
+      };
+    });
+
+    console.log('8. Pier, Chicane Hay & Shallow Scrape Result:', envAndScrapeResult);
+    if (!envAndScrapeResult.pierHazFound || !envAndScrapeResult.pierBlocked) {
+      throw new Error(`River Overlook Pier collider/registry missing or phased through: ${JSON.stringify(envAndScrapeResult)}`);
+    }
+    if (envAndScrapeResult.hayMinDist < 1.2 || envAndScrapeResult.hayDamage <= 0) {
+      throw new Error(`Static chicane hay bale collider missing or phased through: ${JSON.stringify(envAndScrapeResult)}`);
+    }
+    if (envAndScrapeResult.scrapeDamage > 0 || envAndScrapeResult.scrapeJustCrashedMax > 0 || envAndScrapeResult.scrapeSpeedAfter < 30) {
+      throw new Error(`Shallow Armco grazing triggered overzealous crash/snag: ${JSON.stringify(envAndScrapeResult)}`);
+    }
+    console.log(`  ✓ Pier blocked (dist=${envAndScrapeResult.pierMinDist}m), chicane hay blocked (dist=${envAndScrapeResult.hayMinDist}m), shallow scrape clean (${envAndScrapeResult.scrapeSpeedAfter} km/h, 0 damage)`);
+
     console.log('===========================================================');
     console.log('✓ ALL COLLISION TESTS PASSED CLEANLY!');
     console.log('===========================================================');

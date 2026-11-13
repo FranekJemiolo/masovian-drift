@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Waypoint } from '../physics/TrackWaypoints';
 import { SpatialWaypointGrid } from '../physics/SpatialWaypointGrid';
 import { SurfaceNets } from '../voxel/SurfaceNets';
+import { TrackGuidance, TrackGuidanceBundle } from './TrackGuidance';
 
 export interface TrackMeshResult {
   trackGroup: THREE.Group;
@@ -13,6 +14,7 @@ export interface TrackMeshResult {
   grassMesh?: THREE.InstancedMesh;
   startFinishGantry: THREE.Group;
   checkpoints: { position: THREE.Vector3; index: number; radius: number }[];
+  guidance?: TrackGuidanceBundle;
 }
 
 export class TrackMeshBuilder {
@@ -1140,6 +1142,14 @@ export class TrackMeshBuilder {
       });
     }
 
+    // 14. CMR Corner Chevron Boards + NFS Holographic Corner Walls + Dynamic Racing Line
+    const guidance = TrackGuidance.build(
+      waypoints,
+      ROAD_ELEVATION,
+      (x, z) => TrackMeshBuilder.getTerrainHeight(x, z, waypoints, spatialGrid)
+    );
+    trackGroup.add(guidance.group);
+
     return {
       trackGroup,
       roadMesh,
@@ -1150,6 +1160,7 @@ export class TrackMeshBuilder {
       grassMesh,
       startFinishGantry: gantry,
       checkpoints,
+      guidance,
     };
   }
 }

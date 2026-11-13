@@ -298,10 +298,11 @@ export class VehiclePhysics {
       this.spawnGraceTimer -= dt;
     }
     const accelVector = VehiclePhysics._vAccel.copy(this.velocity).sub(this.lastVelocity).divideScalar(dt);
+    const horizDeltaV = Math.hypot(this.velocity.x - this.lastVelocity.x, this.velocity.z - this.lastVelocity.z);
     const horizContactG = Math.hypot(accelVector.x, accelVector.z) / 9.81;
     const isContactDecel = (this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z) <
                            (this.lastVelocity.x * this.lastVelocity.x + this.lastVelocity.z * this.lastVelocity.z) * 0.85;
-    if (this.spawnGraceTimer <= 0 && horizContactG > 14.0 && (isContactDecel || horizContactG > 20.0)) {
+    if (this.spawnGraceTimer <= 0 && horizContactG > 14.0 && horizDeltaV >= 2.65 && (isContactDecel || horizContactG > 20.0)) {
       const damageAmount = Math.min(0.25, (horizContactG - 14.0) * 0.015);
       this.damage.bodyDamage = Math.min(1.0, this.damage.bodyDamage + damageAmount);
       // Aerodynamic penalty increases with body crumpling
@@ -1074,6 +1075,8 @@ export class VehiclePhysics {
     );
     this.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
     this.rigidBody.setAngvel(new RAPIER.Vector3(0, 0, 0), true);
+    this.rigidBody.resetForces(true);
+    this.rigidBody.resetTorques(true);
 
     this.position.copy(targetPos);
     this.quaternion.copy(spawnQuat);
@@ -1092,9 +1095,11 @@ export class VehiclePhysics {
     this.isDrifting = false;
     this.isOffTrack = false;
     this.isOnKerb = false;
+    this.justCrashed = 0;
     this.flipTimer = 0;
     this.offTrackTimer = 0;
     this.stuckTimer = 0;
+    this.wheelCompressions.fill(0);
     this.lastVelocity.set(0, 0, 0);
     this.prevFrameVelocity.set(0, 0, 0);
     this.hasPrevFrameVelocity = false;
@@ -1130,6 +1135,7 @@ export class VehiclePhysics {
     this.currentLap = 1;
     this.currentCheckpointIndex = 0;
     this.currentLapTime = 0;
+    this.bestLapTime = Infinity;
     this.raceFinished = false;
     this.isOnKerb = false;
     this.isOffTrack = false;

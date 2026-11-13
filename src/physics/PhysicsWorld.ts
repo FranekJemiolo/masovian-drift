@@ -216,6 +216,30 @@ export class PhysicsWorld {
           source: 'world',
         });
       }
+
+      // 5. Static Chicane Apex Yellow Hay Bales (matched 1:1 with TrackMeshBuilder section 10)
+      const chicaneWps = [35, 36, 48, 49];
+      for (const cIdx of chicaneWps) {
+        if (cIdx >= wpCount) continue;
+        const cWp = waypoints[cIdx];
+        const cNorm = cWp.normal ?? new THREE.Vector3(1, 0, 0);
+        const hPos = cWp.point.clone().addScaledVector(cNorm, cWp.width * 0.5 + 5.8);
+        const hayGroundY = TrackMeshBuilder.getTerrainHeight(hPos.x, hPos.z, waypoints);
+        const hayBody = this.world.createRigidBody(
+          RAPIER.RigidBodyDesc.fixed().setTranslation(hPos.x, hayGroundY + 0.52, hPos.z)
+        );
+        this.world.createCollider(
+          RAPIER.ColliderDesc.cuboid(0.7, 0.55, 0.7).setFriction(0.65).setRestitution(0.08),
+          hayBody
+        );
+        StaticObstacleRegistry.add({
+          x: hPos.x,
+          z: hPos.z,
+          radius: 1.0,
+          kind: 'tire',
+          source: 'world',
+        });
+      }
     }
     // Note: Environment obstacles (pine & birch trees, tire stacks, hay bales, fences,
     // grandstands, shrines, and Świdermajer villas) are generated with exact matching transforms

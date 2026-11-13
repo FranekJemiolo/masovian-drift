@@ -490,15 +490,24 @@ export class EnvironmentGenerator {
       windowInstanced.setMatrixAt(k, dummy.matrix);
 
       if (envBody && rapierWorld) {
-        // Two-story Świdermajer villa solid obstacle
+        // Two-story Świdermajer villa solid obstacle + protruding Laubzega veranda porch
         const q = dummy.quaternion;
-        const villaCol = RAPIER.ColliderDesc.cuboid(8.0, 4.0, 6.0)
+        const villaCol = RAPIER.ColliderDesc.cuboid(7.2, 4.0, 5.1)
           .setTranslation(posX, posY + 4.0, posZ)
           .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
           .setFriction(0.65)
           .setRestitution(0.05);
         rapierWorld.createCollider(villaCol, envBody);
-        registerNearTrackObstacle(posX, posZ, 9.0, 'structure', 30.0);
+        registerNearTrackObstacle(posX, posZ, 7.8, 'structure', 30.0);
+
+        const porchOffset = new THREE.Vector3(0, 2.25, 6.75).applyQuaternion(q);
+        const porchCol = RAPIER.ColliderDesc.cuboid(6.8, 2.25, 1.75)
+          .setTranslation(posX + porchOffset.x, posY + porchOffset.y, posZ + porchOffset.z)
+          .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
+          .setFriction(0.65)
+          .setRestitution(0.05);
+        rapierWorld.createCollider(porchCol, envBody);
+        registerNearTrackObstacle(posX + porchOffset.x, posZ + porchOffset.z, 7.0, 'structure', 30.0);
       }
     }
 
@@ -860,10 +869,10 @@ export class EnvironmentGenerator {
       }
 
       if (envBody && rapierWorld) {
-        // Grandstand spectator pavilion solid seating tier
+        // Grandstand spectator pavilion solid tiered structure + canopy poles
         const q = standGroup.quaternion;
-        const standCol = RAPIER.ColliderDesc.cuboid(5.0, 0.8, 2.0)
-          .setTranslation(posX, posY + 0.8, posZ)
+        const standCol = RAPIER.ColliderDesc.cuboid(5.0, 2.1, 2.0)
+          .setTranslation(posX, posY + 2.1, posZ)
           .setRotation(new RAPIER.Quaternion(q.x, q.y, q.z, q.w))
           .setFriction(0.70)
           .setRestitution(0.05);
@@ -1093,6 +1102,42 @@ export class EnvironmentGenerator {
           const piling = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.6, 6), shrineWoodMat);
           piling.position.set(px, 0.6, pz);
           pierGroup.add(piling);
+
+          if (envBody && rapierWorld) {
+            const pOff = new THREE.Vector3(px, 0.6, pz).applyQuaternion(pierGroup.quaternion);
+            const pilingCol = RAPIER.ColliderDesc.cylinder(0.65, 0.18)
+              .setTranslation(safePier.x + pOff.x, pierY + pOff.y, safePier.z + pOff.z)
+              .setFriction(0.65)
+              .setRestitution(0.08);
+            rapierWorld.createCollider(pilingCol, envBody);
+          }
+        }
+      }
+
+      if (envBody && rapierWorld) {
+        const pq = pierGroup.quaternion;
+        const rq = new RAPIER.Quaternion(pq.x, pq.y, pq.z, pq.w);
+        const deckOff = new THREE.Vector3(0, 0.68, 0).applyQuaternion(pq);
+        const deckCol = RAPIER.ColliderDesc.cuboid(4.25, 0.60, 8.0)
+          .setTranslation(safePier.x + deckOff.x, pierY + deckOff.y, safePier.z + deckOff.z)
+          .setRotation(rq)
+          .setFriction(0.70)
+          .setRestitution(0.06);
+        rapierWorld.createCollider(deckCol, envBody);
+
+        for (const px of [-3.8, 3.8]) {
+          const railOff = new THREE.Vector3(px, 1.75, 0).applyQuaternion(pq);
+          const railCol = RAPIER.ColliderDesc.cuboid(0.09, 0.48, 7.8)
+            .setTranslation(safePier.x + railOff.x, pierY + railOff.y, safePier.z + railOff.z)
+            .setRotation(rq)
+            .setFriction(0.50)
+            .setRestitution(0.10);
+          rapierWorld.createCollider(railCol, envBody);
+        }
+
+        for (const hz of [-5.0, 0.0, 5.0]) {
+          const obsOff = new THREE.Vector3(0, 0, hz).applyQuaternion(pq);
+          registerNearTrackObstacle(safePier.x + obsOff.x, safePier.z + obsOff.z, 4.6, 'structure', 36.0);
         }
       }
       envGroup.add(pierGroup);

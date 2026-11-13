@@ -447,18 +447,19 @@ async function runAIRacingVerification() {
 
     const tomek = raceResult.bots.find((b) => b.name.includes('Tomek'));
     const kuba = raceResult.bots.find((b) => b.name.includes('Kuba'));
+    const ania = raceResult.bots.find((b) => b.name.includes('Ania'));
     const marek = raceResult.bots.find((b) => b.name.includes('Marek'));
     const zofia = raceResult.bots.find((b) => b.name.includes('Zofia'));
-    if (!tomek || !kuba || !marek || !zofia) {
+    if (!tomek || !kuba || !ania || !marek || !zofia) {
       throw new Error('Missing expected AI personalities in race result');
     }
-    if (Math.min(tomek.bestLap, kuba.bestLap) >= marek.bestLap) {
-      throw new Error(`Personality pace hierarchy inverted: Tomek=${tomek.bestLap}s, Kuba=${kuba.bestLap}s vs Marek=${marek.bestLap}s`);
+    if (Math.min(tomek.bestLap, kuba.bestLap) >= marek.bestLap || ania.bestLap >= marek.bestLap) {
+      throw new Error(`Personality pace hierarchy inverted: Tomek=${tomek.bestLap}s, Kuba=${kuba.bestLap}s, Ania=${ania.bestLap}s vs Marek=${marek.bestLap}s`);
     }
     if (zofia.driftSec < 0.5 || zofia.crashes > 0 || zofia.damage > 0) {
       throw new Error(`Zofia Drift failed clean controlled hairpin drift invariant: ${JSON.stringify(zofia)}`);
     }
-    console.log(`  ✓ Personality hierarchy (${Math.min(tomek.bestLap, kuba.bestLap)}s vs Marek ${marek.bestLap}s) & Zofia drift (${zofia.driftSec}s, 0 crashes) verified`);
+    console.log(`  ✓ Personality hierarchy (${tomek.bestLap}s / ${kuba.bestLap}s / Ania ${ania.bestLap}s vs Marek ${marek.bestLap}s) & Zofia drift (${zofia.driftSec}s, 0 crashes) verified`);
 
     // -------------------------------------------------------------------------
     // TEST 5: Moving Slow-Traffic Mid-Corner Overtake & Brake-Check Avoidance
@@ -668,6 +669,133 @@ async function runAIRacingVerification() {
       throw new Error(`Bot failed to rejoin road cleanly within 5s: ${JSON.stringify(hazardAvoidCheck)}`);
     }
     console.log(`  ✓ Off-track rejoin skirted real ${hazardAvoidCheck.scenario.hazardKind} hazard cleanly with 0 crashes & 0 damage`);
+
+    // -------------------------------------------------------------------------
+    // TEST 7: 2-Wide Pack Gap Split, Respawn State Hygiene & Near-Edge Save
+    // -------------------------------------------------------------------------
+    console.log('\n7. Verifying 2-wide pack split overtake, respawn AI state hygiene & near-edge save...');
+    const advancedAICheck = await page.evaluate(() => {
+      const gm = window._gameManager;
+      gm.restartRace();
+      gm.countdownRemaining = -1.2;
+      gm.isPaused = true;
+
+      const THREE = window.THREE;
+      const dt = 1 / 60;
+      const wp = gm.waypoints;
+      const world = gm.physicsWorld.world;
+      const botA = gm.aiBots[2]; // Tomek
+      const track = botA.getRacingLineProfile();
+      const parkOutOfWay = (v, idx) => {
+        const farWp = wp[100];
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), farWp.tangent);
+        v.reset(farWp.point.clone().addScaledVector(farWp.normal, idx * 4.0).add(new THREE.Vector3(0, 0.45, 0)), q);
+      };
+      parkOutOfWay(gm.aiBots[0].vehicle, 1);
+      parkOutOfWay(gm.aiBots[3].vehicle, 2);
+
+      // 7A: 2-wide slow pack ahead of Tomek on straightaway (wp[3]..wp[8])
+      const wp3 = wp[3];
+      const q3 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp3.tangent);
+      const blk1 = gm.aiBots[4].vehicle; // left lane (-4.1m)
+      const blk2 = gm.playerVehicle;     // right lane (+4.1m)
+      const p3Center = wp3.point.clone().add(new THREE.Vector3(0, 0.45, 0));
+      blk1.reset(p3Center.clone().addScaledVector(wp3.tangent, 24.0).addScaledVector(wp3.normal, -4.1), q3);
+      blk2.reset(p3Center.clone().addScaledVector(wp3.tangent, 27.0).addScaledVector(wp3.normal, 4.1), q3);
+      blk1.rigidBody.setLinvel({ x: wp3.tangent.x * 14.0, y: 0, z: wp3.tangent.z * 14.0 }, true);
+      blk2.rigidBody.setLinvel({ x: wp3.tangent.x * 14.0, y: 0, z: wp3.tangent.z * 14.0 }, true);
+
+      botA.reset();
+      botA.vehicle.reset(p3Center.clone().addScaledVector(wp3.tangent, 0.0), q3);
+      botA.vehicle.rigidBody.setLinvel({ x: wp3.tangent.x * 32.0, y: 0, z: wp3.tangent.z * 32.0 }, true);
+      botA.vehicle.lastVelocity.set(wp3.tangent.x * 32.0, 0, wp3.tangent.z * 32.0);
+      botA.vehicle.spawnGraceTimer = 0.05;
+      botA.setTargetIndex(3);
+
+      let twoWideCrashes = 0;
+      const projOut = { idx: 0, closestIdx: 0, t: 0, s: 0, d: 0, halfWidth: 6.5, surface: 'asphalt', sinGrade: 0, centerX: 0, centerY: 0, centerZ: 0, normX: 1, normZ: 0, tangX: 0, tangZ: 1 };
+      const projB1 = { ...projOut };
+      const projB2 = { ...projOut };
+      for (let f = 0; f < 60 * 3.0; f++) {
+        blk1.updatePhysics({ throttle: 0.30, brake: 0, steer: 0, handbrake: false }, dt, wp);
+        blk2.updatePhysics({ throttle: 0.30, brake: 0, steer: 0, handbrake: false }, dt, wp);
+        const inp = botA.update(dt, [botA.vehicle, blk1, blk2]);
+        botA.vehicle.updatePhysics(inp, dt, wp);
+        world.step();
+        blk1.syncFromRigidBody(dt);
+        blk2.syncFromRigidBody(dt);
+        botA.vehicle.syncFromRigidBody(dt);
+        if (botA.vehicle.justCrashed > 0 || blk1.justCrashed > 0 || blk2.justCrashed > 0) twoWideCrashes++;
+      }
+      track.projectToTrack(botA.vehicle.position.x, botA.vehicle.position.z, botA.currentTargetIndex, projOut);
+      track.projectToTrack(blk1.position.x, blk1.position.z, blk1.lastClosestWpIdx, projB1);
+      track.projectToTrack(blk2.position.x, blk2.position.z, blk2.lastClosestWpIdx, projB2);
+      const passedBoth = track.signedArcDelta(projB1.s, projOut.s) > 4.0 && track.signedArcDelta(projB2.s, projOut.s) > 4.0;
+
+      // 7B: Respawn AI state hygiene check on Ania (bots[1])
+      const aniaBot = gm.aiBots[1];
+      aniaBot.vehicle.currentCheckpointIndex = 2;
+      // Put Ania in reverse facing backwards off-line before checkpoint respawn
+      const wp20 = wp[20];
+      const backQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), wp20.tangent.clone().negate());
+      aniaBot.vehicle.reset(wp20.point.clone().addScaledVector(wp20.normal, -12.0).add(new THREE.Vector3(0, 0.45, 0)), backQ);
+      aniaBot.setTargetIndex(20);
+      for (let f = 0; f < 25; f++) {
+        aniaBot.update(dt, []);
+      }
+      gm.respawnVehicleAtCheckpoint(aniaBot.vehicle);
+      const afterRespawnInp = aniaBot.update(dt, []);
+
+      // 7C: Proactive near-edge outward-heading save check (85% width, angled ~26 deg explicitly outward at 72 km/h)
+      const edgeWp = wp[10];
+      const edgeVelDir = edgeWp.tangent.clone().multiplyScalar(Math.cos(0.45)).addScaledVector(edgeWp.normal, Math.sin(0.45)).normalize();
+      const edgeQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), edgeVelDir);
+      const edgeSpawn = edgeWp.point.clone().addScaledVector(edgeWp.normal, edgeWp.width * 0.425).add(new THREE.Vector3(0, 0.45, 0));
+      botA.reset();
+      botA.vehicle.reset(edgeSpawn, edgeQ);
+      botA.vehicle.rigidBody.setLinvel({ x: edgeVelDir.x * 20.0, y: 0, z: edgeVelDir.z * 20.0 }, true);
+      botA.vehicle.lastVelocity.set(edgeVelDir.x * 20.0, 0, edgeVelDir.z * 20.0);
+      botA.vehicle.spawnGraceTimer = 0.05;
+      botA.vehicle.damage.bodyDamage = 0;
+      botA.setTargetIndex(10);
+      let edgeCrashes = 0;
+      let edgeMaxAbsD = 0;
+      for (let f = 0; f < 240; f++) {
+        const inp = botA.update(dt, []);
+        botA.vehicle.updatePhysics(inp, dt, wp);
+        world.step();
+        botA.vehicle.syncFromRigidBody(dt);
+        if (botA.vehicle.justCrashed > 0) edgeCrashes++;
+        track.projectToTrack(botA.vehicle.position.x, botA.vehicle.position.z, botA.currentTargetIndex, projOut);
+        if (Math.abs(projOut.d) > edgeMaxAbsD) edgeMaxAbsD = Math.abs(projOut.d);
+      }
+
+      gm.isPaused = false;
+      return {
+        passedBoth,
+        twoWideCrashes,
+        tomekDamage: +botA.vehicle.damage.bodyDamage.toFixed(4),
+        afterRespawnThrottle: +afterRespawnInp.throttle.toFixed(2),
+        afterRespawnBrake: +afterRespawnInp.brake.toFixed(2),
+        afterRespawnAbsSteer: +Math.abs(afterRespawnInp.steer).toFixed(2),
+        edgeCrashes,
+        edgeMaxAbsD: +edgeMaxAbsD.toFixed(2),
+        edgeFinalAbsD: +Math.abs(projOut.d).toFixed(2),
+        edgeHalfWidth: +projOut.halfWidth.toFixed(2),
+      };
+    });
+
+    console.log('  Advanced AI guidance checks:', advancedAICheck);
+    if (!advancedAICheck.passedBoth || advancedAICheck.twoWideCrashes > 0 || advancedAICheck.tomekDamage > 0) {
+      throw new Error(`2-wide pack split overtake failed: ${JSON.stringify(advancedAICheck)}`);
+    }
+    if (advancedAICheck.afterRespawnThrottle < 0.7 || advancedAICheck.afterRespawnBrake > 0.1 || advancedAICheck.afterRespawnAbsSteer > 0.35) {
+      throw new Error(`Respawn AI state hygiene failed (stale steering/reverse): ${JSON.stringify(advancedAICheck)}`);
+    }
+    if (advancedAICheck.edgeCrashes > 0 || advancedAICheck.edgeFinalAbsD >= advancedAICheck.edgeHalfWidth) {
+      throw new Error(`Near-edge barrier-heading save failed: ${JSON.stringify(advancedAICheck)}`);
+    }
+    console.log('  ✓ 2-wide pack split overtake, clean checkpoint respawn state & near-edge save verified');
 
     if (consoleErrors.length > 0 || pageErrors.length > 0) {
       throw new Error(`Recorded ${consoleErrors.length} console errors and ${pageErrors.length} page errors`);

@@ -4,6 +4,8 @@ import { Waypoint } from '../physics/TrackWaypoints';
 import { CameraViewMode } from '../camera/FollowCamera';
 import { TandemJudgingScorecard } from '../game/TandemJudgingSystem';
 import { InputManager } from '../controls/InputManager';
+import { TrackRacingProfile } from '../ai/TrackRacingProfile';
+import { computeUpcomingPacenote, createTrackProjection, UpcomingPacenote } from '../graphics/TrackGuidance';
 
 export function getOrdinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -42,6 +44,18 @@ export class HUD {
   private damageEl!: HTMLElement;
   private biasTagEl!: HTMLElement;
   private gValEl!: HTMLElement;
+
+  // Rally Pacenotes Co-Driver Callout (Colin McRae Rally style)
+  private pacenoteEl!: HTMLElement;
+  private pacenoteIconEl!: HTMLElement;
+  private pacenoteGradeEl!: HTMLElement;
+  private pacenoteDirEl!: HTMLElement;
+  private pacenoteDistEl!: HTMLElement;
+  private pacenoteAlertEl!: HTMLElement;
+  private guideBadgeEl!: HTMLElement;
+  private _lastPacenoteKey = '';
+  private _activePacenote: UpcomingPacenote | null = null;
+  private readonly _projScratch = createTrackProjection();
 
   // Ergonomics & Telemetry Polish (Section 4.1)
   public vehicleSpeedKmh = 0;
@@ -143,6 +157,22 @@ export class HUD {
           </div>
         </div>
 
+        <!-- COLIN MCRAE RALLY CO-DRIVER PACENOTE CALLOUT -->
+        <div id="hud-pacenote" class="hud-pacenote hud-glass grade-flat">
+          <div id="hud-pacenote-icon" class="pacenote-icon"></div>
+          <div class="pacenote-body">
+            <div class="pacenote-main">
+              <span id="hud-pacenote-grade" class="pacenote-grade">GO</span>
+              <span id="hud-pacenote-dir" class="pacenote-dir">FLAT OUT</span>
+            </div>
+            <div class="pacenote-meta">
+              <span id="hud-pacenote-dist" class="pacenote-dist">170m</span>
+              <span id="hud-pacenote-alert" class="pacenote-alert" style="display: none;">BRAKE!</span>
+              <span id="hud-guide-badge" class="pacenote-guide-badge">GUIDE [G]</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 2D CIRCUIT MINIMAP & PAUSE BUTTON -->
         <div class="minimap-wrap">
           <div class="minimap-card hud-glass">
@@ -213,6 +243,7 @@ export class HUD {
           <span class="ctrl-unit"><kbd>T</kbd> Telemetry</span>
           <span class="ctrl-unit"><kbd>R</kbd> Rewind</span>
           <span class="ctrl-unit"><kbd>P</kbd> Photo</span>
+          <span class="ctrl-unit"><kbd>G</kbd> Guide</span>
           <span class="ctrl-unit"><kbd>K</kbd> Respawn</span>
         </div>
 
@@ -407,6 +438,14 @@ export class HUD {
     this.damageEl = this.container.querySelector('#hud-damage-status')!;
     this.biasTagEl = this.container.querySelector('#hud-bias-tag')!;
     this.gValEl = this.container.querySelector('#hud-g-val')!;
+
+    this.pacenoteEl = this.container.querySelector('#hud-pacenote')!;
+    this.pacenoteIconEl = this.container.querySelector('#hud-pacenote-icon')!;
+    this.pacenoteGradeEl = this.container.querySelector('#hud-pacenote-grade')!;
+    this.pacenoteDirEl = this.container.querySelector('#hud-pacenote-dir')!;
+    this.pacenoteDistEl = this.container.querySelector('#hud-pacenote-dist')!;
+    this.pacenoteAlertEl = this.container.querySelector('#hud-pacenote-alert')!;
+    this.guideBadgeEl = this.container.querySelector('#hud-guide-badge')!;
 
     this.minimapCanvas = this.container.querySelector('#hud-minimap')!;
     if (this.minimapCanvas) {
@@ -865,6 +904,11 @@ export class HUD {
       this.wrongWayEl.style.display = 'none';
     }
 
+    // Colin McRae Rally Co-Driver Pacenotes Update
+    if (waypoints && waypoints.length >= 5 && this.pacenoteEl) {
+      this.updatePacenote(playerState, waypoints);
+    }
+
     // Drift score, card flame & dynamic center banner
     const driftText = `${playerState.driftScore} PTS`;
     if (driftText !== this._lastDrift) {
@@ -1084,6 +1128,24 @@ export class HUD {
     drawSector(s1End, s2End, '#c084fc');   // Sector 2: Purple
     drawSector(s2End, n, '#facc15');       // Sector 3: Amber
 
+    // Highlight upcoming corner entry & apex beacon from active pacenote
+    if (this._activePacenote && this._activePacenote.grade > 0 && this._activePacenote.apexIdx < n) {
+      const apexWp = waypoints[this._activePacenote.apexIdx];
+      const [ax, ay] = toMap(apexWp.point.x, apexWp.point.z);
+      const col = this._activePacenote.grade <= 2 ? '#ef4444' : this._activePacenote.grade <= 4 ? '#facc15' : '#38bdf8';
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 7.5 + Math.sin(Date.now() * 0.01) * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 3.0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     // Start/Finish line marker (gold)
     ctx.fillStyle = '#fbbf24';
     ctx.beginPath();
@@ -1154,5 +1216,79 @@ export class HUD {
     } else {
       this.sectorBannerEl.style.display = 'none';
     }
+  }
+
+  public setRacingGuideVisible(visible: boolean): void {
+    if (!this.guideBadgeEl) return;
+    this.guideBadgeEl.textContent = visible ? 'GUIDE [G]' : 'GUIDE OFF [G]';
+    this.guideBadgeEl.classList.toggle('guide-off', !visible);
+  }
+
+  private updatePacenote(playerState: VehicleState, waypoints: Waypoint[]): void {
+    const profile = TrackRacingProfile.forWaypoints(waypoints);
+    const hintIdx = this._projScratch.closestIdx >= 0 ? this._projScratch.closestIdx : -1;
+    profile.projectToTrack(playerState.position.x, playerState.position.z, hintIdx, this._projScratch);
+
+    const speedMs = playerState.speedKmh / 3.6;
+    const note = computeUpcomingPacenote(profile, this._projScratch.s, speedMs, waypoints);
+    this._activePacenote = note;
+
+    const noteKey = `${note.direction}:${note.grade}:${note.distanceM}:${note.brakeNow ? 1 : 0}:${note.surfaceWarning ?? ''}`;
+    if (noteKey === this._lastPacenoteKey) return;
+    this._lastPacenoteKey = noteKey;
+
+    this.pacenoteEl.className = `hud-pacenote hud-glass grade-${note.grade === 0 ? 'flat' : note.grade}${note.brakeNow ? ' brake-urgent' : ''}`;
+    this.pacenoteIconEl.innerHTML = this.buildPacenoteSvg(note);
+    this.pacenoteGradeEl.textContent = note.grade === 0 ? 'GO' : String(note.grade);
+    this.pacenoteDirEl.textContent =
+      note.direction === 'STRAIGHT'
+        ? 'FLAT OUT'
+        : note.grade === 1
+          ? `${note.direction} HAIRPIN`
+          : `${note.direction} ${note.label}`;
+
+    const distParts = [`${note.distanceM}m`];
+    if (note.surfaceWarning) distParts.push(note.surfaceWarning);
+    this.pacenoteDistEl.textContent = distParts.join(' • ');
+
+    if (note.brakeNow) {
+      this.pacenoteAlertEl.style.display = 'inline-block';
+      this.pacenoteAlertEl.textContent = 'BRAKE!';
+    } else {
+      this.pacenoteAlertEl.style.display = 'none';
+    }
+  }
+
+  private buildPacenoteSvg(note: UpcomingPacenote): string {
+    if (note.direction === 'STRAIGHT' || note.grade === 0) {
+      return `<svg viewBox="0 0 48 48" width="38" height="38" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 41 L24 9"/><path d="M15 19 L24 9 L33 19"/><path d="M17 30 L24 22 L31 30" opacity="0.6"/></svg>`;
+    }
+
+    let pathD = '';
+    if (note.grade === 1) {
+      // Hairpin hook turn
+      pathD = `<path d="M13 41 L13 18 Q13 8 24 8 Q35 8 35 20 L35 32"/><path d="M29 26 L35 33 L41 26"/>`;
+    } else if (note.grade === 2) {
+      // Sharp >100 deg bend
+      pathD = `<path d="M13 41 L13 21 Q13 10 25 11 L38 19"/><path d="M31 22 L39 20 L36 12"/>`;
+    } else if (note.grade === 3) {
+      // Medium 90 deg square turn
+      pathD = `<path d="M14 41 L14 21 Q14 12 24 12 L38 12"/><path d="M31 6 L39 12 L31 18"/>`;
+    } else if (note.grade === 4) {
+      // Fast sweep ~55 deg
+      pathD = `<path d="M15 41 L15 26 Q17 15 36 10"/><path d="M28 7 L38 10 L32 18"/>`;
+    } else if (note.grade === 5) {
+      // Fast kink ~30 deg
+      pathD = `<path d="M17 41 Q19 22 34 9"/><path d="M26 8 L35 8 L33 17"/>`;
+    } else {
+      // Long gentle curve
+      pathD = `<path d="M20 41 Q21 24 30 9"/><path d="M22 11 L31 8 L31 17"/>`;
+    }
+
+    const inner = note.direction === 'LEFT'
+      ? `<g transform="scale(-1, 1) translate(-48, 0)">${pathD}</g>`
+      : pathD;
+
+    return `<svg viewBox="0 0 48 48" width="38" height="38" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
   }
 }

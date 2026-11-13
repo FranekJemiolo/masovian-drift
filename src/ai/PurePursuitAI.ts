@@ -131,7 +131,7 @@ export class PurePursuitAI {
     radius: 0.5,
     kind: 'tree',
   }));
-  private readonly _candOffsets = new Float64Array(10);
+  private readonly _candOffsets = new Float64Array(16);
 
   // Static scratch objects (no heap allocations in update loop)
   private static readonly _forward = new THREE.Vector3();
@@ -172,6 +172,11 @@ export class PurePursuitAI {
     this.driftFlickCooldown = 0;
     this.driftFlickTimer = 0;
     this.lastCommandedThrottle = 1.0;
+  }
+
+  public onRespawn(targetIndex: number): void {
+    this.reset();
+    this.currentTargetIndex = targetIndex;
   }
 
   public getRacingLineProfile(): TrackRacingProfile {
@@ -397,6 +402,18 @@ export class PurePursuitAI {
     const offTrackExcess = Math.max(0, Math.abs(proj.d) - (proj.halfWidth + 0.45));
     const isOffTrackNow = offTrackExcess > 0.20;
     const rejoinBlend = THREE.MathUtils.clamp(offTrackExcess / 2.5, 0.0, 1.0);
+
+    // Proactive near-edge barrier-heading guard: triggers near outer shoulder (>82% width) & angled >25 deg outward
+    const outwardHeading = Math.sign(proj.d || 1) * (fwdHx * proj.normX + fwdHz * proj.normZ);
+    const nearEdgeFrac = THREE.MathUtils.clamp(
+      (Math.abs(proj.d) - proj.halfWidth * 0.82) / (proj.halfWidth * 0.18 + 0.45),
+      0.0,
+      1.0
+    );
+    const edgeDanger = !isOffTrackNow && speedKmh > 25.0 && outwardHeading > 0.42
+      ? nearEdgeFrac * THREE.MathUtils.clamp((outwardHeading - 0.42) / 0.35, 0.0, 1.0)
+      : 0.0;
+    const urgencyBlend = Math.max(rejoinBlend, edgeDanger);
     const cornerLookScale = THREE.MathUtils.clamp((minUpcomingRadius - 22.0) / 105.0, 0.0, 1.0);
     const timeHorizon = 0.14 + this.profile.lookaheadGain * 1.15; // ~0.30 - 0.37s
 
@@ -406,7 +423,7 @@ export class PurePursuitAI {
       22.5
     );
     const rejoinLookahead = THREE.MathUtils.clamp(6.8 + speedMs * 0.12, 6.8, Math.max(8.5, normalLookahead * 0.72));
-    const adaptiveLookahead = THREE.MathUtils.lerp(normalLookahead, rejoinLookahead, rejoinBlend);
+    const adaptiveLookahead = THREE.MathUtils.lerp(normalLookahead, rejoinLookahead, urgencyBlend);
 
     this.track.sampleAtArcDistance(proj.s + adaptiveLookahead, proj.idx, this._lookSample);
     this.track.sampleAtArcDistance(proj.s + adaptiveLookahead * 0.50, proj.idx, this._rejoinSample);
@@ -541,6 +558,28 @@ export class PurePursuitAI {
           cands[candCount++] = THREE.MathUtils.clamp(blockingCar.d + sameSide * 3.75, -safeMaxD, safeMaxD);
           cands[candCount++] = THREE.MathUtils.clamp(blockingCar.d + openSide * 3.75, -safeMaxD, safeMaxD);
         }
+
+        // Multi-car 2-wide pack gap-midpoint & secondary shoulder candidates
+        let leadA: NearbyCarFrenet | null = null;
+        let leadB: NearbyCarFrenet | null = null;
+        for (let k = 0; k < nearbyCount; k++) {
+          const other = this._nearbyCars[k];
+          if (other.deltaS <= 0.0 || other.deltaS > 42.0) continue;
+          if (!leadA || other.deltaS < leadA.deltaS) {
+            leadB = leadA;
+            leadA = other;
+          } else if (!leadB || other.deltaS < leadB.deltaS) {
+            leadB = other;
+          }
+        }
+        if (leadB && candCount + 3 <= cands.length) {
+          cands[candCount++] = THREE.MathUtils.clamp(leadB.d - 3.75, -safeMaxD, safeMaxD);
+          cands[candCount++] = THREE.MathUtils.clamp(leadB.d + 3.75, -safeMaxD, safeMaxD);
+          if (leadA && Math.abs(leadA.d - leadB.d) >= 4.2) {
+            cands[candCount++] = THREE.MathUtils.clamp((leadA.d + leadB.d) * 0.5, -safeMaxD, safeMaxD);
+          }
+        }
+
         cands[candCount++] = THREE.MathUtils.clamp(-safeMaxD * 0.88, -safeMaxD, safeMaxD);
         cands[candCount++] = THREE.MathUtils.clamp(safeMaxD * 0.88, -safeMaxD, safeMaxD);
         cands[candCount++] = THREE.MathUtils.clamp(-safeMaxD * 0.45, -safeMaxD, safeMaxD);
@@ -625,18 +664,23 @@ export class PurePursuitAI {
           }
         }
 
-        // Mild racing line preference when clear
-        cost += Math.abs(candD - dRacing) * 2.2;
+        // Smooth continuous racing-line pull vs lane hysteresis (avoids locking cars off-line once clear)
+        const racingWeight = blockingCar && blockingDeltaS < 22.0 ? 2.4 : 3.2;
+        cost += Math.abs(candD - dRacing) * racingWeight;
 
-        // Curb/edge caution buffer
+        // Curb/edge caution buffer + proactive near-edge barrier save
         if (Math.abs(candD) > lookSample.halfWidth - 2.35) {
           cost += (Math.abs(candD) - (lookSample.halfWidth - 2.35)) * 16.0;
         }
+        if (edgeDanger > 0.05 && candD * Math.sign(proj.d || 1) > safeMaxD * 0.45) {
+          cost += (candD * Math.sign(proj.d || 1) - safeMaxD * 0.45) * 42.0 * edgeDanger;
+        }
 
-        // Hysteresis damping: avoid zig-zagging between equal-cost passing lanes
-        cost += Math.abs(candD - this.smoothTargetD) * 4.8;
+        // Hysteresis damping: hold current passing lane cleanly during active passes, glide back to racing line after
+        const laneInertiaWeight = blockingCar && blockingDeltaS < 22.0 ? 3.0 : 1.9;
+        cost += Math.abs(candD - this.smoothTargetD) * laneInertiaWeight;
         const candSide = Math.abs(candD - dRacing) > 1.2 ? Math.sign(candD - dRacing) : 0;
-        if (this.laneHoldTimer > 0 && this.activePassSide !== 0 && candSide !== 0 && candSide !== this.activePassSide) {
+        if (blockingCar && blockingDeltaS < 28.0 && this.laneHoldTimer > 0 && this.activePassSide !== 0 && candSide !== 0 && candSide !== this.activePassSide) {
           cost += 42.0;
         }
 
@@ -668,12 +712,13 @@ export class PurePursuitAI {
     );
     let maxLaneShiftRate = localCurv > 0.011 ? 1.5 : 4.2;
     if (blockingCar && blockingDeltaS < 26.0) {
-      // Never whip sideways across loose gravel/sand mid-corner; change lanes calmly earlier
-      const urgShift = blockingDeltaS < 12.0 ? 6.8 : 5.4;
+      // Never whip sideways across loose gravel/sand mid-corner; step decisively around stopped cars
+      const isStoppedObstacle = Math.abs(blockingCar.vS) < 4.5 && blockingDeltaS < 20.0;
+      const urgShift = isStoppedObstacle ? 7.6 : blockingDeltaS < 12.0 ? 6.8 : 5.4;
       const passRate = (proj.surface !== 'asphalt' && localCurv > 0.008) ? 3.4 : urgShift;
       maxLaneShiftRate = Math.max(maxLaneShiftRate, passRate);
     }
-    maxLaneShiftRate = THREE.MathUtils.lerp(maxLaneShiftRate, 7.5, rejoinBlend);
+    maxLaneShiftRate = THREE.MathUtils.lerp(maxLaneShiftRate, 7.5, Math.max(rejoinBlend, edgeDanger * 0.7));
     const maxDeltaD = maxLaneShiftRate * safeDt;
     this.smoothTargetD += THREE.MathUtils.clamp(chosenTargetD - this.smoothTargetD, -maxDeltaD, maxDeltaD);
 
@@ -714,7 +759,7 @@ export class PurePursuitAI {
     // errLocal.x > 0 ALWAYS means target lane is toward +vehicle.right (positive steer).
     const clampedNowD = isOffTrackNow
       ? finalTargetD
-      : THREE.MathUtils.lerp(finalTargetD, 0.0, rejoinBlend);
+      : THREE.MathUtils.lerp(finalTargetD, 0.0, urgencyBlend);
     const desiredLanePt = PurePursuitAI._laneWorld.set(
       proj.centerX + proj.normX * clampedNowD,
       proj.centerY,
@@ -725,8 +770,8 @@ export class PurePursuitAI {
       !isOffTrackNow && blockingCar && blockingDeltaS < 24.0 && localCurv < 0.009 && Math.abs(finalTargetD - proj.d) > 1.1
         ? THREE.MathUtils.clamp((Math.abs(finalTargetD - proj.d) - 1.1) / 1.5, 0.0, 1.0)
         : 0.0;
-    const cteGain = Math.max(THREE.MathUtils.lerp(0.26, 0.90, rejoinBlend), THREE.MathUtils.lerp(0.26, 0.58, activePassUrg));
-    const cteMaxRad = Math.max(THREE.MathUtils.lerp(0.075, 0.30, rejoinBlend), THREE.MathUtils.lerp(0.075, 0.15, activePassUrg));
+    const cteGain = Math.max(THREE.MathUtils.lerp(0.26, 0.90, urgencyBlend), THREE.MathUtils.lerp(0.26, 0.58, activePassUrg));
+    const cteMaxRad = Math.max(THREE.MathUtils.lerp(0.075, 0.30, urgencyBlend), THREE.MathUtils.lerp(0.075, 0.15, activePassUrg));
     const stanleyAngle = THREE.MathUtils.clamp(
       Math.atan2(cteGain * errLocal.x, Math.max(7.0, speedMs + 6.0)),
       -cteMaxRad,
@@ -734,8 +779,8 @@ export class PurePursuitAI {
     );
 
     let desiredWheelAngle = wheelAnglePursuit + stanleyAngle;
-    // Direct full-lock capture ONLY when off-track or spun past 75 deg (never oversteer inside on-track hairpins!)
-    const directBlend = Math.max(rejoinBlend, headingAlign < 0.25 ? 1.0 : 0.0);
+    // Direct full-lock capture ONLY when off-track, skidding outward at shoulder, or spun past 75 deg
+    const directBlend = Math.max(urgencyBlend, headingAlign < 0.25 ? 1.0 : 0.0);
     if (directBlend > 0) {
       const directWheelAngle = THREE.MathUtils.clamp(alpha * 1.45, -maxSteerNow, maxSteerNow);
       desiredWheelAngle = THREE.MathUtils.lerp(desiredWheelAngle, directWheelAngle, directBlend);
@@ -758,7 +803,7 @@ export class PurePursuitAI {
 
     const kSlip = THREE.MathUtils.lerp(1.15, 1.35, driftEnthNorm);
     const kYaw = THREE.MathUtils.lerp(0.18, 0.22, driftEnthNorm);
-    const canStabilize = !isOffTrackNow && speedKmh > 18.0 && headingAlign > 0.45 && absSlip < 1.15;
+    const canStabilize = !isOffTrackNow && speedKmh > 18.0 && headingAlign > 0.45 && absSlip < 1.15 && this.driftFlickTimer <= 0;
     const rawStabilize = canStabilize ? (kSlip * excessSlip - kYaw * yawRateErr) : 0;
     const maxStab = THREE.MathUtils.lerp(0.48, 0.58, driftEnthNorm);
     const steerStabilize = THREE.MathUtils.clamp(rawStabilize, -maxStab, maxStab);
@@ -767,11 +812,11 @@ export class PurePursuitAI {
 
     // 7. PHYSICS-CALIBRATED CORNERING, SLOPE-AWARE BRAKING & GAP CONTROL
     const aggNorm = THREE.MathUtils.clamp((this.profile.aggression - 0.90) / 0.30, 0.0, 1.0);
-    const aggPaceScale = 0.895 + aggNorm * 0.090; // 0.895 (Marek) -> 0.985 (Tomek)
+    const aggPaceScale = 0.890 + aggNorm * 0.095; // 0.890 (Marek) -> 0.985 (Tomek)
 
-    // Subtle bounded catch-up only when > 110m behind leader (max +1.5%, preserves pace hierarchy)
-    const rubberBand = distBehindLeader > 110.0
-      ? 1.0 + Math.min(0.015, ((distBehindLeader - 110.0) / 260.0) * 0.015)
+    // Subtle bounded catch-up only when > 175m behind leader (max +0.8%, preserves pace hierarchy)
+    const rubberBand = distBehindLeader > 175.0
+      ? 1.0 + Math.min(0.008, ((distBehindLeader - 175.0) / 260.0) * 0.008)
       : 1.0;
 
     const computeSurfaceGripG = (surf: 'asphalt' | 'gravel' | 'sand'): number => {
@@ -822,11 +867,13 @@ export class PurePursuitAI {
       adjustedTargetSpeed *= 1.04;
     }
 
-    // Gradual rejoin speed ceiling when off-track (prevents panic brake-lock on light curb drops)
+    // Gradual rejoin speed ceiling when off-track or catching an outward edge slide
     if (isOffTrackNow) {
       const mildRejoinCap = Math.max(58.0, adjustedTargetSpeed * 0.90);
       const rejoinCapKmh = THREE.MathUtils.lerp(mildRejoinCap, 42.0, rejoinBlend);
       adjustedTargetSpeed = Math.min(adjustedTargetSpeed, rejoinCapKmh);
+    } else if (edgeDanger > 0.25) {
+      adjustedTargetSpeed = Math.min(adjustedTargetSpeed, THREE.MathUtils.lerp(adjustedTargetSpeed, 52.0, edgeDanger));
     }
 
     // Predictive braking zone scan up to ~200m (15 segments) with downhill grade compensation
@@ -965,31 +1012,33 @@ export class PurePursuitAI {
     // Expressive controlled rally drift initiation for Zofia on tight asphalt hairpins
     if (this.driftFlickTimer > 0) {
       this.driftFlickTimer -= safeDt;
-      if (
+      if (absSlip >= 0.155 || isOffTrackNow || edgeDanger >= 0.20) {
+        this.driftFlickTimer = 0;
+      } else if (
         this.driftFlickTimer > 0 &&
-        absSlip < 0.145 &&
-        !isOffTrackNow &&
-        Math.abs(proj.d) < proj.halfWidth * 0.60
+        Math.abs(proj.d) < proj.halfWidth * 0.80
       ) {
         handbrake = true;
-        throttle = Math.max(throttle, 0.24);
+        throttle = Math.max(throttle, 0.35);
       }
     } else if (
       this.profile.driftEnthusiasm >= 1.1 &&
       !isOffTrackNow &&
+      edgeDanger < 0.15 &&
       !this.vehicle.isDrifting &&
       this.driftFlickCooldown <= 0 &&
-      (!blockingCar || blockingDeltaS > 26.0) &&
-      speedKmh >= 40.0 &&
-      speedKmh <= 62.0 &&
-      Math.abs(steerInput) > 0.16 &&
-      Math.abs(proj.d) < proj.halfWidth * 0.58 &&
+      (!blockingCar || blockingDeltaS > 12.0) &&
+      speedKmh >= 38.0 &&
+      speedKmh <= 78.0 &&
+      Math.abs(steerInput) > 0.15 &&
+      Math.abs(proj.d) < proj.halfWidth * 0.78 &&
       proj.surface === 'asphalt' &&
-      minUpcomingRadius < 48.0
+      minUpcomingRadius < 55.0
     ) {
-      this.driftFlickTimer = 0.068;
-      this.driftFlickCooldown = 4.5;
+      this.driftFlickTimer = 0.22;
+      this.driftFlickCooldown = 3.5;
       handbrake = true;
+      throttle = Math.max(throttle, 0.35);
     }
 
     // Critical VehiclePhysics rearDriftScale protection (only apply > 22 km/h so stuck cars always get full launch power):
@@ -997,13 +1046,18 @@ export class PurePursuitAI {
     const intentionalDrift =
       this.profile.driftEnthusiasm >= 1.1 &&
       !isOffTrackNow &&
-      speedKmh < 68.0 &&
+      edgeDanger < 0.20 &&
+      speedKmh < 78.0 &&
       proj.surface === 'asphalt' &&
-      Math.abs(proj.d) < proj.halfWidth * 0.66;
+      Math.abs(proj.d) < proj.halfWidth * 0.80;
 
     if (throttle > 0 && isOffTrackNow && (absSlip > 0.35 || headingAlign < 0.65 || Math.abs(alpha) > 0.40)) {
       // Pivot calmly back toward the track instead of blasting laterally into obstacles
       throttle = Math.min(throttle, 0.38);
+      handbrake = false;
+    }
+
+    if (edgeDanger > 0.25) {
       handbrake = false;
     }
 
@@ -1012,11 +1066,11 @@ export class PurePursuitAI {
         throttle = Math.min(throttle, 0.19);
         handbrake = false;
       } else if (intentionalDrift) {
-        if (absSlip > 0.175 || Math.abs(proj.d) > proj.halfWidth * 0.62) {
-          throttle = Math.min(throttle, 0.16);
+        if (absSlip > 0.185 || Math.abs(proj.d) > proj.halfWidth * 0.78) {
+          throttle = Math.min(throttle, 0.17);
           handbrake = false;
         } else if (absSlip > 0.140) {
-          throttle = Math.min(throttle, 0.28);
+          throttle = Math.min(throttle, 0.32);
         }
       } else {
         if (absSlip > 0.134) {

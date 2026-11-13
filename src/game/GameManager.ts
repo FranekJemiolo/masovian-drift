@@ -9,6 +9,8 @@ import { EnvironmentGenerator } from '../graphics/EnvironmentGenerator';
 import { ParticleFX } from '../graphics/ParticleFX';
 import { PixelPostProcessor } from '../graphics/PixelPostProcessor';
 import { TrackMeshBuilder } from '../graphics/TrackMeshBuilder';
+import { createTrackProjection, TrackGuidanceBundle } from '../graphics/TrackGuidance';
+import { TrackRacingProfile } from '../ai/TrackRacingProfile';
 import { VoxelCarBuilder } from '../graphics/VoxelCarBuilder';
 import { NetworkVehicleFrame, StateSync } from '../net/StateSync';
 import { WebRTCManager } from '../net/WebRTCManager';
@@ -62,6 +64,8 @@ export class GameManager {
   private checkpoints: { position: THREE.Vector3; index: number; radius: number }[] = [];
   private riverMesh: THREE.Mesh | null = null;
   private grassMesh: THREE.InstancedMesh | null = null;
+  public trackGuidance: TrackGuidanceBundle | null = null;
+  private readonly _guideProj = createTrackProjection();
 
   // Time Trial Ghost Car Replay (M8)
   private ghostVisual: THREE.Group | null = null;
@@ -226,6 +230,7 @@ export class GameManager {
     this.checkpoints = trackData.checkpoints;
     this.riverMesh = trackData.riverMesh;
     this.grassMesh = trackData.grassMesh ?? null;
+    this.trackGuidance = trackData.guidance ?? null;
 
     // Build World Physics Colliders (synchronizing with 3D roadMesh, curbsMesh & terrainMesh)
     this.physicsWorld.buildWorldColliders(
@@ -352,6 +357,12 @@ export class GameManager {
         this.p1Camera.cycleMode();
       } else if (e.code === 'KeyM') {
         this.audioManager.toggleMute();
+      } else if (e.code === 'KeyG') {
+        if (this.trackGuidance && this.isRacing && !this.isPaused) {
+          const next = !this.trackGuidance.isGuideEnabled();
+          this.trackGuidance.setEnabled(next);
+          this.hud.setRacingGuideVisible(next);
+        }
       } else if (e.code === 'KeyR' && e.shiftKey) {
         if (this.isRacing && !this.isPaused) this.restartRace();
       } else if (e.code === 'Escape') {
@@ -1023,6 +1034,22 @@ export class GameManager {
         }
       }
 
+      // Dynamic NFS/CMR Track Guidance Shader Update (Racing Line & Holographic Corner Walls)
+      if (this.trackGuidance && this.waypoints?.length) {
+        const profile = TrackRacingProfile.forWaypoints(this.waypoints);
+        profile.projectToTrack(
+          this.playerVehicle.position.x,
+          this.playerVehicle.position.z,
+          this._guideProj.closestIdx,
+          this._guideProj
+        );
+        this.trackGuidance.update(
+          this.clock.getElapsedTime(),
+          this._guideProj.s,
+          this.playerVehicle.speedKmh / 3.6
+        );
+      }
+
       // Post-Processing uniforms (time, high-speed lens warp, photographic bloom, and DRS)
       this.postProcessor.update(
         this.clock.getElapsedTime(),
@@ -1310,7 +1337,7 @@ export class GameManager {
     veh.resetPosition(cp.position.clone(), spawnQuat);
     for (const bot of this.aiBots) {
       if (bot.vehicle === veh) {
-        bot.setTargetIndex(wpIdx);
+        bot.onRespawn(wpIdx);
       }
     }
   }
